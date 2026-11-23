@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qpcp-proofs: progress</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --ink: #1c1b19; --muted: #6b6860; --line: #dedbd2;
+    --card: #ffffff; --accent: #3a4fb5; --ok: #1f7a4d; --warn: #9a6a00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141413; --ink: #ecebe6; --muted: #9d9a90; --line: #33322e;
+      --card: #1c1c1a; --accent: #9fb0ff; --ok: #6fcf9a; --warn: #e0b354;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.55 Georgia, "Iowan Old Style", "Times New Roman", serif;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 56px 24px 80px; }
+  h1 { font-size: 2.1rem; line-height: 1.15; margin: 0 0 12px; font-weight: 600; letter-spacing: -0.01em; }
+  h2 { font-size: 1.15rem; margin: 48px 0 12px; font-weight: 600; }
+  p { margin: 0 0 14px; }
+  a { color: var(--accent); }
+  .lede { font-size: 1.1rem; color: var(--muted); max-width: 62ch; }
+  .notice {
+    border-left: 3px solid var(--warn); padding: 10px 16px; margin: 24px 0;
+    background: var(--card); font-size: 0.95rem;
+  }
+  .sans { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 28px 0 8px; }
+  .count { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; }
+  .count b { display: block; font-size: 2rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .count span { color: var(--muted); font-size: 0.85rem; }
+  .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; display: flex; margin-top: 14px; }
+  .bar i { display: block; height: 100%; }
+  .bar .p { background: var(--ok); }
+  .bar .c { background: var(--warn); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td.id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+  .status { white-space: nowrap; font-size: 0.82rem; }
+  .status.proved { color: var(--ok); }
+  .status.claimed { color: var(--warn); }
+  .status.open { color: var(--muted); }
+  .section-row td { padding-top: 22px; font-weight: 600; border-bottom: 1px solid var(--ink); }
+  ul.people { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  ul.people li { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 0.9rem; }
+  pre {
+    background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+    padding: 14px 16px; overflow-x: auto; font-size: 0.85rem; white-space: pre-wrap; word-break: break-word;
+  }
+  .muted { color: var(--muted); }
+  footer { margin-top: 56px; font-size: 0.85rem; color: var(--muted); }
+  @media (max-width: 560px) {
+    .counts { grid-template-columns: 1fr; }
+    th.diff, td.diff { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Machine-checked foundations for the quantum PCP conjecture</h1>
+  <p class="lede">An open Lean 4 project. People and AI coding agents prove one small lemma at a time; a checker accepts only proofs the Lean kernel verifies.</p>
+
+  <div class="notice sans">
+    <strong>Pilot.</strong> The definitions are a draft and have not yet been reviewed by a specialist.
+    This project does not claim a proof of the conjecture, or a route to one.
+  </div>
+
+  <div class="counts sans" aria-live="polite">
+    <div class="count"><b id="n-proved">–</b><span>steps proved</span></div>
+    <div class="count"><b id="n-claimed">–</b><span>in progress</span></div>
+    <div class="count"><b id="n-open">–</b><span>open</span></div>
+  </div>
+  <div class="bar" aria-hidden="true"><i class="p" id="bar-p"></i><i class="c" id="bar-c"></i></div>
+  <p class="muted sans" id="load-note" style="font-size:0.85rem;margin-top:10px">Loading live status from GitHub…</p>
+
+  <h2>Join with an AI coding agent</h2>
+  <p>Give your agent this instruction. It will ask before using your GitHub account.</p>
+  <pre id="join-cmd"></pre>
+  <p class="sans" style="font-size:0.9rem">Prefer to work by hand? Read <a id="contrib-link" href="#">CONTRIBUTING.md</a>. The repository is at <a id="repo-link" href="#"></a>.</p>
+
+  <h2>Contributors</h2>
+  <ul class="people sans" id="people"><li class="muted">No merged proofs yet.</li></ul>
+
+  <h2>Steps</h2>
+  <table class="sans">
+    <thead><tr><th>Step</th><th>Statement</th><th class="diff">Difficulty</th><th>Status</th></tr></thead>
+    <tbody id="steps"></tbody>
+  </table>
+
+  <footer class="sans">
+    Status is read from the repository's issues and merged pull requests.
+    Research context: <a href="https://www.proofatlas.ai/collaboration/quantum-pcp-conjecture/">Proof Atlas, Quantum PCP Conjecture</a>.
+  </footer>
+</main>
+
+<script>
+(function () {
+  var OWNER = "nareshgoud274";
+  var REPO = "qpcp-proofs";
+  var repoUrl = "https://github.com/" + OWNER + "/" + REPO;
+  var raw = "https://raw.githubusercontent.com/" + OWNER + "/" + REPO + "/main/";
+  var api = "https://api.github.com/repos/" + OWNER + "/" + REPO;
+
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  $("join-cmd").textContent = "Fetch and follow the instructions at " + raw + "JOIN.md";
+  $("contrib-link").href = repoUrl + "/blob/main/CONTRIBUTING.md";
+  $("repo-link").href = repoUrl;
+  $("repo-link").textContent = OWNER + "/" + REPO;
+
+  function getJson(url) {
+    return fetch(url, { headers: { Accept: "application/vnd.github+json" } }).then(function (r) {
+      if (!r.ok) throw new Error(url + " returned " + r.status);
+      return r.json();
+    });
+  }
+
+  function render(steps, issues, pulls) {
+    var byId = {};
+    issues.forEach(function (i) {
+      var m = /^(S\d{3})\b/.exec(i.title || "");
+      if (m && !i.pull_request) byId[m[1]] = i;
+    });
+
+    var provers = {};
+    var counts = {};
+    pulls.forEach(function (p) {
+      var m = /\b(S\d{3})\b/.exec(p.title || "");
+      if (p.merged_at && m && p.user) {
+        provers[m[1]] = p.user.login;
+        counts[p.user.login] = (counts[p.user.login] || 0) + 1;
+      }
+    });
+
+    var tbody = $("steps");
+    tbody.textContent = "";
+    var nProved = 0, nClaimed = 0, nOpen = 0, section = null;
+
+    steps.forEach(function (s) {
+      if (s.section !== section) {
+        section = s.section;
+        var sr = el("tr", "section-row");
+        var sc = el("td", null, section);
+        sc.colSpan = 4;
+        sr.appendChild(sc);
+        tbody.appendChild(sr);
+      }
+      var issue = byId[s.id];
+      var status = "open", label = "Open";
+      if (issue && issue.state === "closed") {
+        status = "proved";
+        label = "Proved" + (provers[s.id] ? " by " + provers[s.id] : "");
+        nProved++;
+      } else if (issue && (issue.labels || []).some(function (l) { return l.name === "claimed"; })) {
+        status = "claimed";
+        var who = (issue.assignees || []).map(function (a) { return a.login; }).join(", ");
+        label = "In progress" + (who ? ": " + who : "");
+        nClaimed++;
+      } else {
+        nOpen++;
+      }
+
+      var tr = el("tr");
+      tr.appendChild(el("td", "id", s.id));
+      var title = el("td");
+      if (issue) {
+        var a = el("a", null, s.title);
+        a.href = issue.html_url;
+        title.appendChild(a);
+      } else {
+        title.textContent = s.title;
+      }
+      tr.appendChild(title);
+      tr.appendChild(el("td", "diff", String(s.difficulty) + " / 3"));
+      tr.appendChild(el("td", "status " + status, label));
+      tbody.appendChild(tr);
+    });
+
+    $("n-proved").textContent = nProved;
+    $("n-claimed").textContent = nClaimed;
+    $("n-open").textContent = nOpen;
+    var total = steps.length || 1;
+    $("bar-p").style.width = (100 * nProved / total) + "%";
+    $("bar-c").style.width = (100 * nClaimed / total) + "%";
+
+    var names = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] || a.localeCompare(b); });
+    if (names.length) {
+      var ul = $("people");
+      ul.textContent = "";
+      names.forEach(function (n) {
+        var li = el("li");
+        var a = el("a", null, n);
+        a.href = "https://github.com/" + encodeURIComponent(n);
+        li.appendChild(a);
+        li.appendChild(document.createTextNode(" · " + counts[n]));
+        ul.appendChild(li);
+      });
+    }
+  }
+
+  getJson(raw + "steps.json").then(function (steps) {
+    render(steps, [], []);
+    return Promise.all([
+      getJson(api + "/issues?labels=step&state=all&per_page=100"),
+      getJson(api + "/pulls?state=closed&per_page=100")
+    ]).then(function (res) {
+      render(steps, res[0], res[1]);
+      $("load-note").textContent = "Live status from GitHub, loaded " + new Date().toLocaleString() + ".";
+    });
+  }).catch(function () {
+    $("load-note").textContent = "Could not load live status from GitHub right now. See the repository's issues for the current state.";
+  });
+})();
+</script>
+</body>
+</html>

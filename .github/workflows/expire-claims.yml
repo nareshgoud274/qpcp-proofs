@@ -1,0 +1,33 @@
+name: expire-claims
+
+# Releases claims on step issues that have had no activity for 24 hours.
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  expire:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Release stale claims
+        run: |
+          set -euo pipefail
+          gh issue list --state open --label claimed --limit 200 \
+            --json number,updatedAt,assignees \
+            --jq '.[] | select((.updatedAt | fromdateiso8601) < (now - 86400)) | "\(.number) \([.assignees[].login] | join(","))"' \
+          | while read -r number assignees; do
+              args=(--remove-label claimed)
+              if [ -n "${assignees:-}" ]; then
+                args+=(--remove-assignee "$assignees")
+              fi
+              gh issue edit "$number" "${args[@]}"
+              gh issue comment "$number" --body "The claim lapsed after 24 hours without activity. This step is open again."
+            done

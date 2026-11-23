@@ -1,0 +1,36 @@
+name: verify-main
+
+# Re-checks every accepted proof on main with main's own checker. If this goes
+# red after a merge, the merged pull request should be reverted.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch Mathlib cache
+        run: lake exe cache get
+
+      - name: Build definitions and statements
+        run: lake build QPCP.Defs QPCP.Statements
+
+      - name: Check every proof
+        run: python3 scripts/check.py all

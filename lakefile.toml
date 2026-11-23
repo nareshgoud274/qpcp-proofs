@@ -1,0 +1,12 @@
+name = "qpcp"
+defaultTargets = ["QPCP"]
+
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4"
+rev = "stable"
+
+[[lean_lib]]
+name = "QPCP"
+# Build the root module and every module under QPCP/, including QPCP/Proofs/*.
+globs = ["QPCP.*"]

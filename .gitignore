@@ -1,0 +1,4 @@
+.lake/
+Check_*.lean
+.DS_Store
+__pycache__/

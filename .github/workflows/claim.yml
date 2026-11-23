@@ -1,0 +1,65 @@
+name: claim
+
+# Handles `/claim` and `/release` comments on step issues. This workflow always
+# runs the version on main and never checks out or runs contributed code.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+
+jobs:
+  claim:
+    if: >-
+      github.event.issue.pull_request == null &&
+      github.event.issue.state == 'open' &&
+      contains(github.event.issue.labels.*.name, 'step')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ISSUE: ${{ github.event.issue.number }}
+      ACTOR: ${{ github.event.comment.user.login }}
+      BODY: ${{ github.event.comment.body }}
+      IS_CLAIMED: ${{ contains(github.event.issue.labels.*.name, 'claimed') }}
+      ASSIGNEES: ${{ join(github.event.issue.assignees.*.login, ' ') }}
+    steps:
+      - name: Handle the command
+        run: |
+          set -euo pipefail
+          cmd="$(printf '%s' "$BODY" | head -n 1 | tr -d '\r' | awk '{print $1}')"
+
+          is_assignee=false
+          for a in $ASSIGNEES; do
+            if [ "$a" = "$ACTOR" ]; then is_assignee=true; fi
+          done
+
+          case "$cmd" in
+            /claim)
+              if [ "$IS_CLAIMED" = "true" ]; then
+                if [ "$is_assignee" = "true" ]; then
+                  gh issue comment "$ISSUE" --body "Claim renewed for @$ACTOR."
+                else
+                  gh issue comment "$ISSUE" --body "This step is already claimed. Pick another open step without the \`claimed\` label."
+                fi
+                exit 0
+              fi
+              held="$(gh issue list --state open --label claimed --assignee "$ACTOR" --json number --jq 'length')"
+              if [ "$held" != "0" ]; then
+                gh issue comment "$ISSUE" --body "@$ACTOR already holds a claimed step. Finish it or comment \`/release\` there first."
+                exit 0
+              fi
+              gh issue edit "$ISSUE" --add-label claimed --add-assignee "$ACTOR"
+              gh issue comment "$ISSUE" --body "Claimed by @$ACTOR. The claim lapses after 24 hours without a comment on this issue. Comment \`/release\` to give it up."
+              ;;
+            /release)
+              if [ "$is_assignee" = "true" ]; then
+                gh issue edit "$ISSUE" --remove-label claimed --remove-assignee "$ACTOR"
+                gh issue comment "$ISSUE" --body "Released by @$ACTOR. This step is open again."
+              fi
+              ;;
+            *)
+              ;;
+          esac
