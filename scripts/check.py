@@ -13,9 +13,15 @@ QPCP.Statement.<ID>, listed in steps.json) or a contributed lemma L<N>
 
 Modes:
 
-  check.py pr <base-ref>   Check a contributor's pull request: it must add
-                           exactly one such file and change nothing else.
-  check.py all             Re-check every contribution on the current tree.
+  check.py scan <base-ref>   CI: every check on a contributor's pull request
+                             that runs no Lean (one new file, allowed kind,
+                             statement exists, source scanner). Lean checks
+                             follow in scripts/contribution_check.sh.
+  check.py scan-file <kind> <id> <path>
+                             Tests: run the source scanner on any file.
+  check.py pr <base-ref>     Local only: scan, then build and check the
+                             contribution without a sandbox.
+  check.py all               Re-check every contribution on the current tree.
 
 Verdicts are printed as ACCEPTED or REJECTED with a reason. Exit code 0 means
 accepted, 1 means rejected, 2 means the checker itself failed (FAULT).
@@ -247,8 +253,8 @@ def lemma_header(src):
     return (program.group(1) if program else None, plain.group(1) if plain else None)
 
 
-def scan_source(kind, ident):
-    path = file_of(kind, ident)
+def scan_source(kind, ident, path=None):
+    path = Path(path) if path else file_of(kind, ident)
     rel = f"{KINDS[kind][0]}/{ident}.lean"
     if not path.is_file():
         raise Rejected(f"{rel} does not exist")
@@ -382,7 +388,8 @@ def classify(name):
     return None, None
 
 
-def mode_pr(base):
+def precheck(base):
+    """Every check on a contributor's pull request that runs no Lean."""
     files = changed_files(base)
     if len(files) != 1:
         names = ", ".join(n for _, n in files) or "none"
@@ -406,6 +413,31 @@ def mode_pr(base):
         if file_of(other, ident).is_file():
             raise Rejected(f"{ident} is already settled by a {other}")
     scan_source(kind, ident)
+    return kind, ident, name
+
+
+def mode_scan(base):
+    """Pre-Lean checks for CI. Prints `kind ident path` for the sandboxed check."""
+    kind, ident, name = precheck(base)
+    print(f"CONTRIBUTION: {kind} {ident} {name}")
+    return [f"{kind} {ident} (scan only)"]
+
+
+def mode_scan_file(kind, ident, path):
+    """Scan one file at any path as a contribution of the given kind (for tests)."""
+    if kind not in KINDS or not re.fullmatch(ID if kind != "lemma" else r"L\d{1,9}", ident):
+        raise Rejected(f"bad kind or id: {kind} {ident}")
+    scan_source(kind, ident, path)
+    return [f"{kind} {ident} (scan only)"]
+
+
+def mode_pr(base):
+    """Local use only: checks a pull request by building it WITHOUT a sandbox.
+
+    CI uses `scan` followed by scripts/contribution_check.sh, which builds the
+    contribution in a sandbox and verifies an export of it instead.
+    """
+    kind, ident, _ = precheck(base)
     lean_check([(kind, ident)], [f"{KINDS[kind][1]}.{ident}"])
     return [f"{kind} {ident}"]
 
@@ -448,6 +480,10 @@ def main(argv):
     try:
         if len(argv) == 3 and argv[1] == "pr":
             done = mode_pr(argv[2])
+        elif len(argv) == 3 and argv[1] == "scan":
+            done = mode_scan(argv[2])
+        elif len(argv) == 5 and argv[1] == "scan-file":
+            done = mode_scan_file(argv[2], argv[3], argv[4])
         elif len(argv) == 2 and argv[1] == "all":
             done = mode_all()
         else:

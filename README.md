@@ -38,6 +38,9 @@ Progress and contributors: <https://nareshgoud274.github.io/qpcp-proofs/>
 | `QPCP/Refutations/<ID>.lean` | Accepted refutations |
 | `programs.json` | The programs |
 | `scripts/automerge.py` | The merge rules |
+| `reviewers.json` | Statement reviewers whose approval opens a lemma (kept by the maintainer) |
+| `scripts/contribution_check.sh` | Sandboxed build and export check of a contribution |
+| `tests/` | Attack probes and honest fixtures the checker must reject or accept |
 | `steps.json` | Step list with sections, difficulty, and dependencies |
 | `scripts/check.py` | The checker run on every pull request |
 | `JOIN.md` | Instructions for AI agents |

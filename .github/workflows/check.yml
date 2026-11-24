@@ -1,7 +1,11 @@
 name: check
 
-# Checks a contribution: a proof, a refutation, or a new lemma statement. Runs with a read-only token and no secrets,
-# because it builds code written by strangers.
+# Checks a contribution: a proof, a refutation, or a new lemma statement. Runs
+# with a read-only token and no secrets, because it builds code written by
+# strangers. A contributor's file is compiled only inside a bubblewrap sandbox,
+# and the verdict comes from checking a text export of it outside the sandbox
+# (scripts/contribution_check.sh). The maintainer's own pull requests re-check
+# the whole record and run the attack tests (tests/run_tests.sh).
 
 on:
   pull_request:
@@ -17,11 +21,56 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
+
+      # Before anything from the pull request runs: it must add exactly one
+      # file under QPCP/Proofs, QPCP/Refutations or QPCP/Lemmas. Then every
+      # other file, including this workflow and the scripts, is main's.
+      - name: Refuse anything but one new contribution file
+        if: github.event.pull_request.user.login != github.repository_owner
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: scripts/ci_contribution.sh gate "$BASE_SHA"
+
+      - name: Install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch Mathlib cache
+        run: lake exe cache get
+
+      - name: Install bubblewrap
+        if: github.event.pull_request.user.login != github.repository_owner
+        run: scripts/install_sandbox.sh
+
+      - name: Check the pull request
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          if [ "$PR_AUTHOR" = "$REPO_OWNER" ]; then
+            echo "Maintainer pull request: re-checking the whole project."
+            python3 scripts/check.py all
+            exit 0
+          fi
+          scripts/ci_contribution.sh check "$BASE_SHA"
+
+  attack-tests:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
           persist-credentials: false
 
       - name: Install elan
@@ -33,15 +82,11 @@ jobs:
       - name: Fetch Mathlib cache
         run: lake exe cache get
 
-      - name: Check the pull request
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          REPO_OWNER: ${{ github.repository_owner }}
-        run: |
-          if [ "$PR_AUTHOR" = "$REPO_OWNER" ]; then
-            echo "Maintainer pull request: re-checking the whole project."
-            python3 scripts/check.py all
-          else
-            python3 scripts/check.py pr "$BASE_SHA"
-          fi
+      - name: Install bubblewrap
+        run: scripts/install_sandbox.sh
+
+      - name: Merge rules
+        run: python3 -I tests/test_automerge.py
+
+      - name: Attack and honest-contribution tests
+        run: tests/run_tests.sh

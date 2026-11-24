@@ -15,8 +15,10 @@ A pull request is merged only if ALL of these hold:
   * for a proof or refutation: the step's issue is open, is labelled `step`,
     is not retired, and is not claimed by somebody else;
   * for a new lemma: the pull request author opened the proposal issue whose
-    number the lemma carries, and a different GitHub user has approved the
-    pull request (the statement review).
+    number the lemma carries, and a reviewer listed in reviewers.json (kept by
+    the maintainer, read from main) other than the author has approved the
+    pull request's current head commit. Approvals by anyone else are advisory:
+    the statement waits for the maintainer.
 
 Anything that does not qualify is left alone for a person to look at.
 
@@ -29,12 +31,26 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
 
 ID = r"(?:S\d{3,6}|L\d{1,9})"
 PROOF_RE = re.compile(rf"^QPCP/Proofs/({ID})\.lean$")
 REFUTATION_RE = re.compile(rf"^QPCP/Refutations/({ID})\.lean$")
 LEMMA_RE = re.compile(r"^QPCP/Lemmas/L(\d{1,9})\.lean$")
 BOT_LOGINS = {"github-actions[bot]", "github-actions"}
+
+
+def trusted_reviewers(root=ROOT):
+    """Logins in reviewers.json, lower-cased. A missing or malformed file trusts nobody."""
+    try:
+        data = json.loads((root / "reviewers.json").read_text())
+    except (OSError, ValueError):
+        return set()
+    if not isinstance(data, list):
+        return set()
+    return {r.strip().lower() for r in data if isinstance(r, str) and r.strip()}
 
 QUERY = """
 query($owner: String!, $name: String!, $cursor: String) {
@@ -140,7 +156,7 @@ def check_passed(pr):
     return False
 
 
-def decide(pr, api, cache):
+def decide(pr, api, cache, reviewers_allowed=None):
     """Return (action, detail). action is 'skip' or a kind: proof, refutation, lemma."""
     author = (pr.get("author") or {}).get("login")
     if not author or pr["isDraft"]:
@@ -180,14 +196,21 @@ def decide(pr, api, cache):
             return "skip", f"issue #{number} is not an open proposal"
         if (issue.get("user") or {}).get("login") != author:
             return "skip", f"proposal #{number} was opened by someone else"
-        # The approval must be on the commit being merged, by someone else.
-        reviewers = {
+        # The approval must be on the commit being merged, by someone else,
+        # and by a reviewer the maintainer has listed in reviewers.json.
+        approvers = {
             (r.get("author") or {}).get("login")
             for r in pr["reviews"]["nodes"]
             if (r.get("commit") or {}).get("oid") == pr["headRefOid"]
-        } - {author, None} - BOT_LOGINS
+        } - {None} - BOT_LOGINS
+        approvers = {a for a in approvers if a.lower() != author.lower()}
+        allowed = trusted_reviewers() if reviewers_allowed is None else reviewers_allowed
+        reviewers = {a for a in approvers if a.lower() in allowed}
         if not reviewers:
-            return "skip", "no approving statement review by another contributor yet"
+            if approvers:
+                return "skip", ("waiting for the maintainer: approvals by "
+                                f"{', '.join(sorted(approvers))} are advisory (not in reviewers.json)")
+            return "skip", "no approving statement review by a listed reviewer yet"
         return "lemma", {
             "ident": f"L{number}", "issue": number, "author": author,
             "reviewers": sorted(reviewers), "title": issue.get("title") or "",
@@ -243,8 +266,10 @@ def main(argv):
         print("GH_TOKEN and GITHUB_REPOSITORY must be set", file=sys.stderr)
         return 2
     api, cache, merged = Api(token, repo, dry_run), {}, 0
+    allowed = trusted_reviewers()
+    print(f"listed statement reviewers: {', '.join(sorted(allowed)) or 'none'}")
     for pr in api.open_pulls():
-        kind, detail = decide(pr, api, cache)
+        kind, detail = decide(pr, api, cache, allowed)
         if kind == "skip":
             print(f"#{pr['number']}: left alone ({detail})")
             continue

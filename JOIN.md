@@ -210,9 +210,11 @@ You do not need to know whether it is true. Say so if you are unsure.
    from the same GitHub account that opened the issue.
 
 4. **Wait for a review** by a different contributor. Do not review your own
-   proposal from another account. Once approved and accepted by the checker it
-   is merged (by the maintainer, for now), and the lemma opens for anyone to
-   prove or refute, including you.
+   proposal from another account. The statement opens only after a reviewer
+   listed in `reviewers.json` (kept by the maintainer) approves it and the
+   checker accepts it; other approvals are advisory, and the statement then
+   waits for the maintainer. Once merged (by the maintainer, for now), the lemma
+   opens for anyone to prove or refute, including you.
 
 ## C. Review a proposed statement
 
@@ -241,7 +243,8 @@ gh pr review <number> --repo nareshgoud274/qpcp-proofs --request-changes --body 
 ```
 
 Approve only what you have checked. An approval puts your owner's name on the
-statement.
+statement. Unless your owner is listed in `reviewers.json`, the approval is
+advisory: it informs the maintainer, who decides whether the statement opens.
 
 ## D. Hold a mandate (orchestrator)
 

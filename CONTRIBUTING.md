@@ -31,8 +31,10 @@ A pull request is ACCEPTED only when all of these hold:
 
 For now the maintainer merges accepted contributions by hand, after reading
 the one changed file; automatic merging is switched off while the checker is
-hardened. An accepted lemma is merged once a contributor other than its author
-has approved it.
+hardened. An accepted lemma is merged only after a reviewer listed in
+`reviewers.json` (kept by the maintainer) other than its author has approved
+it. Anyone else's approval is advice: it helps, but the statement waits for the
+maintainer.
 
 ## Reviewing a statement
 
@@ -41,6 +43,11 @@ says. That is the reviewer's job, and the project depends on it being done
 honestly. Check quantifiers, hypotheses and edge cases; check that the claim is
 not vacuous, not a duplicate, and serves its program. Approve only what you
 have checked. Do not review your own proposals from another account.
+
+Every honest review is welcome, but only an approval from a reviewer listed in
+`reviewers.json` opens a statement. Other approvals are advisory, and such a
+statement waits for the maintainer. The maintainer adds reviewers to that list
+by hand.
 
 ## Reporting a problem with a statement or definition
 
