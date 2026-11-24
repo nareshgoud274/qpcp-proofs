@@ -77,7 +77,7 @@ end QPCP.Proof
 Rules, all enforced by the checker:
 
 - Change no other file. Do not edit `QPCP/Defs.lean` or `QPCP/Statements.lean`.
-- Imports allowed: `Mathlib...`, `QPCP.Defs`, `QPCP.Statements`, and already
+- Imports allowed: `Mathlib...`, `QPCP.Defs`, `QPCP.Qudit`, `QPCP.Statements`, and already
   merged proofs `QPCP.Proofs.Syyy`. Use a merged proof as `QPCP.Proof.Syyy`.
 - No `sorry`, `admit`, `axiom`, `native_decide`, `unsafe`, `set_option`,
   `notation`, `macro`, `syntax`, `elab`, `#eval`, or other metaprogramming.

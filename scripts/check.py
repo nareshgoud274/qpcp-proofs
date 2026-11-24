@@ -24,7 +24,7 @@ PROOF_DIR = "QPCP/Proofs"
 PROOF_RE = re.compile(r"^QPCP/Proofs/(S\d{3})\.lean$")
 ALLOWED_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
 ALLOWED_IMPORT_RE = re.compile(
-    r"^(Mathlib(\.[A-Za-z0-9_]+)*|QPCP\.Defs|QPCP\.Statements|QPCP\.Proofs\.S\d{3})$"
+    r"^(Mathlib(\.[A-Za-z0-9_]+)*|QPCP\.Defs|QPCP\.Qudit|QPCP\.Statements|QPCP\.Proofs\.S\d{3})$"
 )
 # Text-level guards. The axiom check below is the real gate; these keep proof
 # files plain (no metaprogramming, no code execution at build time).

@@ -30,6 +30,15 @@ The last section is the bridge to the classical setting: a constraint
 satisfaction problem is a diagonal local Hamiltonian, and its ground energy is
 the minimum number of violated constraints.
 
+## Phase 2 scope
+
+| Section | Steps | Content |
+| --- | --- | --- |
+| Bridge to general index types | S030 to S033 | Phase 1 notions agree with the general ones |
+| Ground energy, general | S034 to S043 | Bounds, attainment, monotonicity, diagonal operators |
+| Qudit locality | S044 to S048 | Locality for local dimension q |
+| Normalized Hamiltonians | S049 to S056 | Terms between 0 and 1, the relative gap, classical terms |
+
 ## Known gaps in the draft definitions
 
 These need a decision by a specialist reviewer before the project grows:
@@ -45,6 +54,9 @@ These need a decision by a specialist reviewer before the project grows:
 - **Reuse.** Existing Lean quantum information libraries may already provide
   reviewed versions of some of these notions. Building on them is preferable
   to maintaining separate definitions.
+
+Normalization, qudits, and the relative gap are now drafted in
+`QPCP/Qudit.lean` and await review.
 
 ## After the pilot
 
