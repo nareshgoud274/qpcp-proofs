@@ -60,7 +60,7 @@ jobs:
           target=""
           while IFS=$'\t' read -r num sid has; do
             [ -n "$num" ] || continue
-            if printf '%s\n' "$want" | grep -qx "$sid"; then should=true; else should=false; fi
+            if grep -qxF "$sid" <<< "$want"; then should=true; else should=false; fi
             if [ "$should" = true ] && [ "$has" = false ]; then
               gh issue edit "$num" --add-label disputed
             fi
