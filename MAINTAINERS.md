@@ -67,3 +67,16 @@ run `python3 scripts/create_issues.py` to create the missing issues.
 
 Run `bash scripts/bootstrap.sh` again on a branch, rebuild everything with
 `python3 scripts/check.py all`, repair any proofs that broke, and merge.
+
+## The site
+
+The site is static and reads its data from GitHub in the visitor's browser.
+
+- **Updates page:** publish a GitHub release; its title and notes appear
+  under Updates.
+- **Support page:** sponsorship is closed until `sponsorUrl` is set in
+  `docs/assets/site.js`. Before opening it, set `sponsorUses` to plain
+  statements of what the money pays for. Supporters are listed by hand in
+  `docs/sponsors.json` as `{"name": "...", "url": "https://...", "since": "2026-12"}`.
+  List a supporter only with their agreement.
+- The site never handles payments or payment details itself.

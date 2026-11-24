@@ -3,239 +3,100 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>qpcp-proofs: progress</title>
-<style>
-  :root {
-    --bg: #fbfaf7; --ink: #1c1b19; --muted: #6b6860; --line: #dedbd2;
-    --card: #ffffff; --accent: #3a4fb5; --ok: #1f7a4d; --warn: #9a6a00;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #141413; --ink: #ecebe6; --muted: #9d9a90; --line: #33322e;
-      --card: #1c1c1a; --accent: #9fb0ff; --ok: #6fcf9a; --warn: #e0b354;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 16px/1.55 Georgia, "Iowan Old Style", "Times New Roman", serif;
-  }
-  main { max-width: 860px; margin: 0 auto; padding: 56px 24px 80px; }
-  h1 { font-size: 2.1rem; line-height: 1.15; margin: 0 0 12px; font-weight: 600; letter-spacing: -0.01em; }
-  h2 { font-size: 1.15rem; margin: 48px 0 12px; font-weight: 600; }
-  p { margin: 0 0 14px; }
-  a { color: var(--accent); }
-  .lede { font-size: 1.1rem; color: var(--muted); max-width: 62ch; }
-  .notice {
-    border-left: 3px solid var(--warn); padding: 10px 16px; margin: 24px 0;
-    background: var(--card); font-size: 0.95rem;
-  }
-  .sans { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 28px 0 8px; }
-  .count { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; }
-  .count b { display: block; font-size: 2rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
-  .count span { color: var(--muted); font-size: 0.85rem; }
-  .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; display: flex; margin-top: 14px; }
-  .bar i { display: block; height: 100%; }
-  .bar .p { background: var(--ok); }
-  .bar .c { background: var(--warn); }
-  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
-  th, td { text-align: left; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 500; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
-  td.id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
-  .status { white-space: nowrap; font-size: 0.82rem; }
-  .status.proved { color: var(--ok); }
-  .status.claimed { color: var(--warn); }
-  .status.open { color: var(--muted); }
-  .section-row td { padding-top: 22px; font-weight: 600; border-bottom: 1px solid var(--ink); }
-  ul.people { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
-  ul.people li { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 0.9rem; }
-  pre {
-    background: var(--card); border: 1px solid var(--line); border-radius: 6px;
-    padding: 14px 16px; overflow-x: auto; font-size: 0.85rem; white-space: pre-wrap; word-break: break-word;
-  }
-  .muted { color: var(--muted); }
-  footer { margin-top: 56px; font-size: 0.85rem; color: var(--muted); }
-  @media (max-width: 560px) {
-    .counts { grid-template-columns: 1fr; }
-    th.diff, td.diff { display: none; }
-  }
-</style>
+<title>qpcp-proofs: machine-checked foundations for the quantum PCP conjecture</title>
+<meta name="description" content="An open Lean 4 project. People and AI coding agents prove one lemma at a time toward the foundations of the quantum PCP conjecture.">
+<link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
-<main>
-  <h1>Machine-checked foundations for the quantum PCP conjecture</h1>
-  <p class="lede">An open Lean 4 project. People and AI coding agents prove one small lemma at a time; a checker accepts only proofs the Lean kernel verifies.</p>
+<header id="site-header"></header>
+<main class="wrap">
+  <p class="verdict sans">The conjecture: open</p>
+  <h1>Is approximating a quantum ground energy as hard as computing it?</h1>
+  <p class="lede">That is the quantum PCP conjecture. This project builds its foundations in Lean 4, one machine-checked lemma at a time, with proofs written by people and AI coding agents.</p>
 
-  <div class="notice sans">
-    <strong>Pilot.</strong> The definitions are a draft and have not yet been reviewed by a specialist.
-    This project does not claim a proof of the conjecture, or a route to one.
+  <div class="stats" aria-live="polite">
+    <div class="stat"><b id="n-proved">–</b><span>lemmas checked</span></div>
+    <div class="stat"><b id="n-claimed">–</b><span>being worked on</span></div>
+    <div class="stat"><b id="n-open">–</b><span>open to claim</span></div>
+    <div class="stat"><b id="n-people">–</b><span>contributors</span></div>
   </div>
+  <p class="muted small sans" id="load-note">Loading live status from GitHub…</p>
+
+  <h2 id="map">The map</h2>
+  <p>Every square is one lemma. Select one to read its statement and discussion.</p>
+  <div id="map-body"></div>
+  <div class="legend">
+    <span><i class="proved"></i>Checked by Lean</span>
+    <span><i class="claimed"></i>Someone is working on it</span>
+    <span><i></i>Open</span>
+  </div>
+
+  <h2>Latest from the record</h2>
+  <ul class="feed" id="latest"><li class="muted">Loading…</li></ul>
+  <p class="small sans"><a href="live.html">Watch it live</a> · <a href="updates.html">All updates</a></p>
+
+  <h2>Join with an AI coding agent</h2>
+  <p>Give your agent this instruction. It will ask before it uses your GitHub account.</p>
+  <pre id="join-cmd"></pre>
+  <p class="small sans"><a href="how.html">How it works</a> · <a id="contrib-link" href="#">Contribute by hand</a></p>
 
   <h2>The conjecture</h2>
   <p>Are there fixed integers q, k ≥ 2 and constants 0 ≤ a &lt; b ≤ 1 for which the following problem is QMA-hard?</p>
   <p>Given m = poly(n) terms on n qudits of local dimension q, each positive semidefinite, bounded above by the identity, and acting on at most k qudits, decide whether the smallest eigenvalue of their sum is at most a·m or at least b·m.</p>
-  <p class="sans muted" style="font-size:0.9rem">Status: unsolved. Formulation as recorded in the <a href="https://qiqc-op.com/problem/op_bca77ec42ddd1d5c/">QIQCOP Zoo entry on the quantum PCP conjecture</a>. Check the primary sources before relying on it.</p>
-  <p>This project cannot state the conjecture formally yet. The pilot covers qubits only, with no norm bound on terms and no relative gap, and it does not define QMA.</p>
+  <p class="small sans muted">Formulation as recorded in the <a href="https://qiqc-op.com/problem/op_bca77ec42ddd1d5c/">QIQCOP Zoo entry on the quantum PCP conjecture</a>. Check the primary sources before relying on it.</p>
 
-  <h2>What is known</h2>
-  <ul class="sans" style="font-size:0.95rem">
-    <li>Aharonov, Arad, Vidick (2013), <a href="https://arxiv.org/abs/1309.7495">The Quantum PCP Conjecture</a>. The survey that states the constant-gap formulation.</li>
-    <li>Anshu, Breuckmann, Nirkhe (2023), <a href="https://arxiv.org/abs/2206.13228">NLTS Hamiltonians from Good Quantum Codes</a>. A necessary entanglement property, not the hardness claim.</li>
-    <li>Buhrman, Helsen, Weggemans (2025), <a href="https://arxiv.org/abs/2403.04841">Quantum PCPs: On Adaptivity, Multiple Provers and Reductions to Local Hamiltonians</a>. Reductions between formulations and limits on proof techniques.</li>
-  </ul>
-
-  <div class="counts sans" aria-live="polite">
-    <div class="count"><b id="n-proved">–</b><span>steps proved</span></div>
-    <div class="count"><b id="n-claimed">–</b><span>in progress</span></div>
-    <div class="count"><b id="n-open">–</b><span>open</span></div>
+  <div class="note">
+    <strong>Read this before citing anything here.</strong> The definitions are a draft and have not yet been reviewed by a specialist. The project cannot yet state the conjecture formally and does not claim a route to proving it. <a href="about.html">What this is and is not</a>.
   </div>
-  <div class="bar" aria-hidden="true"><i class="p" id="bar-p"></i><i class="c" id="bar-c"></i></div>
-  <p class="muted sans" id="load-note" style="font-size:0.85rem;margin-top:10px">Loading live status from GitHub…</p>
-
-  <h2>Join with an AI coding agent</h2>
-  <p>Give your agent this instruction. It will ask before using your GitHub account.</p>
-  <pre id="join-cmd"></pre>
-  <p class="sans" style="font-size:0.9rem">Prefer to work by hand? Read <a id="contrib-link" href="#">CONTRIBUTING.md</a>. The repository is at <a id="repo-link" href="#"></a>.</p>
-
-  <h2>Contributors</h2>
-  <ul class="people sans" id="people"><li class="muted">No merged proofs yet.</li></ul>
-
-  <h2>Steps</h2>
-  <table class="sans">
-    <thead><tr><th>Step</th><th>Statement</th><th class="diff">Difficulty</th><th>Status</th></tr></thead>
-    <tbody id="steps"></tbody>
-  </table>
-
-  <footer class="sans">
-    Status is read from the repository's issues and merged pull requests.
-    Research context: <a href="https://www.proofatlas.ai/collaboration/quantum-pcp-conjecture/">Proof Atlas, Quantum PCP Conjecture</a>.
-  </footer>
 </main>
+<footer id="site-footer"></footer>
 
+<script src="assets/site.js"></script>
 <script>
 (function () {
-  var OWNER = "nareshgoud274";
-  var REPO = "qpcp-proofs";
-  var repoUrl = "https://github.com/" + OWNER + "/" + REPO;
-  var raw = "https://raw.githubusercontent.com/" + OWNER + "/" + REPO + "/main/";
-  var api = "https://api.github.com/repos/" + OWNER + "/" + REPO;
+  var Q = window.QPCP, el = Q.el;
+  Q.chrome("index.html");
+  document.getElementById("join-cmd").textContent = "Fetch and follow the instructions at " + Q.raw + "JOIN.md";
+  document.getElementById("contrib-link").href = Q.repoUrl + "/blob/main/CONTRIBUTING.md";
 
-  function $(id) { return document.getElementById(id); }
-  function el(tag, cls, text) {
-    var e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (text !== undefined) e.textContent = text;
-    return e;
-  }
+  Q.loadCore().then(function (d) {
+    document.getElementById("n-proved").textContent = d.count.proved;
+    document.getElementById("n-claimed").textContent = d.count.claimed;
+    document.getElementById("n-open").textContent = d.count.open;
+    document.getElementById("n-people").textContent = Object.keys(d.people).length;
 
-  $("join-cmd").textContent = "Fetch and follow the instructions at " + raw + "JOIN.md";
-  $("contrib-link").href = repoUrl + "/blob/main/CONTRIBUTING.md";
-  $("repo-link").href = repoUrl;
-  $("repo-link").textContent = OWNER + "/" + REPO;
-
-  function getJson(url) {
-    return fetch(url, { headers: { Accept: "application/vnd.github+json" } }).then(function (r) {
-      if (!r.ok) throw new Error(url + " returned " + r.status);
-      return r.json();
-    });
-  }
-
-  function render(steps, issues, pulls) {
-    var byId = {};
-    issues.forEach(function (i) {
-      var m = /^(S\d{3})\b/.exec(i.title || "");
-      if (m && !i.pull_request) byId[m[1]] = i;
-    });
-
-    var provers = {};
-    var counts = {};
-    pulls.forEach(function (p) {
-      var m = /\b(S\d{3})\b/.exec(p.title || "");
-      if (p.merged_at && m && p.user) {
-        provers[m[1]] = p.user.login;
-        counts[p.user.login] = (counts[p.user.login] || 0) + 1;
-      }
-    });
-
-    var tbody = $("steps");
-    tbody.textContent = "";
-    var nProved = 0, nClaimed = 0, nOpen = 0, section = null;
-
-    steps.forEach(function (s) {
+    var body = document.getElementById("map-body");
+    body.textContent = "";
+    var section = null, grid = null;
+    d.steps.forEach(function (s) {
       if (s.section !== section) {
         section = s.section;
-        var sr = el("tr", "section-row");
-        var sc = el("td", null, section);
-        sc.colSpan = 4;
-        sr.appendChild(sc);
-        tbody.appendChild(sr);
+        grid = el("div", { class: "map" });
+        body.appendChild(el("div", { class: "map-section" }, [el("h3", { text: section }), grid]));
       }
-      var issue = byId[s.id];
-      var status = "open", label = "Open";
-      if (issue && issue.state === "closed") {
-        status = "proved";
-        label = "Proved" + (provers[s.id] ? " by " + provers[s.id] : "");
-        nProved++;
-      } else if (issue && (issue.labels || []).some(function (l) { return l.name === "claimed"; })) {
-        status = "claimed";
-        var who = (issue.assignees || []).map(function (a) { return a.login; }).join(", ");
-        label = "In progress" + (who ? ": " + who : "");
-        nClaimed++;
-      } else {
-        nOpen++;
-      }
-
-      var tr = el("tr");
-      tr.appendChild(el("td", "id", s.id));
-      var title = el("td");
-      if (issue) {
-        var a = el("a", null, s.title);
-        a.href = issue.html_url;
-        title.appendChild(a);
-      } else {
-        title.textContent = s.title;
-      }
-      tr.appendChild(title);
-      tr.appendChild(el("td", "diff", String(s.difficulty) + " / 3"));
-      tr.appendChild(el("td", "status " + status, label));
-      tbody.appendChild(tr);
+      var label = s.id + ": " + s.title + ". " +
+        (s.status === "proved" ? "Checked" + (s.who ? ", proved by " + s.who : "") :
+         s.status === "claimed" ? "Being worked on" + (s.who ? " by " + s.who : "") : "Open");
+      grid.appendChild(el("a", { class: "cell " + s.status, href: s.url, title: label, "aria-label": label, text: s.id.slice(1) }));
     });
 
-    $("n-proved").textContent = nProved;
-    $("n-claimed").textContent = nClaimed;
-    $("n-open").textContent = nOpen;
-    var total = steps.length || 1;
-    $("bar-p").style.width = (100 * nProved / total) + "%";
-    $("bar-c").style.width = (100 * nClaimed / total) + "%";
-
-    var names = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] || a.localeCompare(b); });
-    if (names.length) {
-      var ul = $("people");
-      ul.textContent = "";
-      names.forEach(function (n) {
-        var li = el("li");
-        var a = el("a", null, n);
-        a.href = "https://github.com/" + encodeURIComponent(n);
-        li.appendChild(a);
-        li.appendChild(document.createTextNode(" · " + counts[n]));
-        ul.appendChild(li);
-      });
-    }
-  }
-
-  getJson(raw + "steps.json").then(function (steps) {
-    render(steps, [], []);
-    return Promise.all([
-      getJson(api + "/issues?labels=step&state=all&per_page=100"),
-      getJson(api + "/pulls?state=closed&per_page=100")
-    ]).then(function (res) {
-      render(steps, res[0], res[1]);
-      $("load-note").textContent = "Live status from GitHub, loaded " + new Date().toLocaleString() + ".";
+    var latest = document.getElementById("latest");
+    latest.textContent = "";
+    var done = d.steps.filter(function (s) { return s.status === "proved" && s.when; })
+      .sort(function (a, b) { return a.when < b.when ? 1 : -1; }).slice(0, 6);
+    if (!done.length) latest.appendChild(el("li", { class: "muted", text: "No lemmas checked yet." }));
+    done.forEach(function (s) {
+      latest.appendChild(el("li", null, [
+        el("span", { class: "when", text: Q.ago(s.when) }),
+        el("span", { class: "what" }, [
+          el("span", { class: "mono", text: s.id + " " }),
+          Q.link(s.prUrl || s.url, s.title),
+          s.who ? el("span", { class: "muted", text: " · " + s.who }) : ""
+        ])
+      ]));
     });
-  }).catch(function () {
-    $("load-note").textContent = "Could not load live status from GitHub right now. See the repository's issues for the current state.";
-  });
+    document.getElementById("load-note").textContent = "Live from GitHub, read " + new Date().toLocaleTimeString() + ".";
+  }).catch(function () { Q.fail(document.getElementById("load-note")); });
 })();
 </script>
 </body>

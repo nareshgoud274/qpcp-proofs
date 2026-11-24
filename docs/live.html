@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live · qpcp-proofs</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="wrap">
+  <h1>Live</h1>
+  <p class="lede">What contributors and their agents are doing right now. This page re-reads GitHub every five minutes.</p>
+  <p class="muted small sans" id="load-note" aria-live="polite">Loading…</p>
+
+  <h2>Working now</h2>
+  <p class="small sans muted">Lemmas someone has claimed. A claim lapses after 24 hours without activity.</p>
+  <ul class="feed" id="working"></ul>
+
+  <h2>In the checker</h2>
+  <p class="small sans muted">Open pull requests waiting for the Lean check or for the maintainer to merge.</p>
+  <ul class="feed" id="checking"></ul>
+
+  <h2>Just checked</h2>
+  <ul class="feed" id="merged"></ul>
+</main>
+<footer id="site-footer"></footer>
+
+<script src="assets/site.js"></script>
+<script>
+(function () {
+  var Q = window.QPCP, el = Q.el;
+  Q.chrome("live.html");
+
+  function fill(id, rows, empty) {
+    var ul = document.getElementById(id);
+    ul.textContent = "";
+    if (!rows.length) ul.appendChild(el("li", { class: "muted", text: empty }));
+    rows.forEach(function (r) { ul.appendChild(r); });
+  }
+
+  function refresh() {
+    Q.loadCore(60000).then(function (d) {
+      fill("working", d.steps.filter(function (s) { return s.status === "claimed"; }).map(function (s) {
+        return el("li", null, [
+          el("span", { class: "when", text: Q.ago(s.when) }),
+          el("span", { class: "what" }, [
+            el("span", { class: "mono", text: s.id + " " }), Q.link(s.url, s.title),
+            el("span", { class: "tag warn", text: s.who || "claimed" })
+          ])
+        ]);
+      }), "Nobody is working on a lemma at the moment.");
+
+      fill("checking", d.openPulls.map(function (p) {
+        return el("li", null, [
+          el("span", { class: "when", text: Q.ago(p.created_at) }),
+          el("span", { class: "what" }, [
+            Q.link(p.html_url, p.title),
+            el("span", { class: "tag", text: p.user ? p.user.login : "" })
+          ])
+        ]);
+      }), "No pull requests are waiting.");
+
+      fill("merged", d.steps.filter(function (s) { return s.status === "proved" && s.when; })
+        .sort(function (a, b) { return a.when < b.when ? 1 : -1; }).slice(0, 12).map(function (s) {
+          return el("li", null, [
+            el("span", { class: "when", text: Q.ago(s.when) }),
+            el("span", { class: "what" }, [
+              el("span", { class: "mono", text: s.id + " " }), Q.link(s.prUrl || s.url, s.title),
+              el("span", { class: "tag ok", text: s.who ? "checked · " + s.who : "checked" })
+            ])
+          ]);
+        }), "No lemmas checked yet.");
+
+      document.getElementById("load-note").textContent =
+        d.count.proved + " checked, " + d.count.claimed + " in progress, " + d.count.open +
+        " open. Read from GitHub at " + new Date().toLocaleTimeString() + ".";
+    }).catch(function () { Q.fail(document.getElementById("load-note")); });
+  }
+
+  refresh();
+  setInterval(function () { if (!document.hidden) refresh(); }, 5 * 60 * 1000);
+})();
+</script>
+</body>
+</html>
