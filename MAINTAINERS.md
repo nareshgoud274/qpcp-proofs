@@ -41,11 +41,25 @@ dry-run mode only: it reports what it would merge and changes nothing. For
 each contribution, read the one changed file, confirm the `check` workflow
 succeeded on the pull request's current head commit, and merge it yourself.
 
-The hardening that automatic merging waits for (`HARDENING.md`, H3 to H5) is
-in place: a contributor's file is compiled only in a bubblewrap sandbox, and
-the verdict comes from a text export checked outside it (see "Known limits of
-the checker"). Turning merging on is your decision. To do it, remove the
-forced `--dry-run` and the `if: false` in `.github/workflows/automerge.yml`.
+**The hardening is not complete.** The check on a *new* contribution is now
+sandboxed and export-verified: the file is compiled only inside a bubblewrap
+sandbox, and the verdict comes from a text export checked outside it (see
+"Known limits of the checker"). But *previously merged* contributions are
+still built outside the sandbox, in four places:
+
+1. the first, "trusted" step of every contributor check
+   (`scripts/contribution_check.sh` builds all of main with `lake build QPCP`);
+2. `python3 scripts/check.py all`, on the maintainer's pull requests and in
+   `verify-main` (it also imports every contribution, running any
+   `initialize` code in it);
+3. the per-module `leanchecker` loop in `verify-main`;
+4. the `attack-tests` job (its trusted build is `lake build QPCP`).
+
+A merged file that got past the scanner would run in all four, could alter
+the toolchain and scripts on the runner, and so could forge later verdicts.
+Automatic merging therefore stays off until those four places build only
+maintainer-written modules outside a sandbox. Do not remove the forced
+`--dry-run` in `.github/workflows/automerge.yml` before then.
 
 Once enabled, the `automerge` workflow runs after every check and every ten
 minutes, and merges a pull request only if it adds exactly one contribution
@@ -99,6 +113,9 @@ the id to `retired.json` if the statement itself is at fault.
   axioms, and `scripts/verify_export.py` compares it with an export of the
   statement and axioms made from main. No untrusted `.olean` is read outside
   the sandbox.
+- Not yet covered: previously merged contributions are still built outside
+  the sandbox in four places (see "How contributions are merged"), so a
+  merged file that got past the scanner could forge later verdicts.
 - What this proves: the export contains a kernel-valid proof of exactly the
   statement on main, using only the three axioms. It does not prove that the
   merged source file is harmless to build elsewhere. That rests on the scanner
