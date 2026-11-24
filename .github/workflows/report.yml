@@ -1,6 +1,6 @@
 name: report
 
-# Keeps the `disputed` label on a step in sync with open reports about it.
+# Keeps the `disputed` label on steps in sync with open reports about them.
 # Runs the version on main and never checks out or runs contributed code.
 # Issue text reaches the shell only through environment variables.
 
@@ -30,39 +30,50 @@ jobs:
       NUMBER: ${{ github.event.issue.number }}
       TITLE: ${{ github.event.issue.title }}
     steps:
-      - name: Sync the step's disputed label
+      - name: Sync disputed labels
         run: |
           set -euo pipefail
 
+          # A report names its step at the start of the title: "Report S042: ...".
+          # Step ids mentioned later in the title are ignored.
+          id_of() { sed -nE 's/^[[:space:]]*[Rr]eport[[:space:]]+(S[0-9]{3}).*/\1/p'; }
+
           gh issue edit "$NUMBER" --add-label report
 
-          step="$(printf '%s' "$TITLE" | grep -oE 'S[0-9]{3}' | head -n 1 || true)"
+          step="$(printf '%s\n' "$TITLE" | id_of | head -n 1)"
           if [ -z "$step" ] || [ "$step" = "S000" ]; then
-            already="$(gh issue view "$NUMBER" --json comments --jq '[.comments[].body | select(contains("step id in the title"))] | length')"
-            if [ "$already" = "0" ]; then
-              gh issue comment "$NUMBER" --body "Please put the step id in the title, for example \`Report S042: ...\`, so this report can be linked to its lemma."
+            step=""
+            asked="$(gh issue view "$NUMBER" --json comments \
+              --jq '[.comments[].body | select(contains("step id at the start of the title"))] | length')"
+            if [ "$asked" = "0" ]; then
+              gh issue comment "$NUMBER" --body "Please put the step id at the start of the title, for example \`Report S042: ...\`, so this report can be linked to its lemma."
             fi
-            exit 0
           fi
 
-          # $step is now exactly S followed by three digits.
-          target="$(gh issue list --state all --label step --limit 1000 --json number,title \
-            --jq "[.[] | select(.title | startswith(\"${step}:\"))][0].number // empty")"
-          if [ -z "$target" ]; then
-            exit 0
-          fi
+          # Recompute from scratch which steps have an open report, so a closed
+          # report or an edited title never leaves a stale label behind.
+          want="$(gh issue list --state open --label report --limit 1000 --json title --jq '.[].title' | id_of | sort -u)"
 
-          open_reports="$(gh issue list --state open --label report --limit 1000 --json title \
-            --jq "[.[] | select(.title | contains(\"${step}\"))] | length")"
+          steps_tsv="$(gh issue list --state all --label step --limit 1000 --json number,title,labels \
+            --jq '.[] | [.number, .title[0:4], ((.labels | map(.name) | index("disputed")) != null)] | @tsv')"
 
-          if [ "$open_reports" != "0" ]; then
-            gh issue edit "$target" --add-label disputed
-          else
-            gh issue edit "$target" --remove-label disputed || true
-          fi
+          target=""
+          while IFS=$'\t' read -r num sid has; do
+            [ -n "$num" ] || continue
+            if printf '%s\n' "$want" | grep -qx "$sid"; then should=true; else should=false; fi
+            if [ "$should" = true ] && [ "$has" = false ]; then
+              gh issue edit "$num" --add-label disputed
+            fi
+            if [ "$should" = false ] && [ "$has" = true ]; then
+              gh issue edit "$num" --remove-label disputed
+            fi
+            if [ -n "$step" ] && [ "$sid" = "$step" ]; then target="$num"; fi
+          done <<< "$steps_tsv"
 
-          linked="$(gh issue view "$target" --json comments \
-            --jq "[.comments[].body | select(contains(\"report #${NUMBER}.\"))] | length")"
-          if [ "$linked" = "0" ]; then
-            gh issue comment "$target" --body "This statement has been reported as possibly false or wrongly formalized: see report #${NUMBER}. It is marked as under review until that report is resolved."
+          if [ -n "$target" ]; then
+            linked="$(gh issue view "$target" --json comments \
+              --jq "[.comments[].body | select(contains(\"report #${NUMBER}.\"))] | length")"
+            if [ "$linked" = "0" ]; then
+              gh issue comment "$target" --body "This statement has been reported as possibly false or wrongly formalized: see report #${NUMBER}. It is marked as under review until that report is resolved."
+            fi
           fi

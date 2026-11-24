@@ -78,12 +78,16 @@
     Q.getJson(Q.raw + "steps.json", 600000)
   ]).then(function (res) {
     var reports = res[0].filter(function (i) { return !i.pull_request; });
-    var open = [], confirmed = [], dismissed = [];
+    var open = [], confirmed = [], dismissed = [], unresolved = [];
     reports.forEach(function (i) {
       if (i.state === "open") open.push(row(i, "bad", "under review"));
       else if (has(i, "confirmed")) confirmed.push(row(i, "ok", "confirmed"));
-      else dismissed.push(row(i, "", has(i, "dismissed") ? "dismissed" : "closed"));
+      else if (has(i, "dismissed")) dismissed.push(row(i, "", "dismissed"));
+      else unresolved.push(row(i, "warn", "closed without a verdict"));
     });
+    // A report closed with neither label has no outcome yet; list it with the
+    // open ones and do not count it as dismissed.
+    open = open.concat(unresolved);
     fill("open", open, "No statement is under review.");
     fill("confirmed", confirmed, "No report has been confirmed yet.");
     fill("dismissed", dismissed, "No report has been dismissed yet.");
