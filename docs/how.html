@@ -30,7 +30,7 @@
       <h3>Red team</h3>
       <p>Works only on counterexamples. Claims an open lemma and tries to prove it false in Lean. A refutation counts exactly as much as a proof.</p>
       <h3>Statement reviewer</h3>
-      <p>Checks someone else's proposed lemma: does the Lean say what the plain sentence says? Must be a different contributor from the proposer. Waiting proposals are on the <a href="live.html">Live</a> page.</p>
+      <p>Checks someone else's proposed lemma: does the Lean say what the plain sentence says? Must be a different contributor from the proposer. Only an approval from a reviewer the maintainer has listed in <span class="mono">reviewers.json</span> opens a statement; other approvals are advice, and the statement waits for the maintainer. Waiting proposals are on the <a href="live.html">Live</a> page.</p>
       <h3>Barrier desk</h3>
       <p>Tests a mandate's approach against <a href="programs.html">known barriers</a> and names the one it hits. A flag is advice, not a verdict.</p>
     </div>
@@ -41,7 +41,7 @@
     <thead><tr><th>Question</th><th>Judge</th><th>Standing</th></tr></thead>
     <tbody>
       <tr><td>Is this proof or refutation correct?</td><td>The Lean checker, and nothing else</td><td>Final. Shown as proved or refuted.</td></tr>
-      <tr><td>Does the Lean statement say what the plain sentence says?</td><td>A contributor who did not write it</td><td>Required before a lemma opens. Can be challenged later by a <a href="reports.html">report</a>.</td></tr>
+      <tr><td>Does the Lean statement say what the plain sentence says?</td><td>A reviewer listed by the maintainer, who did not write it; other reviews are advice</td><td>Required before a lemma opens. Can be challenged later by a <a href="reports.html">report</a>.</td></tr>
       <tr><td>Can this approach work at all?</td><td>The barrier desk</td><td>Advice only.</td></tr>
       <tr><td>Do the definitions capture the mathematics? Is a result meaningful?</td><td>A human specialist</td><td>Tracked separately from Lean and shown per result. None so far.</td></tr>
     </tbody>
@@ -51,7 +51,7 @@
   <ol class="steps">
     <li><b>A lemma is proposed.</b> The proposer opens a proposal and submits one Lean file holding the statement, with the plain sentence and its program written at the top.</li>
     <li><b>The checker tests the statement.</b> It must compile, define exactly one proposition, and use only the project's existing definitions.</li>
-    <li><b>A different contributor reviews it.</b> The checker cannot tell whether the Lean matches the plain sentence. A second person, who did not write it, has to approve. Then the statement is frozen and the lemma opens.</li>
+    <li><b>A different contributor reviews it.</b> The checker cannot tell whether the Lean matches the plain sentence. A second person, who did not write it, has to approve, and that person must be on the maintainer's list of reviewers (<span class="mono">reviewers.json</span>). Anyone else's approval is advice, and the statement waits for the maintainer. Then the statement is frozen and the lemma opens.</li>
     <li><b>Someone claims it.</b> A contributor, or their AI agent, comments <span class="mono">/claim</span> on the lemma's issue. One contributor holds one lemma at a time.</li>
     <li><b>They prove or refute it.</b> One Lean file, which may use Mathlib and results already in the record.</li>
     <li><b>The checker decides.</b> No person judges whether a result is correct. For now the maintainer merges accepted results by hand after reading the one changed file; automatic merging is switched off while the checker is being hardened. The lemma turns green or red on the map, credited to the contributor's GitHub handle.</li>
@@ -64,7 +64,8 @@
       <h3>It does verify</h3>
       <ul>
         <li>A contribution adds one new file and changes nothing else.</li>
-        <li>The file compiles under the pinned versions of Lean and Mathlib.</li>
+        <li>The file compiles under the pinned versions of Lean and Mathlib. A contributor's file is compiled only inside a sandbox with no network and no write access to anything but one scratch folder.</li>
+        <li>What the sandbox hands back is a plain-text export of the result, never trusted: it is type-checked again by an independent checker (nanoda), and compared with an export of the statement made from the record itself.</li>
         <li>A proof has exactly the frozen statement as its type, and a refutation exactly its negation.</li>
         <li>The result rests only on Lean's three standard axioms. A file containing <span class="mono">sorry</span> fails.</li>
         <li>A new statement adds one proposition and nothing that could change the meaning of other files.</li>

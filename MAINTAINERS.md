@@ -36,13 +36,16 @@
 
 ## How contributions are merged
 
-**For now, the maintainer merges by hand.** Automatic merging is disabled
-until the checker's build is sandboxed and the compiled result is re-verified
-without trusting it (`HARDENING.md`, steps H3 to H5). Until then the
-`automerge` workflow runs in dry-run mode only: it reports what it would merge
-and changes nothing. For each contribution, read the one changed file, confirm
-the `check` workflow succeeded on the pull request's current head commit, and
-merge it yourself.
+**For now, the maintainer merges by hand.** The `automerge` workflow runs in
+dry-run mode only: it reports what it would merge and changes nothing. For
+each contribution, read the one changed file, confirm the `check` workflow
+succeeded on the pull request's current head commit, and merge it yourself.
+
+The hardening that automatic merging waits for (`HARDENING.md`, H3 to H5) is
+in place: a contributor's file is compiled only in a bubblewrap sandbox, and
+the verdict comes from a text export checked outside it (see "Known limits of
+the checker"). Turning merging on is your decision. To do it, remove the
+forced `--dry-run` and the `if: false` in `.github/workflows/automerge.yml`.
 
 Once enabled, the `automerge` workflow runs after every check and every ten
 minutes, and merges a pull request only if it adds exactly one contribution
@@ -51,8 +54,18 @@ or proposal rules in `scripts/automerge.py` hold. Because such a pull request
 changes no other file, the check that ran on it was main's own.
 
 Anything else stays open for you: pull requests touching several files,
-proofs of a lemma claimed by someone else, proposals nobody has reviewed.
-Close those or deal with them by hand.
+proofs of a lemma claimed by someone else, statements no listed reviewer has
+approved. Close those or deal with them by hand.
+
+### Statement reviewers
+
+A lemma statement merges only when a reviewer listed in `reviewers.json`, who
+is not its author, has approved the pull request's current head commit. The
+file is a JSON list of GitHub logins, compared without regard to case, and
+starts empty, so at first every statement waits for you. Anyone's approval is
+still shown on the pull request as advice. Add a login only for someone whose
+judgement on statements you trust, and remove it if that changes. You are not
+on the list automatically.
 
 Your own pull requests that change other files are not merged
 automatically. Review and merge them yourself.
@@ -72,19 +85,35 @@ the id to `retired.json` if the statement itself is at fault.
   `.olean` can run when another file imports it. A contributed file that
   reached such code could forge the checker's verdict and would run on every
   machine that builds the repository.
-- The source scanner in `scripts/check.py` is the defence against that. It is
-  a deny-list: it refuses every evaluation entry point and effect namespace
+- The source scanner in `scripts/check.py` is the first defence. It is a
+  deny-list: it refuses every evaluation entry point and effect namespace
   found so far, and any string literal (strings and interpolations can hide
-  code from a text scan), but it cannot be proven complete. Until the build is
-  sandboxed and the result re-verified (`HARDENING.md`, H3 to H5), read each
-  contributed file before merging it.
+  code from a text scan), but it cannot be proven complete. It is the only
+  defence for contributors who build the repository on their own machines.
+- The second defence, in CI (`scripts/contribution_check.sh`): main's library
+  is built first, with the contributed file moved aside. The contributed file
+  is then compiled, replayed with `leanchecker` and exported to text inside a
+  bubblewrap sandbox, with no network, a read-only system and one scratch
+  directory. Outside the sandbox, only that text export is used. The
+  independent kernel `nanoda_bin` type-checks it with only the three standard
+  axioms, and `scripts/verify_export.py` compares it with an export of the
+  statement and axioms made from main. No untrusted `.olean` is read outside
+  the sandbox.
+- What this proves: the export contains a kernel-valid proof of exactly the
+  statement on main, using only the three axioms. It does not prove that the
+  merged source file is harmless to build elsewhere. That rests on the scanner
+  and on your reading of the file.
+- `tests/run_tests.sh` keeps the known attacks as regression tests. It runs on
+  your own pull requests, along with honest proof, lemma and refutation
+  fixtures and forged exports.
+- `verify-main` replays every module with `leanchecker`, one module at a time,
+  at about 15 seconds each. When the record grows past a few hundred modules,
+  batch this step (for example, by splitting the module list across jobs).
 - One deliberate exception in the scanner: `←` is allowed directly after `[`
   or `,`, because proofs use it to reverse rewrite rules (`rw [← h]`). Binds
   need a `do` block, and `do` is refused.
 - Pull request builds run strangers' code. The workflow has a read-only token
   and no secrets. Never add secrets to the `check` workflow.
-- An independent re-check of compiled proofs with an external kernel checker is
-  a worthwhile later addition.
 
 ## Adding steps
 

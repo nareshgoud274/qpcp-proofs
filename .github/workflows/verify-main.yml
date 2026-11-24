@@ -34,3 +34,18 @@ jobs:
 
       - name: Check every proof
         run: python3 scripts/check.py all
+
+      # Replay every module of the record through the kernel, one module at a
+      # time: a whole-library run loads Mathlib once per module in parallel and
+      # runs out of memory. About 15 seconds a module; batch this when the
+      # record grows (see MAINTAINERS.md).
+      - name: Replay every module with leanchecker
+        run: |
+          set -euo pipefail
+          # Not the root module QPCP: it only imports, and leanchecker treats a
+          # name as a prefix, so `QPCP` would mean every module at once.
+          mods="$(git ls-files 'QPCP/*.lean' | sed 's/\.lean$//; s#/#.#g')"
+          for m in $mods; do
+            lake env leanchecker "$m" || { echo "leanchecker found a problem in $m"; exit 1; }
+          done
+          echo "leanchecker replayed $(printf '%s\n' $mods | wc -l) modules"

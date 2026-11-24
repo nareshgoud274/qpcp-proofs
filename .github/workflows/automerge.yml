@@ -1,10 +1,12 @@
 name: automerge
 
-# DRY RUN ONLY, for now. Automatic merging is disabled until the checker is
-# hardened (HARDENING.md, steps H3 to H5): this job always passes --dry-run, so
-# it only reports what it would merge, and it does not refresh the site status.
-# The maintainer merges contributions by hand meanwhile. To enable merging,
-# remove the forced --dry-run below and the `if: false` on the refresh step.
+# DRY RUN ONLY, until the maintainer decides otherwise. This job always passes
+# --dry-run, so it only reports what it would merge, and it does not refresh the
+# site status. The maintainer merges contributions by hand meanwhile. The
+# hardening this waited for (HARDENING.md, H3 to H5) is in place; to enable
+# merging, remove the forced --dry-run below and the `if: false` on the
+# refresh step. Lemma statements also need an approval from a reviewer listed
+# in reviewers.json.
 #
 # When enabled, it merges contributions the checker has accepted, so no person
 # has to click.
