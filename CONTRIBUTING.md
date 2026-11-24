@@ -18,7 +18,7 @@ A pull request is ACCEPTED only when all of these hold:
 
 - It adds or changes exactly one file, `QPCP/Proofs/Sxxx.lean`, for a step
   listed in `steps.json`.
-- The file imports only Mathlib, `QPCP.Defs`, `QPCP.Statements`, and merged
+- The file imports only Mathlib, `QPCP.Defs`, `QPCP.Qudit`, `QPCP.Statements`, and merged
   proofs, and uses no `sorry`, new axioms, or metaprogramming.
 - `lake build QPCP.Proofs.Sxxx` succeeds.
 - `QPCP.Proof.Sxxx` has exactly the type `QPCP.Statement.Sxxx`.

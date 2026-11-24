@@ -1,4 +1,5 @@
 import QPCP.Defs
+import QPCP.Qudit
 
 /-!
 # QPCP pilot: frozen statements
@@ -152,5 +153,149 @@ def S028 : Prop :=
 def S029 : Prop :=
   ∀ (n : ℕ) (S : Finset (Fin n)) (f : Config n → ℝ),
     (∀ x y : Config n, restrict S x = restrict S y → f x = f y) → ActsOn S (costOp f)
+
+/-! ## Phase 2: bridge from phase 1 to general index types -/
+
+/-- Phase 1 normalization agrees with the general notion. -/
+def S030 : Prop :=
+  ∀ (n : ℕ) (ψ : Config n → ℂ), IsState ψ ↔ IsStateOn ψ
+
+/-- Phase 1 energy agrees with the general notion. -/
+def S031 : Prop :=
+  ∀ (n : ℕ) (A : Op n) (ψ : Config n → ℂ), energy A ψ = energyOn A ψ
+
+/-- Phase 1 ground energy agrees with the general notion. -/
+def S032 : Prop :=
+  ∀ (n : ℕ) (A : Op n), groundEnergy A = groundEnergyOn A
+
+/-- Qubit locality is qudit locality with local dimension two. -/
+def S033 : Prop :=
+  ∀ (n : ℕ) (S : Finset (Fin n)) (A : Op n), ActsOn S A ↔ QActsOn (q := 2) S A
+
+/-! ## Phase 2: ground energy over a general finite index type -/
+
+/-- Energy is additive in the operator. -/
+def S034 : Prop :=
+  ∀ (ι : Type) [Fintype ι] (A B : Matrix ι ι ℂ) (ψ : ι → ℂ),
+    energyOn (A + B) ψ = energyOn A ψ + energyOn B ψ
+
+/-- The energies of states are bounded below. -/
+def S035 : Prop :=
+  ∀ (ι : Type) [Fintype ι] (A : Matrix ι ι ℂ),
+    BddBelow (energyOn A '' {ψ | IsStateOn ψ})
+
+/-- The ground energy is a lower bound on the energy of every state. -/
+def S036 : Prop :=
+  ∀ (ι : Type) [Fintype ι] (A : Matrix ι ι ℂ) (ψ : ι → ℂ),
+    IsStateOn ψ → groundEnergyOn A ≤ energyOn A ψ
+
+/-- The ground energy is attained by some state. -/
+def S037 : Prop :=
+  ∀ (ι : Type) [Fintype ι] [Nonempty ι] (A : Matrix ι ι ℂ),
+    ∃ ψ : ι → ℂ, IsStateOn ψ ∧ energyOn A ψ = groundEnergyOn A
+
+/-- The ground energy is superadditive. -/
+def S038 : Prop :=
+  ∀ (ι : Type) [Fintype ι] [Nonempty ι] (A B : Matrix ι ι ℂ),
+    groundEnergyOn A + groundEnergyOn B ≤ groundEnergyOn (A + B)
+
+open scoped ComplexOrder in
+/-- Positive semidefinite operators have nonnegative energy on every vector. -/
+def S039 : Prop :=
+  ∀ (ι : Type) [Fintype ι] (A : Matrix ι ι ℂ) (ψ : ι → ℂ),
+    A.PosSemidef → 0 ≤ energyOn A ψ
+
+open scoped ComplexOrder in
+/-- An operator bounded above by the identity has energy at most one on states. -/
+def S040 : Prop :=
+  ∀ (ι : Type) [Fintype ι] [DecidableEq ι] (A : Matrix ι ι ℂ) (ψ : ι → ℂ),
+    (1 - A).PosSemidef → IsStateOn ψ → energyOn A ψ ≤ 1
+
+open scoped ComplexOrder in
+/-- Positive semidefinite operators have nonnegative ground energy. -/
+def S041 : Prop :=
+  ∀ (ι : Type) [Fintype ι] (A : Matrix ι ι ℂ), A.PosSemidef → 0 ≤ groundEnergyOn A
+
+open scoped ComplexOrder in
+/-- The ground energy is monotone in the positive semidefinite order. -/
+def S042 : Prop :=
+  ∀ (ι : Type) [Fintype ι] [Nonempty ι] (A B : Matrix ι ι ℂ),
+    (B - A).PosSemidef → groundEnergyOn A ≤ groundEnergyOn B
+
+/-- The ground energy of a diagonal operator is its smallest diagonal entry. -/
+def S043 : Prop :=
+  ∀ (ι : Type) [Fintype ι] [DecidableEq ι] [Nonempty ι] (f : ι → ℝ),
+    groundEnergyOn (Matrix.diagonal fun x => (f x : ℂ)) = ⨅ x, f x
+
+/-! ## Phase 2: qudit locality -/
+
+/-- The zero operator acts on any set of qudits. -/
+def S044 : Prop :=
+  ∀ (q n : ℕ) (S : Finset (Fin n)), QActsOn S (0 : QOp q n)
+
+/-- Qudit locality is monotone in the support. -/
+def S045 : Prop :=
+  ∀ (q n : ℕ) (S T : Finset (Fin n)) (A : QOp q n), S ⊆ T → QActsOn S A → QActsOn T A
+
+/-- Sums of operators on `S` act on `S`. -/
+def S046 : Prop :=
+  ∀ (q n : ℕ) (S : Finset (Fin n)) (A B : QOp q n),
+    QActsOn S A → QActsOn S B → QActsOn S (A + B)
+
+/-- Products of operators on `S` act on `S`. -/
+def S047 : Prop :=
+  ∀ (q n : ℕ) (S : Finset (Fin n)) (A B : QOp q n),
+    QActsOn S A → QActsOn S B → QActsOn S (A * B)
+
+/-- Operators on disjoint sets of qudits commute. -/
+def S048 : Prop :=
+  ∀ (q n : ℕ) (S T : Finset (Fin n)) (A B : QOp q n),
+    Disjoint S T → QActsOn S A → QActsOn T B → Commute A B
+
+/-! ## Phase 2: normalized Hamiltonians and the relative gap -/
+
+open scoped ComplexOrder in
+/-- A normalized Hamiltonian is positive semidefinite. -/
+def S049 : Prop :=
+  ∀ (q n k : ℕ) (H : NormalizedHamiltonian q n k), H.toOp.PosSemidef
+
+open scoped ComplexOrder in
+/-- A normalized Hamiltonian is bounded above by its number of terms. -/
+def S050 : Prop :=
+  ∀ (q n k : ℕ) (H : NormalizedHamiltonian q n k),
+    (((H.numTerms : ℂ)) • (1 : QOp q n) - H.toOp).PosSemidef
+
+/-- The ground energy of a normalized Hamiltonian is nonnegative. -/
+def S051 : Prop :=
+  ∀ (q n k : ℕ) (H : NormalizedHamiltonian q n k), 0 ≤ groundEnergyOn H.toOp
+
+/-- The ground energy of a normalized Hamiltonian is at most its number of terms. -/
+def S052 : Prop :=
+  ∀ (q n k : ℕ) (H : NormalizedHamiltonian q n k),
+    groundEnergyOn H.toOp ≤ (H.numTerms : ℝ)
+
+/-- With `a < b` and at least one term, no instance is both a yes- and a no-instance. -/
+def S053 : Prop :=
+  ∀ (q n k : ℕ) (H : NormalizedHamiltonian q n k) (a b : ℝ),
+    a < b → 0 < H.numTerms → RelYes H a → RelNo H b → False
+
+/-- A normalized `k`-local Hamiltonian is also `k'`-local for `k ≤ k'`. -/
+def S054 : Prop :=
+  ∀ (q n k k' : ℕ) (H : NormalizedHamiltonian q n k), k ≤ k' →
+    ∃ H' : NormalizedHamiltonian q n k', H'.toOp = H.toOp ∧ H'.numTerms = H.numTerms
+
+/-- A cost function with values in `[0, 1]` that depends only on at most `k`
+qudits is a normalized term. -/
+def S055 : Prop :=
+  ∀ (q n k : ℕ) (S : Finset (Fin n)) (f : QConfig q n → ℝ),
+    S.card ≤ k →
+    (∀ x, 0 ≤ f x ∧ f x ≤ 1) →
+    (∀ x y : QConfig q n, qrestrict S x = qrestrict S y → f x = f y) →
+    ∃ t : NormalizedTerm q n k, t.op = Matrix.diagonal fun x => (f x : ℂ)
+
+/-- A normalized Hamiltonian with no terms has ground energy zero. -/
+def S056 : Prop :=
+  ∀ (q n k : ℕ) (H : NormalizedHamiltonian q n k),
+    H.numTerms = 0 → groundEnergyOn H.toOp = 0
 
 end QPCP.Statement
