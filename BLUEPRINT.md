@@ -11,6 +11,8 @@ This repository does not contain a formal statement of the conjecture yet.
 Stating it needs complexity classes (QMA, reductions) that the pilot does not
 define.
 
+The target formulation for this project is the one recorded in the QIQCOP Zoo (https://qiqc-op.com/problem/op_bca77ec42ddd1d5c/): n qudits of local dimension q, m = poly(n) positive semidefinite terms each bounded by the identity and acting on at most k qudits, with thresholds a·m and b·m for constants a < b. The "Known gaps" below are measured against that formulation.
+
 ## Pilot scope: foundations
 
 The pilot has 29 steps in five sections. See `steps.json` and
