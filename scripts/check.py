@@ -67,7 +67,7 @@ FORBIDDEN_TOKENS = [
     "do", "`(", "unsafe", "implemented_by", "extern", "opaque", "partial",
     "IO", "BaseIO", "EIO", "unsafeBaseIO", "unsafeIO", "unsafeEIO", "unsafeCast",
     # External tools and native code.
-    "polyrith", "native_decide", "+native", "bv_decide",
+    "polyrith", "native_decide", "+native", "bv_decide", "include_str",
     # Name quoting, which could spell any forbidden name.
     "«",
 ]
@@ -76,7 +76,7 @@ FORBIDDEN_TOKENS = [
 EFFECT_NAMESPACES = ["Lean", "IO", "System", "Elab", "Meta", "Core", "Macro", "Syntax", "FS", "Process"]
 # The only attributes a contributed file may use.
 ALLOWED_ATTRIBUTES = {"simp", "ext"}
-INTERPOLATED = "\u0000interpolated-string\u0000"
+QUOTE = "\u0000quote\u0000"
 # A statement file holds one proposition and must not change how files that
 # import it behave, so declarations other than its single `def` are refused.
 LEMMA_FORBIDDEN_TOKENS = [
@@ -146,27 +146,19 @@ def statement_exists(ident):
     return file_of("lemma", ident).is_file()
 
 
-def _ident_char(c):
-    return c.isalnum() or c in "_'!?."
-
-
-CHAR_LIT_RE = re.compile(r"'(?:\\(?:x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|.)|[^\\'\n])'")
-RAW_STR_RE = re.compile(r'r(#*)"')
-
-
 def strip_comments(src):
-    """Remove Lean comments and string literals so token scans see only code.
+    """Remove Lean comments so token scans see only code.
 
-    Character literals ('"') and raw strings (r"\\", r#"..."#) are recognised so
-    that they cannot open a fake string that hides code. An interpolated string
-    (s!"{...}", m!"...") contains code, so it is replaced by a marker that the
-    scanner refuses.
+    Contributed files may not contain string literals at all: every `"` outside
+    a comment is replaced by a marker that the scanner refuses. Strings are
+    never skipped over, so no literal (a char literal '"', a raw string, an
+    interpolated string such as s!"{...}" or dbg_trace "{...}") can hide code
+    from the scan.
     """
     out = []
     i, n, depth = 0, len(src), 0
     while i < n:
         two = src[i:i + 2]
-        prev = src[i - 1] if i > 0 else ""
         if depth > 0:
             if two == "/-":
                 depth += 1
@@ -182,21 +174,9 @@ def strip_comments(src):
         elif two == "--":
             while i < n and src[i] != "\n":
                 i += 1
-        elif src[i] == "'" and not _ident_char(prev) and CHAR_LIT_RE.match(src, i):
-            i = CHAR_LIT_RE.match(src, i).end()
-            out.append("' '")
-        elif src[i] == "r" and not _ident_char(prev) and RAW_STR_RE.match(src, i):
-            hashes = RAW_STR_RE.match(src, i).group(1)
-            end = src.find('"' + hashes, i + 2 + len(hashes))
-            i = n if end < 0 else end + 1 + len(hashes)
-            out.append('""')
         elif src[i] == '"':
-            interpolated = prev == "!" and i >= 2 and src[i - 2].isalpha()
+            out.append(QUOTE)
             i += 1
-            while i < n and src[i] != '"':
-                i += 2 if src[i] == "\\" else 1
-            i += 1
-            out.append(INTERPOLATED if interpolated else '""')
         else:
             out.append(src[i])
             i += 1
@@ -223,8 +203,10 @@ ASCII_BIND_RE = re.compile(r"<-(?!>)")  # `<-` but not the ASCII iff `<->`
 
 def forbidden_construct(code, kind):
     """The first forbidden construct in comment-stripped `code`, or None."""
-    if INTERPOLATED in code:
-        return "an interpolated string (`s!\"...\"`)"
+    if QUOTE in code:
+        return "a string literal (`\"`)"
+    if re.search(r"\bnative\s*:=", code):
+        return "`native :=`"
     tokens = FORBIDDEN_TOKENS + (LEMMA_FORBIDDEN_TOKENS if kind == "lemma" else [])
     for tok in tokens:
         if has_token(code, tok):
@@ -245,7 +227,7 @@ def forbidden_construct(code, kind):
         return f"the namespace `{m.group(0)[:-1]}`"
     for m in SCOPE_LINE_RE.finditer(code):
         for word in re.findall(r"[A-Za-z_][A-Za-z0-9_'.]*", m.group(2)):
-            if word.split(".")[0] in EFFECT_NAMESPACES:
+            if any(part in EFFECT_NAMESPACES for part in word.split(".")):
                 return f"`{m.group(1)} {word}`"
     if kind != "lemma":
         for m in list(ATTR_RE.finditer(code)) + list(ATTRIBUTE_CMD_RE.finditer(code)):

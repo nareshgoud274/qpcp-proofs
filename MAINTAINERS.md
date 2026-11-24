@@ -74,7 +74,8 @@ the id to `retired.json` if the statement itself is at fault.
   machine that builds the repository.
 - The source scanner in `scripts/check.py` is the defence against that. It is
   a deny-list: it refuses every evaluation entry point and effect namespace
-  found so far, but it cannot be proven complete. Until the build is
+  found so far, and any string literal (strings and interpolations can hide
+  code from a text scan), but it cannot be proven complete. Until the build is
   sandboxed and the result re-verified (`HARDENING.md`, H3 to H5), read each
   contributed file before merging it.
 - One deliberate exception in the scanner: `←` is allowed directly after `[`
