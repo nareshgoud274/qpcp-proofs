@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Updates · qpcp-proofs</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="wrap">
+  <h1>Updates</h1>
+  <p class="lede">Milestones, written by the maintainer and published as releases of the repository.</p>
+  <p class="small sans"><a id="atom" href="#">Subscribe to the feed</a></p>
+  <p class="muted small sans" id="load-note" aria-live="polite">Loading…</p>
+  <div id="releases"></div>
+</main>
+<footer id="site-footer"></footer>
+
+<script src="assets/site.js"></script>
+<script>
+(function () {
+  var Q = window.QPCP, el = Q.el;
+  Q.chrome("updates.html");
+  document.getElementById("atom").href = Q.repoUrl + "/releases.atom";
+
+  Q.getJson(Q.api + "/releases?per_page=30", 120000).then(function (rels) {
+    var box = document.getElementById("releases");
+    var note = document.getElementById("load-note");
+    box.textContent = "";
+    rels = rels.filter(function (r) { return !r.draft; });
+    if (!rels.length) { note.textContent = "No updates published yet."; return; }
+    note.textContent = "";
+    rels.forEach(function (r) {
+      var when = new Date(r.published_at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+      box.appendChild(el("h2", null, [Q.link(r.html_url, r.name || r.tag_name)]));
+      box.appendChild(el("p", { class: "small sans muted", text: when + " · " + r.tag_name }));
+      (r.body || "").split(/\n\s*\n/).forEach(function (para) {
+        if (para.trim()) box.appendChild(el("p", { text: para.trim() }));
+      });
+    });
+  }).catch(function () { Q.fail(document.getElementById("load-note")); });
+})();
+</script>
+</body>
+</html>

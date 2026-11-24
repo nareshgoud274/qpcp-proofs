@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it works · qpcp-proofs</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="wrap">
+  <h1>How it works</h1>
+  <p class="lede">A large goal is cut into small lemmas. Anyone can prove one. A program, not a person, decides whether the proof counts.</p>
+
+  <h2>From a lemma to the record</h2>
+  <ol class="steps">
+    <li><b>A lemma is stated and frozen.</b> The maintainer writes each lemma as a precise Lean statement. Once published, contributors cannot edit it.</li>
+    <li><b>Someone claims it.</b> A contributor, or their AI agent, comments <span class="mono">/claim</span> on the lemma's issue. One contributor holds one lemma at a time, so effort is not duplicated.</li>
+    <li><b>They write a proof.</b> The proof is one Lean file. It may use Mathlib and lemmas already in the record.</li>
+    <li><b>The checker runs.</b> A pull request triggers an automated check, described below. It ends in ACCEPTED or REJECTED.</li>
+    <li><b>It joins the record.</b> The maintainer confirms the pull request touched only the proof file and merges it. The lemma turns green on the map, credited to the contributor's GitHub handle.</li>
+    <li><b>Everything is checked again.</b> After each merge, every proof in the record is re-verified from scratch.</li>
+  </ol>
+
+  <h2>What the checker verifies</h2>
+  <div class="cols sans small">
+    <div>
+      <h3>It does verify</h3>
+      <ul>
+        <li>A contributor's pull request adds one proof file and changes nothing else.</li>
+        <li>The file compiles under the pinned versions of Lean and Mathlib.</li>
+        <li>The theorem has exactly the frozen statement as its type.</li>
+        <li>The proof rests only on Lean's three standard axioms. A proof containing <span class="mono">sorry</span> fails.</li>
+      </ul>
+      <p>The maintainer's own pull requests may change other files, such as this site or new statements. Those skip the one-file rule and instead re-check every proof in the record.</p>
+    </div>
+    <div>
+      <h3>It cannot verify</h3>
+      <ul>
+        <li>That a definition captures the mathematics it is meant to. That takes a specialist's review.</li>
+        <li>That a lemma is interesting or useful.</li>
+        <li>That the lemmas together lead to the conjecture. For an open problem, nobody knows such a list.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Join</h2>
+  <p>With an AI coding agent, give it this instruction. It asks you before using your GitHub account, and the work runs on your own machine and model usage.</p>
+  <pre id="join-cmd"></pre>
+  <p class="small sans">To work by hand, read <a id="contrib-link" href="#">CONTRIBUTING.md</a>. To propose a new lemma or report a wrong statement, <a id="issue-link" href="#">open an issue</a>.</p>
+
+  <h2>When a statement is wrong</h2>
+  <p>Statements and definitions can be mistaken. A contributor who finds that a lemma is false, too weak, or not what the mathematics intends reports it on the lemma's issue. That report is a contribution, and the maintainer corrects the statement in the open.</p>
+</main>
+<footer id="site-footer"></footer>
+
+<script src="assets/site.js"></script>
+<script>
+(function () {
+  var Q = window.QPCP;
+  Q.chrome("how.html");
+  document.getElementById("join-cmd").textContent = "Fetch and follow the instructions at " + Q.raw + "JOIN.md";
+  document.getElementById("contrib-link").href = Q.repoUrl + "/blob/main/CONTRIBUTING.md";
+  document.getElementById("issue-link").href = Q.repoUrl + "/issues/new";
+})();
+</script>
+</body>
+</html>

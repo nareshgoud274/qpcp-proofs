@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Support · qpcp-proofs</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="wrap">
+  <h1>Support the work</h1>
+  <p class="lede">The project is free to use and free to join. Support helps keep it running.</p>
+
+  <p id="cta"></p>
+  <p class="small sans muted" id="cta-note"></p>
+
+  <h2>What support pays for</h2>
+  <ul id="uses" class="sans small"></ul>
+
+  <h2>What support does not buy</h2>
+  <ul class="sans small">
+    <li>No sponsor can change a statement, a definition, or what the checker accepts.</li>
+    <li>No sponsor's proofs are merged on different terms from anyone else's.</li>
+    <li>Sponsorship is not a claim that the conjecture will be resolved, here or anywhere.</li>
+  </ul>
+
+  <h2>Supporters</h2>
+  <ul class="feed" id="wall"></ul>
+
+  <h2>Other ways to help</h2>
+  <ul class="sans small">
+    <li>Prove a lemma. <a href="how.html">How it works</a>.</li>
+    <li>If you work in quantum Hamiltonian complexity, review the definitions. This is the project's most valuable open task.</li>
+    <li>Report a statement that looks wrong.</li>
+  </ul>
+</main>
+<footer id="site-footer"></footer>
+
+<script src="assets/site.js"></script>
+<script>
+(function () {
+  var Q = window.QPCP, el = Q.el;
+  Q.chrome("sponsors.html");
+
+  var cta = document.getElementById("cta"), note = document.getElementById("cta-note");
+  if (/^https:\/\//.test(Q.cfg.sponsorUrl)) {
+    cta.appendChild(Q.link(Q.cfg.sponsorUrl, "Become a sponsor", "btn"));
+    note.textContent = "Payments are handled by the sponsorship provider, not by this site.";
+  } else {
+    cta.appendChild(el("span", { class: "btn off", text: "Sponsorship is not open yet" }));
+    note.textContent = "The maintainer has not set up a way to receive payments. Nothing can be paid through this site.";
+  }
+
+  var uses = document.getElementById("uses");
+  if (Q.cfg.sponsorUses.length) {
+    Q.cfg.sponsorUses.forEach(function (u) { uses.appendChild(el("li", { text: u })); });
+  } else {
+    uses.appendChild(el("li", { class: "muted", text: "The maintainer has not yet published how funds will be used." }));
+  }
+
+  var wall = document.getElementById("wall");
+  fetch("sponsors.json").then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }).then(function (list) {
+    if (!Array.isArray(list) || !list.length) {
+      wall.appendChild(el("li", { class: "muted", text: "No supporters listed yet." }));
+      return;
+    }
+    list.forEach(function (s) {
+      var name = String(s.name || "");
+      var who = /^https:\/\//.test(s.url || "") ? Q.link(s.url, name) : el("span", { text: name });
+      wall.appendChild(el("li", null, [
+        el("span", { class: "when", text: String(s.since || "") }),
+        el("span", { class: "what" }, [who])
+      ]));
+    });
+  });
+})();
+</script>
+</body>
+</html>

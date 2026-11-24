@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What this is and is not · qpcp-proofs</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="wrap">
+  <h1>What this is and is not</h1>
+  <p class="lede">A public, machine-checked library of the basic mathematics around the quantum PCP conjecture. Not a proof of it, and not a claim to be close.</p>
+
+  <div class="cols">
+    <div>
+      <h2>It is</h2>
+      <ul>
+        <li>A set of precisely stated lemmas about local Hamiltonians and ground energy, each proved in Lean 4 and checked by its kernel.</li>
+        <li>Open to anyone. Proofs come from people and from AI coding agents, and are credited by GitHub handle.</li>
+        <li>Fully public: the statements, the proofs, the checker and its logs are all in the repository.</li>
+      </ul>
+    </div>
+    <div>
+      <h2>It is not</h2>
+      <ul>
+        <li>A proof of the quantum PCP conjecture, or evidence for or against it.</li>
+        <li>New mathematics, so far. Every lemma checked to date is a known textbook fact.</li>
+        <li>Expert-reviewed, yet. The definitions are a draft. A proof here is exactly as meaningful as the definition it is about.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>How far this is from the conjecture</h2>
+  <ol class="steps">
+    <li><b>Vocabulary.</b> Local Hamiltonians, ground energy, locality, normalized terms. This is where the project is working.</li>
+    <li><b>The statement.</b> Writing the conjecture itself in Lean needs quantum complexity classes and reductions, which are not defined here yet.</li>
+    <li><b>Known theorems.</b> Results such as the QMA-completeness of the local Hamiltonian problem and the NLTS theorem. Each would be a large formalization of its own.</li>
+    <li><b>The conjecture.</b> Open for over twenty years. No one knows a list of lemmas that adds up to it. Finding one is the research.</li>
+  </ol>
+
+  <h2>What is known</h2>
+  <ul class="sans small">
+    <li>Aharonov, Arad, Vidick (2013), <a href="https://arxiv.org/abs/1309.7495">The Quantum PCP Conjecture</a>. The survey that states the constant-gap formulation.</li>
+    <li>Anshu, Breuckmann, Nirkhe (2023), <a href="https://arxiv.org/abs/2206.13228">NLTS Hamiltonians from Good Quantum Codes</a>. A necessary entanglement property, not the hardness claim.</li>
+    <li>Buhrman, Helsen, Weggemans (2025), <a href="https://arxiv.org/abs/2403.04841">Quantum PCPs: On Adaptivity, Multiple Provers and Reductions to Local Hamiltonians</a>. Reductions between formulations and limits on proof techniques.</li>
+  </ul>
+
+  <h2>Questions</h2>
+  <h3>Why do this if it will not settle the conjecture?</h3>
+  <p>Verified foundations are reusable. Any later formal work on Hamiltonian complexity needs these definitions and lemmas, and a shared, checked library saves everyone from rebuilding them.</p>
+  <h3>Can an AI agent's proof be trusted?</h3>
+  <p>The proof is not trusted; it is checked. Lean's kernel accepts a proof only if every step follows. Who or what wrote it does not matter.</p>
+  <h3>What could still be wrong?</h3>
+  <p>The definitions. If a definition does not mean what it should, lemmas about it are correct but beside the point. That is why a specialist review is the project's most important open task.</p>
+  <h3>Who runs it?</h3>
+  <p>The project is maintained by <a id="owner-link" href="#"></a> on GitHub. It was inspired by the open effort at <a href="https://pequalnp.com">pequalnp.com</a> and is not affiliated with it.</p>
+
+  <h2>Related</h2>
+  <ul class="sans small">
+    <li><a href="https://qiqc-op.com/problem/op_bca77ec42ddd1d5c/">QIQCOP Zoo: The quantum PCP conjecture</a>, the reference formulation used here.</li>
+    <li><a href="https://www.proofatlas.ai/collaboration/quantum-pcp-conjecture/">Proof Atlas: Quantum PCP Conjecture</a>, an informal map of research routes.</li>
+  </ul>
+</main>
+<footer id="site-footer"></footer>
+
+<script src="assets/site.js"></script>
+<script>
+(function () {
+  var Q = window.QPCP;
+  Q.chrome("about.html");
+  var a = document.getElementById("owner-link");
+  a.href = "https://github.com/" + Q.cfg.owner;
+  a.textContent = Q.cfg.owner;
+})();
+</script>
+</body>
+</html>

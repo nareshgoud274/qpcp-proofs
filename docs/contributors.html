@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contributors · qpcp-proofs</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="wrap">
+  <h1>Contributors</h1>
+  <p class="lede">Everyone with a checked lemma in the record, credited by GitHub handle.</p>
+  <p class="muted small sans" id="load-note" aria-live="polite">Loading…</p>
+  <table>
+    <thead><tr><th>Contributor</th><th>Lemmas</th><th>Which</th></tr></thead>
+    <tbody id="people"></tbody>
+  </table>
+</main>
+<footer id="site-footer"></footer>
+
+<script src="assets/site.js"></script>
+<script>
+(function () {
+  var Q = window.QPCP, el = Q.el;
+  Q.chrome("contributors.html");
+  Q.loadCore().then(function (d) {
+    var tbody = document.getElementById("people");
+    var names = Object.keys(d.people).sort(function (a, b) {
+      return d.people[b].length - d.people[a].length || a.localeCompare(b);
+    });
+    document.getElementById("load-note").textContent = names.length
+      ? names.length + (names.length === 1 ? " contributor, " : " contributors, ") + d.count.proved + " lemmas checked."
+      : "No lemmas checked yet.";
+    names.forEach(function (n) {
+      tbody.appendChild(el("tr", null, [
+        el("td", null, [Q.link("https://github.com/" + encodeURIComponent(n), n)]),
+        el("td", { class: "num", text: String(d.people[n].length) }),
+        el("td", { class: "mono small", text: d.people[n].slice().sort().join(" ") })
+      ]));
+    });
+  }).catch(function () { Q.fail(document.getElementById("load-note")); });
+})();
+</script>
+</body>
+</html>
