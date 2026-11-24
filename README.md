@@ -4,8 +4,8 @@ An open, machine-checked effort to formalize the foundations around the
 **quantum PCP conjecture** in Lean 4, built by people and AI coding agents.
 
 **Status: the pilot's 29 steps are proved; phase 2 (27 steps) is open. Definitions unreviewed.** The definitions in `QPCP/Defs.lean`
-are a draft and have not yet been reviewed by a specialist in Hamiltonian
-complexity. Proofs here are checked by Lean against those definitions; they
+and `QPCP/Qudit.lean` are drafts and have not yet been reviewed by a specialist
+in Hamiltonian complexity. Proofs here are checked by Lean against those definitions; they
 say nothing about the conjecture itself yet.
 
 ## What this project is, and is not
