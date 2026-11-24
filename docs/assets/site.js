@@ -15,9 +15,14 @@
   var repoUrl = "https://github.com/" + CFG.owner + "/" + CFG.repo;
   var raw = "https://raw.githubusercontent.com/" + CFG.owner + "/" + CFG.repo + "/main/";
   var api = "https://api.github.com/repos/" + CFG.owner + "/" + CFG.repo;
+  // One prebuilt file with everything the site shows, rebuilt by the `status`
+  // workflow. Reading it costs no GitHub API calls, so any number of visitors
+  // can watch. If it is missing, the pages fall back to the API.
+  var statusUrl = "https://raw.githubusercontent.com/" + CFG.owner + "/" + CFG.repo + "/site-data/status.json";
 
   var PAGES = [
     ["index.html", "Map"],
+    ["programs.html", "Programs"],
     ["live.html", "Live"],
     ["updates.html", "Updates"],
     ["reports.html", "Reports"],
@@ -94,12 +99,35 @@
   }
 
   function stepOf(title) {
-    var m = /\b(S\d{3})\b/.exec(title || "");
+    var m = /\b(S\d{3,6}|L\d{1,9})\b/.exec(title || "");
     return m ? m[1] : null;
+  }
+
+  function loadStatus(maxAgeMs) {
+    return getJson(statusUrl, maxAgeMs === undefined ? 60000 : maxAgeMs).then(function (s) {
+      if (!s || !Array.isArray(s.steps) || !s.count) throw new Error("bad status file");
+      return s;
+    });
   }
 
   /* Loads the step list and its live status. maxAgeMs controls cache reuse. */
   function loadCore(maxAgeMs) {
+    return loadStatus(maxAgeMs).then(function (s) {
+      s.steps.forEach(function (st) { if (!st.url) st.url = repoUrl + "/issues"; });
+      return {
+        steps: s.steps, count: s.count, people: s.people || {},
+        openPulls: (s.openPulls || []).map(function (p) {
+          return { title: p.title, html_url: p.url, created_at: p.created_at, user: { login: p.user } };
+        }),
+        openPullCount: s.openPullCount || 0,
+        programs: s.programs || [], proposals: s.proposals || [],
+        mandates: s.mandates || [], barriers: s.barriers || [],
+        generatedAt: s.generated_at
+      };
+    }).catch(function () { return loadCoreFromApi(maxAgeMs); });
+  }
+
+  function loadCoreFromApi(maxAgeMs) {
     var age = maxAgeMs === undefined ? 120000 : maxAgeMs;
     return getJson(raw + "steps.json", 600000).then(function (steps) {
       return Promise.all([
@@ -144,8 +172,8 @@
         who = pr ? pr.user.login : "";
         when = pr ? pr.merged_at : issue.closed_at;
         if (who) {
-          people[who] = people[who] || [];
-          people[who].push(s.id);
+          people[who] = people[who] || { proved: [], refuted: [], stated: [] };
+          people[who].proved.push(s.id);
         }
       } else if (has("claimed")) {
         status = "claimed";
@@ -162,12 +190,12 @@
       };
     });
 
-    var count = { proved: 0, claimed: 0, open: 0, retired: 0, disputed: 0 };
+    var count = { proved: 0, refuted: 0, claimed: 0, open: 0, retired: 0, disputed: 0, proposals: 0 };
     out.forEach(function (s) {
       count[s.status]++;
       if (s.disputed) count.disputed++;
     });
-    return { steps: out, count: count, people: people, openPulls: openPulls };
+    return { steps: out, count: count, people: people, openPulls: openPulls, openPullCount: openPulls.length, programs: [], proposals: [], mandates: [], barriers: [], generatedAt: "" };
   }
 
   function chrome(active) {
@@ -192,6 +220,51 @@
     }
   }
 
+  /* Reports, newest first: {step, summary, verdict, user, when, url}. */
+  function loadReports() {
+    return loadStatus().then(function (s) {
+      return {
+        retired: s.count.retired || 0, generatedAt: s.generated_at,
+        reports: (s.reports || []).map(function (r) {
+          return { step: r.step, summary: r.summary, verdict: r.verdict, user: r.user, when: r.closed_at || r.created_at, url: r.url };
+        })
+      };
+    }).catch(function () {
+      return Promise.all([
+        getPaged(api + "/issues?labels=report&state=all", 120000, 10),
+        getJson(raw + "steps.json", 600000)
+      ]).then(function (res) {
+        var has = function (i, n) { return (i.labels || []).some(function (l) { return l.name === n; }); };
+        return {
+          retired: res[1].filter(function (s) { return s.retired; }).length, generatedAt: "",
+          reports: res[0].filter(function (i) { return !i.pull_request; }).map(function (i) {
+            var t = String(i.title || "");
+            return {
+              step: stepOf(t) || "", summary: t.replace(/^\s*Report\s+S\d{3,6}\s*:?\s*/i, "") || "(no summary)",
+              verdict: i.state === "open" ? "open" : has(i, "confirmed") ? "confirmed" : has(i, "dismissed") ? "dismissed" : "unresolved",
+              user: i.user ? i.user.login : "", when: i.closed_at || i.created_at, url: i.html_url
+            };
+          })
+        };
+      });
+    });
+  }
+
+  function loadReleases() {
+    return loadStatus().then(function (s) { return s.releases || []; }).catch(function () {
+      return getJson(api + "/releases?per_page=30", 120000).then(function (rels) {
+        return rels.filter(function (r) { return !r.draft; }).map(function (r) {
+          return { name: r.name || r.tag_name, tag: r.tag_name, published_at: r.published_at, body: r.body || "", url: r.html_url };
+        });
+      });
+    });
+  }
+
+  /* "Record as of 3 min ago" when reading the prebuilt file, else the read time. */
+  function stamp(generatedAt) {
+    return generatedAt ? "Record as of " + ago(generatedAt) + "." : "Live from GitHub, read " + new Date().toLocaleTimeString() + ".";
+  }
+
   function fail(node) {
     if (node) node.textContent = "Could not load live data from GitHub right now. The repository's issues show the current state.";
   }
@@ -199,6 +272,6 @@
   window.QPCP = {
     cfg: CFG, repoUrl: repoUrl, raw: raw, api: api,
     el: el, link: link, getJson: getJson, getPaged: getPaged, ago: ago, stepOf: stepOf,
-    loadCore: loadCore, chrome: chrome, fail: fail
+    loadCore: loadCore, loadReports: loadReports, loadReleases: loadReleases, stamp: stamp, chrome: chrome, fail: fail
   };
 })();

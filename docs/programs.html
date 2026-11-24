@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Programs · qpcp-proofs</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="wrap">
+  <h1>Programs</h1>
+  <p class="lede">A program is one line of work with a goal in plain words. Every proposed lemma names the program it serves.</p>
+  <p><a class="btn" id="propose-btn" href="#">Propose a lemma</a> &nbsp; <a class="sans small" id="mandate-btn" href="#">Open a mandate</a></p>
+  <p class="small sans muted">You need a GitHub account. A proposal opens for proof only after a different contributor has reviewed its statement. A mandate is a goal inside a program that one contributor, its holder, takes on and proposes lemmas for. <a href="how.html">How it works</a>.</p>
+  <p class="muted small sans" id="load-note" aria-live="polite">Loading…</p>
+
+  <div id="programs"></div>
+
+  <h2>Milestones</h2>
+  <p class="small sans muted">Mandates that reached their goal, each closed with a one-line finding by its holder.</p>
+  <ul class="feed" id="milestones"></ul>
+
+  <h2>Ruled dead</h2>
+  <p class="small sans muted">Approaches that were tried and abandoned, with the reason. A dead end on record saves everyone else the trip.</p>
+  <ul class="feed" id="dead"></ul>
+
+  <h2>Barrier desk</h2>
+  <p>Some approaches to the conjecture are known not to work. Before effort goes into a mandate that aims beyond the foundations, anyone can test it against these barriers and flag it. A flag is advice from a contributor. It is not a verdict of the checker.</p>
+  <div id="barriers"></div>
+
+  <h2>Why some programs are closed</h2>
+  <p>Contributors can state lemmas about the definitions the project already has. They cannot yet add definitions. The closed programs need new ones, such as quantum verification and reductions, and a wrong definition would quietly spoil everything built on it. Those are waiting for a specialist in Hamiltonian complexity to write and review them.</p>
+  <p>That is also the honest limit of this project today: the open programs build and explore the ground the conjecture stands on. They do not yet reach the conjecture itself.</p>
+</main>
+<footer id="site-footer"></footer>
+
+<script src="assets/site.js"></script>
+<script>
+(function () {
+  var Q = window.QPCP, el = Q.el;
+  Q.chrome("programs.html");
+  document.getElementById("propose-btn").href = Q.repoUrl + "/issues/new?template=propose-lemma.yml";
+  document.getElementById("mandate-btn").href = Q.repoUrl + "/issues/new?template=open-mandate.yml";
+
+  function mandateRow(m, barrierName) {
+    var kids = [Q.link(m.url, m.title), el("span", { class: "muted", text: m.user ? " · held by " + m.user : "" })];
+    (m.barriers || []).forEach(function (b) {
+      kids.push(el("span", { class: "tag bad", text: "barrier flagged: " + (barrierName[b] || b) }));
+    });
+    if (m.finding) kids.push(el("div", { class: "small", text: m.finding }));
+    return el("li", null, [
+      el("span", { class: "when", text: Q.ago(m.closed_at || m.created_at) }),
+      el("span", { class: "what" }, kids)
+    ]);
+  }
+  function fill(id, rows, empty) {
+    var ul = document.getElementById(id);
+    ul.textContent = "";
+    if (!rows.length) ul.appendChild(el("li", { class: "muted", text: empty }));
+    rows.forEach(function (r) { ul.appendChild(r); });
+  }
+
+  Q.loadCore().then(function (d) {
+    var box = document.getElementById("programs");
+    var note = document.getElementById("load-note");
+    box.textContent = "";
+    if (!d.programs.length) {
+      note.textContent = "The program list is not available right now.";
+      return;
+    }
+    note.textContent = Q.stamp(d.generatedAt);
+    var barrierName = {};
+    d.barriers.forEach(function (b) { barrierName[b.id] = b.name; });
+    var active = d.mandates.filter(function (m) { return m.state === "active"; });
+    fill("milestones", d.mandates.filter(function (m) { return m.state === "milestone"; })
+      .map(function (m) { return mandateRow(m, barrierName); }), "No mandate has reached a milestone yet.");
+    fill("dead", d.mandates.filter(function (m) { return m.state === "dead"; })
+      .map(function (m) { return mandateRow(m, barrierName); }), "No approach has been ruled dead yet.");
+    var bbox = document.getElementById("barriers");
+    bbox.textContent = "";
+    d.barriers.forEach(function (b) {
+      bbox.appendChild(el("div", { class: "program closed" }, [
+        el("h2", null, [el("span", { text: b.name })]),
+        el("p", { class: "small sans", text: b.test }),
+        el("p", { class: "small sans muted" }, [Q.link(b.url, b.source), el("span", { class: "mono", text: "  barrier id: " + b.id })])
+      ]));
+    });
+    d.programs.forEach(function (p) {
+      var c = p.count || {}, settled = (c.proved || 0) + (c.refuted || 0);
+      var total = settled + (c.claimed || 0) + (c.open || 0);
+      var card = el("div", { class: "program" + (p.open ? "" : " closed") }, [
+        el("h2", null, [
+          el("span", { text: p.title }),
+          el("span", { class: "tag " + (p.open ? "ok" : ""), text: p.open ? "open to proposals" : "closed to proposals" })
+        ]),
+        el("p", { text: p.goal }),
+        el("p", { class: "small sans muted", text: (p.open ? "Wanted: " : "") + p.wanted })
+      ]);
+      if (total) {
+        var bar = el("div", { class: "bar", "aria-hidden": "true" });
+        [["p", c.proved], ["r", c.refuted], ["c", c.claimed]].forEach(function (seg) {
+          var i = el("i", { class: seg[0] });
+          i.style.width = (100 * (seg[1] || 0) / total) + "%";
+          bar.appendChild(i);
+        });
+        card.appendChild(bar);
+        card.appendChild(el("p", { class: "small sans muted", text:
+          (c.proved || 0) + " proved, " + (c.refuted || 0) + " refuted, " +
+          (c.claimed || 0) + " in progress, " + (c.open || 0) + " open" }));
+      } else {
+        card.appendChild(el("p", { class: "small sans muted", text: "No lemmas stated yet." }));
+      }
+      var mine = active.filter(function (m) { return m.program === p.id; });
+      if (mine.length) {
+        card.appendChild(el("p", { class: "small sans", text: "Active mandates:" }));
+        var ul = el("ul", { class: "feed" });
+        mine.forEach(function (m) { ul.appendChild(mandateRow(m, barrierName)); });
+        card.appendChild(ul);
+      }
+      card.appendChild(el("p", { class: "mono small muted", text: "program id: " + p.id }));
+      box.appendChild(card);
+    });
+  }).catch(function () { Q.fail(document.getElementById("load-note")); });
+})();
+</script>
+</body>
+</html>

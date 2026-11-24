@@ -1,0 +1,60 @@
+name: automerge
+
+# DRY RUN ONLY, for now. Automatic merging is disabled until the checker is
+# hardened (HARDENING.md, steps H3 to H5): this job always passes --dry-run, so
+# it only reports what it would merge, and it does not refresh the site status.
+# The maintainer merges contributions by hand meanwhile. To enable merging,
+# remove the forced --dry-run below and the `if: false` on the refresh step.
+#
+# When enabled, it merges contributions the checker has accepted, so no person
+# has to click.
+#
+# Trust: this workflow always runs the version on main, checks out main only,
+# and never runs contributed code. scripts/automerge.py decides from pull
+# request metadata read through the GitHub API. Its rules are in that file.
+
+on:
+  workflow_run:
+    workflows: [check]
+    types: [completed]
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only report what would be merged"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: automerge
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Report what would be merged (dry run only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/automerge.py --dry-run
+
+      # Merges made with the workflow token do not trigger other workflows, so
+      # ask for the site's status file to be rebuilt.
+      - name: Refresh the site status
+        if: false  # disabled while automerge runs in dry-run mode only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run status.yml --repo "$GITHUB_REPOSITORY" || true

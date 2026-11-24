@@ -1,0 +1,58 @@
+name: status
+
+# Builds status.json, the one file the project site reads, and publishes it on
+# the `site-data` branch. Visitors' browsers then make no GitHub API calls.
+#
+# This workflow always runs the version on main, checks out main only, and
+# never runs contributed code.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  push:
+    branches: [main]
+  issues:
+    types: [opened, closed, reopened, labeled, unlabeled, edited]
+  pull_request_target:
+    types: [opened, closed, reopened]
+  release:
+    types: [published, edited, deleted]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: read
+  pull-requests: read
+
+# One run at a time. A burst of events collapses into the run in progress plus
+# at most one queued run, so heavy activity cannot pile up or starve the build.
+concurrency:
+  group: status
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Build status.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/build_status.py "$RUNNER_TEMP/out/status.json"
+
+      - name: Publish to the site-data branch
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/out"
+          git init -q -b site-data
+          git config user.name "qpcp-status"
+          git config user.email "qpcp-status@users.noreply.github.com"
+          git add status.json
+          git commit -q -m "status $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" site-data
+        env:
+          GH_TOKEN: ${{ github.token }}

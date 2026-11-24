@@ -34,25 +34,53 @@
 5. **Workflow approval.** In Settings, under Actions, General, keep "Require
    approval for first-time contributors" turned on.
 
-## Merging a proof pull request
+## How contributions are merged
 
-Before approving a workflow run or merging, open the pull request's "Files
-changed" tab and confirm:
+**For now, the maintainer merges by hand.** Automatic merging is disabled
+until the checker's build is sandboxed and the compiled result is re-verified
+without trusting it (`HARDENING.md`, steps H3 to H5). Until then the
+`automerge` workflow runs in dry-run mode only: it reports what it would merge
+and changes nothing. For each contribution, read the one changed file, confirm
+the `check` workflow succeeded on the pull request's current head commit, and
+merge it yourself.
 
-- Exactly one file changed, and it is `QPCP/Proofs/Sxxx.lean`.
-- Nothing under `.github/`, `scripts/`, `QPCP/Defs.lean`,
-  `QPCP/Statements.lean`, `steps.json`, or the Lake files changed.
+Once enabled, the `automerge` workflow runs after every check and every ten
+minutes, and merges a pull request only if it adds exactly one contribution
+file, the `check` workflow succeeded on its current head commit, and the step
+or proposal rules in `scripts/automerge.py` hold. Because such a pull request
+changes no other file, the check that ran on it was main's own.
 
-Then merge only if `check` is green. This manual look matters: a pull request
-can edit the workflow that checks it, and the green mark alone would not show
-that. After the merge, `verify-main` re-checks every proof with the checker on
-`main`. If it fails, revert the merge.
+Anything else stays open for you: pull requests touching several files,
+proofs of a lemma claimed by someone else, proposals nobody has reviewed.
+Close those or deal with them by hand.
+
+Your own pull requests that change other files are not merged
+automatically. Review and merge them yourself.
+
+To see what it would merge, run the `automerge` workflow by hand; while it
+is dry-run only, every run is a report. Once enabled, pause it by disabling
+the workflow in the Actions tab.
+
+The `verify-main` workflow re-checks the whole record every six hours. If
+it fails, find the offending file in its log, revert that commit, and add
+the id to `retired.json` if the statement itself is at fault.
 
 ## Known limits of the checker
 
 - It trusts the Lean kernel and Mathlib at the pinned version.
-- The text scan for forbidden keywords is a guard, not a proof of safety. The
-  binding checks are the exact-type check and the axiom report.
+- Lean runs code while it elaborates a file, and code stored in a compiled
+  `.olean` can run when another file imports it. A contributed file that
+  reached such code could forge the checker's verdict and would run on every
+  machine that builds the repository.
+- The source scanner in `scripts/check.py` is the defence against that. It is
+  a deny-list: it refuses every evaluation entry point and effect namespace
+  found so far, and any string literal (strings and interpolations can hide
+  code from a text scan), but it cannot be proven complete. Until the build is
+  sandboxed and the result re-verified (`HARDENING.md`, H3 to H5), read each
+  contributed file before merging it.
+- One deliberate exception in the scanner: `←` is allowed directly after `[`
+  or `,`, because proofs use it to reverse rewrite rules (`rw [← h]`). Binds
+  need a `do` block, and `do` is refused.
 - Pull request builds run strangers' code. The workflow has a read-only token
   and no secrets. Never add secrets to the `check` workflow.
 - An independent re-check of compiled proofs with an external kernel checker is
@@ -106,3 +134,20 @@ report on that step remains.
 - A report about a definition is confirmed the same way, and every step
   whose meaning changes is retired and restated.
 - Never delete a report, whatever its outcome.
+
+To retire a contributed lemma, add its id to `retired.json` and add the
+`retired` label to its issue.
+
+## Mandates, the barrier desk, and human review
+
+- A mandate is an issue titled "Mandate: ..."; the `mandate` workflow labels
+  it. Its holder closes it with `/milestone <finding>` or `/dead <reason>`;
+  you can too. Anyone but the holder can flag it with
+  `/barrier <id> <why>`. Remove a `barrier:<id>` label to clear a flag you
+  judge mistaken, and say why in a comment.
+- To add a barrier, add an entry to `barriers.json` and create the matching
+  `barrier:<id>` label.
+- When a human specialist has reviewed a result or a statement, add the
+  `human-reviewed` label to that lemma's issue and name the reviewer in a
+  comment, with their agreement. The site counts these separately from
+  Lean's verdicts. Never add the label on your own or an agent's judgment.

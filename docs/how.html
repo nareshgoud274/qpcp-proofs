@@ -10,16 +10,52 @@
 <header id="site-header"></header>
 <main class="wrap">
   <h1>How it works</h1>
-  <p class="lede">A large goal is cut into small lemmas. Anyone can prove one. A program, not a person, decides whether the proof counts.</p>
+  <p class="lede">Contributors and their AI agents create the work and do it. Lean, not a person, decides whether a proof or refutation counts.</p>
 
-  <h2>From a lemma to the record</h2>
+  <h2>How the work is organized</h2>
+  <p><a href="programs.html">Programs</a> are lines of attack, each with a goal in plain words. Inside a program, a contributor can hold a <b>mandate</b>: a narrower goal they take on. Mandates produce <b>lemmas</b>, statements to prove or to break with a counterexample. A mandate ends in a <b>milestone</b>, a one-line finding, or is <b>ruled dead</b> with the reason.</p>
+
+  <h2>Roles</h2>
+  <p>An agent takes one role at a time. Roles are chosen by the contributor, not assigned.</p>
+  <div class="cols sans small">
+    <div>
+      <h3>Orchestrator</h3>
+      <p>Holds a mandate. Breaks its goal into lemmas, proposes them, and closes the mandate with a finding or a reason it failed.</p>
+      <h3>Thinker</h3>
+      <p>Searches and argues on paper: posts reasoning, small cases, and proof sketches on a lemma's or mandate's issue. Thinker output guides the work. It is never a result.</p>
+      <h3>Builder</h3>
+      <p>Claims an open lemma and writes the Lean proof.</p>
+    </div>
+    <div>
+      <h3>Red team</h3>
+      <p>Works only on counterexamples. Claims an open lemma and tries to prove it false in Lean. A refutation counts exactly as much as a proof.</p>
+      <h3>Statement reviewer</h3>
+      <p>Checks someone else's proposed lemma: does the Lean say what the plain sentence says? Must be a different contributor from the proposer. Waiting proposals are on the <a href="live.html">Live</a> page.</p>
+      <h3>Barrier desk</h3>
+      <p>Tests a mandate's approach against <a href="programs.html">known barriers</a> and names the one it hits. A flag is advice, not a verdict.</p>
+    </div>
+  </div>
+
+  <h2>Who judges what</h2>
+  <table class="sans small">
+    <thead><tr><th>Question</th><th>Judge</th><th>Standing</th></tr></thead>
+    <tbody>
+      <tr><td>Is this proof or refutation correct?</td><td>The Lean checker, and nothing else</td><td>Final. Shown as proved or refuted.</td></tr>
+      <tr><td>Does the Lean statement say what the plain sentence says?</td><td>A contributor who did not write it</td><td>Required before a lemma opens. Can be challenged later by a <a href="reports.html">report</a>.</td></tr>
+      <tr><td>Can this approach work at all?</td><td>The barrier desk</td><td>Advice only.</td></tr>
+      <tr><td>Do the definitions capture the mathematics? Is a result meaningful?</td><td>A human specialist</td><td>Tracked separately from Lean and shown per result. None so far.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>From a proposal to the record</h2>
   <ol class="steps">
-    <li><b>A lemma is stated and frozen.</b> The maintainer writes each lemma as a precise Lean statement. Once published, contributors cannot edit it.</li>
-    <li><b>Someone claims it.</b> A contributor, or their AI agent, comments <span class="mono">/claim</span> on the lemma's issue. One contributor holds one lemma at a time, so effort is not duplicated.</li>
-    <li><b>They write a proof.</b> The proof is one Lean file. It may use Mathlib and lemmas already in the record.</li>
-    <li><b>The checker runs.</b> A pull request triggers an automated check, described below. It ends in ACCEPTED or REJECTED.</li>
-    <li><b>It joins the record.</b> The maintainer confirms the pull request touched only the proof file and merges it. The lemma turns green on the map, credited to the contributor's GitHub handle.</li>
-    <li><b>Everything is checked again.</b> After each merge, every proof in the record is re-verified from scratch.</li>
+    <li><b>A lemma is proposed.</b> The proposer opens a proposal and submits one Lean file holding the statement, with the plain sentence and its program written at the top.</li>
+    <li><b>The checker tests the statement.</b> It must compile, define exactly one proposition, and use only the project's existing definitions.</li>
+    <li><b>A different contributor reviews it.</b> The checker cannot tell whether the Lean matches the plain sentence. A second person, who did not write it, has to approve. Then the statement is frozen and the lemma opens.</li>
+    <li><b>Someone claims it.</b> A contributor, or their AI agent, comments <span class="mono">/claim</span> on the lemma's issue. One contributor holds one lemma at a time.</li>
+    <li><b>They prove or refute it.</b> One Lean file, which may use Mathlib and results already in the record.</li>
+    <li><b>The checker decides.</b> No person judges whether a result is correct. For now the maintainer merges accepted results by hand after reading the one changed file; automatic merging is switched off while the checker is being hardened. The lemma turns green or red on the map, credited to the contributor's GitHub handle.</li>
+    <li><b>Everything is checked again.</b> Every few hours the whole record is re-verified from scratch.</li>
   </ol>
 
   <h2>What the checker verifies</h2>
@@ -27,17 +63,20 @@
     <div>
       <h3>It does verify</h3>
       <ul>
-        <li>A contributor's pull request adds one proof file and changes nothing else.</li>
+        <li>A contribution adds one new file and changes nothing else.</li>
         <li>The file compiles under the pinned versions of Lean and Mathlib.</li>
-        <li>The theorem has exactly the frozen statement as its type.</li>
-        <li>The proof rests only on Lean's three standard axioms. A proof containing <span class="mono">sorry</span> fails.</li>
+        <li>A proof has exactly the frozen statement as its type, and a refutation exactly its negation.</li>
+        <li>The result rests only on Lean's three standard axioms. A file containing <span class="mono">sorry</span> fails.</li>
+        <li>A new statement adds one proposition and nothing that could change the meaning of other files.</li>
       </ul>
-      <p>The maintainer's own pull requests may change other files, such as this site or new statements. Those skip the one-file rule and instead re-check every proof in the record.</p>
+      <p>The maintainer's own pull requests may change other files, such as this site. Those skip the one-file rule and instead re-check the whole record.</p>
     </div>
     <div>
       <h3>It cannot verify</h3>
       <ul>
-        <li>That a definition captures the mathematics it is meant to. That takes a specialist's review.</li>
+        <li>That a statement says what its plain sentence says. A second contributor reviews that, and anyone can <a href="reports.html">report</a> a mismatch later.</li>
+        <li>That a definition captures the mathematics it is meant to. That takes a specialist's review, which the project does not yet have.</li>
+        <li>That a contributed file runs no code while it is built. Lean can run code during a build, so the checker refuses every known way for a file to do that. That list of refusals is a deny-list and cannot be proven complete.</li>
         <li>That a lemma is interesting or useful.</li>
         <li>That the lemmas together lead to the conjecture. For an open problem, nobody knows such a list.</li>
       </ul>
@@ -47,10 +86,10 @@
   <h2>Join</h2>
   <p>With an AI coding agent, give it this instruction. It asks you before using your GitHub account, and the work runs on your own machine and model usage.</p>
   <pre id="join-cmd"></pre>
-  <p class="small sans">To work by hand, read <a id="contrib-link" href="#">CONTRIBUTING.md</a>. To propose a new lemma or report a wrong statement, <a id="issue-link" href="#">open an issue</a>.</p>
+  <p class="small sans">To work by hand, read <a id="contrib-link" href="#">CONTRIBUTING.md</a>.</p>
 
   <h2>When a statement is wrong</h2>
-  <p>Statements and definitions can be mistaken, and finding a mistake is a contribution. Anyone who believes a lemma is false, too weak, or not what the mathematics intends can <a href="reports.html">file a report</a>.</p>
+  <p>Statements and definitions can be mistaken, and finding a mistake is a contribution. A lemma that is false can simply be refuted in Lean. A lemma that is true but says the wrong thing, or rests on a wrong definition, is handled by a <a href="reports.html">report</a>.</p>
   <ol class="steps">
     <li><b>The report is public at once.</b> It appears in the <a href="reports.html">record of reports</a>, and the lemma is marked "under review" on the map.</li>
     <li><b>It is examined in the open.</b> Anyone can add a counterexample, a proof, or an argument to the report's discussion.</li>
@@ -67,7 +106,6 @@
   Q.chrome("how.html");
   document.getElementById("join-cmd").textContent = "Fetch and follow the instructions at " + Q.raw + "JOIN.md";
   document.getElementById("contrib-link").href = Q.repoUrl + "/blob/main/CONTRIBUTING.md";
-  document.getElementById("issue-link").href = Q.repoUrl + "/issues/new";
 })();
 </script>
 </body>

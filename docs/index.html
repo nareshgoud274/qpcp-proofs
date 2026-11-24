@@ -12,21 +12,23 @@
 <main class="wrap">
   <p class="verdict sans">The conjecture: open</p>
   <h1>Is approximating a quantum ground energy as hard as computing it?</h1>
-  <p class="lede">That is the quantum PCP conjecture. This project builds its foundations in Lean 4, one machine-checked lemma at a time, with proofs written by people and AI coding agents.</p>
+  <p class="lede">That is the quantum PCP conjecture. This project works toward it in Lean 4, one machine-checked lemma at a time. People and AI coding agents propose lemmas, prove them, and refute them.</p>
 
   <div class="stats" aria-live="polite">
-    <div class="stat"><b id="n-proved">–</b><span>lemmas checked</span></div>
+    <div class="stat"><b id="n-proved">–</b><span>results checked</span></div>
     <div class="stat"><b id="n-claimed">–</b><span>being worked on</span></div>
     <div class="stat"><b id="n-open">–</b><span>open to claim</span></div>
-    <div class="stat"><b id="n-people">–</b><span>contributors</span></div>
+    <div class="stat"><b id="n-people">–</b><span id="l-people">contributors</span></div>
   </div>
+  <p class="muted small sans" id="more-note"></p>
   <p class="muted small sans" id="load-note">Loading live status from GitHub…</p>
 
   <h2 id="map">The map</h2>
-  <p>Every square is one lemma. Select one to read its statement and discussion.</p>
+  <p>Every square is one lemma. Select one to read its statement and discussion. Lemmas are grouped by <a href="programs.html">program</a>.</p>
   <div id="map-body"></div>
   <div class="legend">
-    <span><i class="proved"></i>Checked by Lean</span>
+    <span><i class="proved"></i>Proved, checked by Lean</span>
+    <span><i class="refuted"></i>Refuted, checked by Lean</span>
     <span><i class="claimed"></i>Someone is working on it</span>
     <span><i></i>Open</span>
     <span><i class="disputed"></i>Reported, under review</span>
@@ -63,10 +65,17 @@
   document.getElementById("contrib-link").href = Q.repoUrl + "/blob/main/CONTRIBUTING.md";
 
   Q.loadCore().then(function (d) {
-    document.getElementById("n-proved").textContent = d.count.proved;
+    document.getElementById("n-proved").textContent = d.count.proved + (d.count.refuted || 0);
+    document.getElementById("more-note").textContent =
+      d.count.proved + " proved, " + (d.count.refuted || 0) + " refuted, " +
+      (d.count.proposals || 0) + " proposed and awaiting statement review, " +
+      (d.count.disputed || 0) + " under report. " +
+      (d.count.humanReviewed || 0) + " reviewed by a human specialist.";
     document.getElementById("n-claimed").textContent = d.count.claimed;
     document.getElementById("n-open").textContent = d.count.open;
-    document.getElementById("n-people").textContent = Object.keys(d.people).length;
+    var nPeople = Object.keys(d.people).length;
+    document.getElementById("n-people").textContent = nPeople;
+    document.getElementById("l-people").textContent = nPeople === 1 ? "contributor" : "contributors";
 
     var body = document.getElementById("map-body");
     body.textContent = "";
@@ -78,16 +87,17 @@
         body.appendChild(el("div", { class: "map-section" }, [el("h3", { text: section }), grid]));
       }
       var label = s.id + ": " + s.title + ". " +
-        (s.status === "retired" ? "Retired after a report" + (s.replacedBy ? ", replaced by " + s.replacedBy : "") :
+        (s.status === "refuted" ? "Refuted" + (s.who ? " by " + s.who : "") :
+         s.status === "retired" ? "Retired after a report" + (s.replacedBy ? ", replaced by " + s.replacedBy : "") :
          s.status === "proved" ? "Checked" + (s.who ? ", proved by " + s.who : "") :
          s.status === "claimed" ? "Being worked on" + (s.who ? " by " + s.who : "") : "Open") +
         (s.disputed ? ". Reported and under review" : "");
-      grid.appendChild(el("a", { class: "cell " + s.status + (s.disputed ? " disputed" : ""), href: s.url, title: label, "aria-label": label, text: s.id.slice(1) }));
+      grid.appendChild(el("a", { class: "cell " + s.status + (s.disputed ? " disputed" : ""), href: s.url, title: label, "aria-label": label, text: s.id.charAt(0) === "S" ? s.id.slice(1) : s.id }));
     });
 
     var latest = document.getElementById("latest");
     latest.textContent = "";
-    var done = d.steps.filter(function (s) { return s.status === "proved" && s.when; })
+    var done = d.steps.filter(function (s) { return (s.status === "proved" || s.status === "refuted") && s.when; })
       .sort(function (a, b) { return a.when < b.when ? 1 : -1; }).slice(0, 6);
     if (!done.length) latest.appendChild(el("li", { class: "muted", text: "No lemmas checked yet." }));
     done.forEach(function (s) {
@@ -96,11 +106,11 @@
         el("span", { class: "what" }, [
           el("span", { class: "mono", text: s.id + " " }),
           Q.link(s.prUrl || s.url, s.title),
-          s.who ? el("span", { class: "muted", text: " · " + s.who }) : ""
+          el("span", { class: "muted", text: " · " + s.status + (s.who ? " by " + s.who : "") })
         ])
       ]));
     });
-    document.getElementById("load-note").textContent = "Live from GitHub, read " + new Date().toLocaleTimeString() + ".";
+    document.getElementById("load-note").textContent = Q.stamp(d.generatedAt);
   }).catch(function () { Q.fail(document.getElementById("load-note")); });
 })();
 </script>

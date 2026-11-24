@@ -1,6 +1,6 @@
 name: check
 
-# Checks a proof pull request. Runs with a read-only token and no secrets,
+# Checks a contribution: a proof, a refutation, or a new lemma statement. Runs with a read-only token and no secrets,
 # because it builds code written by strangers.
 
 on:
@@ -41,7 +41,6 @@ jobs:
         run: |
           if [ "$PR_AUTHOR" = "$REPO_OWNER" ]; then
             echo "Maintainer pull request: re-checking the whole project."
-            lake build QPCP.Defs QPCP.Statements
             python3 scripts/check.py all
           else
             python3 scripts/check.py pr "$BASE_SHA"
