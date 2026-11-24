@@ -40,7 +40,9 @@ maintainer.
 
 The checker cannot tell whether a Lean statement means what its plain sentence
 says. That is the reviewer's job, and the project depends on it being done
-honestly. Check quantifiers, hypotheses and edge cases; check that the claim is
+honestly. Once the checker accepts a statement, it posts the kernel's
+rendering of what was built; compare that, as well as the source, with the
+plain sentence. Check quantifiers, hypotheses and edge cases; check that the claim is
 not vacuous, not a duplicate, and serves its program. Approve only what you
 have checked. Do not review your own proposals from another account.
 

@@ -41,28 +41,25 @@ dry-run mode only: it reports what it would merge and changes nothing. For
 each contribution, read the one changed file, confirm the `check` workflow
 succeeded on the pull request's current head commit, and merge it yourself.
 
-**The hardening is not complete.** The check on a *new* contribution is now
-sandboxed and export-verified: the file is compiled only inside a bubblewrap
-sandbox, and the verdict comes from a text export checked outside it (see
-"Known limits of the checker"). But *previously merged* contributions are
-still built outside the sandbox, in four places:
+**No contributed file is built outside a sandbox, in any workflow.** Only
+the maintainer-written modules `QPCP.Defs`, `QPCP.Qudit` and
+`QPCP.Statements`, and Mathlib, are ever built on the runner itself. Every
+contribution, new or merged, is compiled, replayed with `leanchecker` and
+exported in its own bubblewrap sandbox, and judged outside it from its text
+export (`scripts/sandbox_verify.py`). That covers the four places that used to
+build merged files unsandboxed: the contributor check's first step, the
+maintainer's record check (formerly `check.py all`), `verify-main`'s
+`leanchecker` replay, and the attack-tests job. `tests/run_tests.sh` shows, in
+each of the four, that a merged file with build-time code cannot reach the
+host or alter a later verdict.
 
-1. the first, "trusted" step of every contributor check
-   (`scripts/contribution_check.sh` builds all of main with `lake build QPCP`);
-2. `python3 scripts/check.py all`, on the maintainer's pull requests and in
-   `verify-main` (it also imports every contribution, running any
-   `initialize` code in it);
-3. the per-module `leanchecker` loop in `verify-main`;
-4. the `attack-tests` job (its trusted build is `lake build QPCP`).
+Automatic merging nevertheless stays forced to dry-run: turning it on is
+your decision, and "Known limits of the checker" lists what the sandbox does
+not cover. To enable it, remove the forced `--dry-run` and the `if: false`
+in `.github/workflows/automerge.yml`.
 
-A merged file that got past the scanner would run in all four, could alter
-the toolchain and scripts on the runner, and so could forge later verdicts.
-Automatic merging therefore stays off until those four places build only
-maintainer-written modules outside a sandbox. Do not remove the forced
-`--dry-run` in `.github/workflows/automerge.yml` before then.
-
-Once enabled, the `automerge` workflow runs after every check and every ten
-minutes, and merges a pull request only if it adds exactly one contribution
+Once enabled, the `automerge` workflow runs after every check, review and
+claim (and hourly as a backstop), and merges a pull request only if it adds exactly one contribution
 file, the `check` workflow succeeded on its current head commit, and the step
 or proposal rules in `scripts/automerge.py` hold. Because such a pull request
 changes no other file, the check that ran on it was main's own.
@@ -77,7 +74,10 @@ A lemma statement merges only when a reviewer listed in `reviewers.json`, who
 is not its author, has approved the pull request's current head commit. The
 file is a JSON list of GitHub logins, compared without regard to case, and
 starts empty, so at first every statement waits for you. Anyone's approval is
-still shown on the pull request as advice. Add a login only for someone whose
+still shown on the pull request as advice. When the checker accepts a
+statement, the `statement-preview` workflow posts on the pull request the
+kernel's rendering of what was actually built; reviewers should compare that,
+not only the source, with the `PLAIN:` sentence. Add a login only for someone whose
 judgement on statements you trust, and remove it if that changes. You are not
 on the list automatically.
 
@@ -88,8 +88,8 @@ To see what it would merge, run the `automerge` workflow by hand; while it
 is dry-run only, every run is a report. Once enabled, pause it by disabling
 the workflow in the Actions tab.
 
-The `verify-main` workflow re-checks the whole record every six hours. If
-it fails, find the offending file in its log, revert that commit, and add
+The `verify-main` workflow re-checks the whole record after every push to
+main (and every six hours as a backstop). If it fails, find the offending file in its log, revert that commit, and add
 the id to `retired.json` if the statement itself is at fault.
 
 ## Known limits of the checker
@@ -104,18 +104,30 @@ the id to `retired.json` if the statement itself is at fault.
   found so far, and any string literal (strings and interpolations can hide
   code from a text scan), but it cannot be proven complete. It is the only
   defence for contributors who build the repository on their own machines.
-- The second defence, in CI (`scripts/contribution_check.sh`): main's library
-  is built first, with the contributed file moved aside. The contributed file
-  is then compiled, replayed with `leanchecker` and exported to text inside a
-  bubblewrap sandbox, with no network, a read-only system and one scratch
-  directory. Outside the sandbox, only that text export is used. The
-  independent kernel `nanoda_bin` type-checks it with only the three standard
-  axioms, and `scripts/verify_export.py` compares it with an export of the
-  statement and axioms made from main. No untrusted `.olean` is read outside
-  the sandbox.
-- Not yet covered: previously merged contributions are still built outside
-  the sandbox in four places (see "How contributions are merged"), so a
-  merged file that got past the scanner could forge later verdicts.
+- The second defence, in CI (`scripts/sandbox_verify.py`): only the
+  maintainer-written modules and Mathlib are built outside a sandbox. Every
+  contribution, new or merged, is compiled in import order, one bubblewrap
+  sandbox per module, with no network, a read-only system, a private `/tmp`,
+  no way to gain privileges, and only its own output folder writable (earlier
+  outputs are mounted read-only). It is replayed with `leanchecker` and
+  exported to text in fresh sandboxes. Every sandboxed step has a hard timeout
+  and a file-size limit. Outside the sandbox, only the text exports are used:
+  the independent kernel `nanoda_bin` type-checks each with only the three
+  standard axioms, and `scripts/verify_export.py` compares it with an export
+  of the statement, its dependencies and the axioms made from the
+  maintainer-written modules. No untrusted `.olean` is read outside a sandbox.
+- A contributed lemma is a trusted reference only after it has been verified:
+  its definition is a `Prop` whose every dependency matches main. Its verified
+  export is then part of the reference for proofs and refutations of it.
+- Not covered by the sandbox:
+  - contributors' own machines, which build contributed files with plain
+    `lake build`; only the scanner, and JOIN.md's warning, protect them;
+  - a lemma whose code changed its own statement while it was built: the
+    export check sees only what was built, so the reviewer compares the
+    posted kernel rendering, not just the source, with the `PLAIN:` sentence;
+  - flaws in bubblewrap, the Linux kernel, the toolchain's `nanoda_bin`,
+    `leanexport` and `lean`, and the Python that runs the checks;
+  - denial of service: a contribution can still use up its time limits.
 - What this proves: the export contains a kernel-valid proof of exactly the
   statement on main, using only the three axioms. It does not prove that the
   merged source file is harmless to build elsewhere. That rests on the scanner
@@ -123,9 +135,16 @@ the id to `retired.json` if the statement itself is at fault.
 - `tests/run_tests.sh` keeps the known attacks as regression tests. It runs on
   your own pull requests, along with honest proof, lemma and refutation
   fixtures and forged exports.
-- `verify-main` replays every module with `leanchecker`, one module at a time,
-  at about 15 seconds each. When the record grows past a few hundred modules,
-  batch this step (for example, by splitting the module list across jobs).
+- The record check costs about a minute per contribution (compile, replay,
+  export, two checks), run three at a time. When the record grows past a few
+  hundred contributions, split `verify-main` into shards (its `matrix.shard`
+  list; `sandbox_verify.py record --shard K/N`). There is no cache of verified
+  exports; if one is added, only main's own trusted workflow may write it.
+- Scheduled runs have been unreliable on this repository, so every workflow
+  is event-driven, and timers are only backstops: `automerge` runs after
+  `check`, `review-relay` and `claim`; `claim` releases lapsed claims itself
+  when someone claims; `status` and `verify-main` run on pushes and on
+  dispatch.
 - One deliberate exception in the scanner: `←` is allowed directly after `[`
   or `,`, because proofs use it to reverse rewrite rules (`rw [← h]`). Binds
   need a `do` block, and `do` is refused.

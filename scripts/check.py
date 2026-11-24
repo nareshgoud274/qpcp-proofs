@@ -19,9 +19,13 @@ Modes:
                              follow in scripts/contribution_check.sh.
   check.py scan-file <kind> <id> <path>
                              Tests: run the source scanner on any file.
+  check.py scan-all          CI: the Lean-free checks on every contribution in
+                             the tree. Lean checks follow in
+                             scripts/sandbox_verify.py record.
   check.py pr <base-ref>     Local only: scan, then build and check the
-                             contribution without a sandbox.
-  check.py all               Re-check every contribution on the current tree.
+                             contribution WITHOUT a sandbox.
+  check.py all               Local only: re-check every contribution by
+                             building and importing it WITHOUT a sandbox.
 
 Verdicts are printed as ACCEPTED or REJECTED with a reason. Exit code 0 means
 accepted, 1 means rejected, 2 means the checker itself failed (FAULT).
@@ -442,7 +446,8 @@ def mode_pr(base):
     return [f"{kind} {ident}"]
 
 
-def mode_all():
+def record_items(skip_scan=False):
+    """Every contribution in the tree, after every check that runs no Lean."""
     items = []
     for kind, (folder, _, _) in KINDS.items():
         for path in sorted((ROOT / folder).glob("*.lean")):
@@ -451,7 +456,8 @@ def mode_all():
                 raise Rejected(f"unexpected file {folder}/{path.name}")
             if kind != "lemma" and not statement_exists(ident):
                 raise Rejected(f"{folder}/{path.name} has no statement {ident}")
-            scan_source(kind, ident)
+            if not skip_scan:
+                scan_source(kind, ident)
             items.append((kind, ident))
     settled = {}
     for kind, ident in items:
@@ -460,6 +466,20 @@ def mode_all():
         if ident in settled:
             raise Rejected(f"{ident} has both a proof and a refutation")
         settled[ident] = kind
+    return items
+
+
+def mode_scan_all():
+    """CI: the Lean-free checks on the whole record (scripts/sandbox_verify.py follows)."""
+    return [f"{kind} {ident} (scan only)" for kind, ident in record_items()]
+
+
+def mode_all():
+    """Local use only: builds and imports every contribution WITHOUT a sandbox.
+
+    CI uses `scan-all` followed by `scripts/sandbox_verify.py record`.
+    """
+    items = record_items()
     # One build of the whole library, then one Lean run that checks everything.
     lean_check(items, ["QPCP"])
     return [f"{kind} {ident}" for kind, ident in items]
@@ -484,6 +504,8 @@ def main(argv):
             done = mode_scan(argv[2])
         elif len(argv) == 5 and argv[1] == "scan-file":
             done = mode_scan_file(argv[2], argv[3], argv[4])
+        elif len(argv) == 2 and argv[1] == "scan-all":
+            done = mode_scan_all()
         elif len(argv) == 2 and argv[1] == "all":
             done = mode_all()
         else:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write forged copies of an honest export, each of which must be REJECTED.
 
-    forge_exports.py <kind> <ident> <honest.ndjson> <reference.ndjson> <out-dir>
+    forge_exports.py <kind> <ident> <honest.ndjson> <reference.ndjson>[,<more>...] <out-dir>
 
 <kind> is proof, refutation or lemma; the honest export and the reference are
 the ones scripts/contribution_check.sh produced for that contribution. The
@@ -72,9 +72,12 @@ def copy(rows):
 
 
 def forge(kind, ident, honest, reference, out):
-    rows, ref_rows = load(honest), load(reference)
-    nm, ref_nm = names(rows), names(ref_rows)
-    have, ref_have = decls(rows, nm), decls(ref_rows, ref_nm)
+    rows = load(honest)
+    nm = names(rows)
+    have, ref_have = decls(rows, nm), {}
+    for ref_path in [r for r in reference.split(",") if r]:   # several references allowed
+        ref_rows = load(ref_path)
+        ref_have.update(decls(ref_rows, names(ref_rows)))
     out.mkdir(parents=True, exist_ok=True)
     max_n = max(r["in"] for r in rows if "in" in r)
     stmt = f"QPCP.Statement.{ident}" if ident.startswith("S") else f"QPCP.Lemma.{ident}"

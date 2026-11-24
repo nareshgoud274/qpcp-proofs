@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check an untrusted Lean export against a trusted reference export.
 
-    verify_export.py <kind> <ident> <untrusted.ndjson> <reference.ndjson> [<names>]
+    verify_export.py <kind> <ident> <untrusted.ndjson> <reference.ndjson>[,<more.ndjson>...] [<names>]
     verify_export.py deps <ident> <untrusted.ndjson>
 
 Both files are lean4export NDJSON (format 3.x). The untrusted file was produced
@@ -14,6 +14,11 @@ reference also covers the constants the new definition refers to: `deps` lists
 those names from the untrusted export, main exports them (with their whole
 dependency closure, as main has them) and the comparison then applies to all
 of them. A name that main does not have is refused.
+
+Several reference files may be given, separated by commas: the export made
+from main's maintainer-written modules, and, for a proof or refutation of a
+contributed lemma, that lemma's own export once it has been verified. Where two
+references declare the same name, they must agree.
 
 <names> is the file of names the reference was requested for. Every one of
 them must be declared in the reference, so that an export that silently came
@@ -251,9 +256,34 @@ def required_type(kind, ident, ref):
     return (f"QPCP.Proof.{ident}" if kind == "proof" else f"QPCP.Refutation.{ident}"), "thm", stmt, stmt
 
 
+class MergedReference:
+    """Several reference exports seen as one: their declarations, levels and names."""
+
+    def __init__(self, exports):
+        self.parts = exports
+        self.lean = exports[0].lean
+        self.decls = {}
+        for e in exports:
+            if e.lean != self.lean:
+                raise Bad("the reference exports were made by different Lean versions")
+            for name, key in e.decls.items():
+                if name in self.decls and self.decls[name] != key:
+                    raise Bad(f"the references disagree on `{name}`")
+                self.decls[name] = key
+        self.levels = exports[0].levels
+
+    def name_id(self, dotted):
+        for e in self.parts:
+            try:
+                return ref_name_id(e, dotted)
+            except Bad:
+                continue
+        raise Bad(f"the reference does not name `{dotted}`")
+
+
 def verify(kind, ident, untrusted_path, reference_path, names_path=None):
     table = {}
-    ref = Export(reference_path, table)
+    ref = MergedReference([Export(p, table) for p in reference_path.split(",") if p])
     unt = Export(untrusted_path, table)
     if ref.lean is None or unt.lean != ref.lean:
         raise Bad(f"export was made by Lean {unt.lean}, expected {ref.lean}")
@@ -286,14 +316,14 @@ def verify(kind, ident, untrusted_path, reference_path, names_path=None):
         if stmt not in ref.decls:
             raise Bad(f"the reference does not contain `{stmt}`")
         # Build the expected type from the reference's own name table.
-        stmt_name = ref_name_id(ref, stmt)
+        stmt_name = ref.name_id(stmt)
         c = table.get(("const", stmt_name, ()))
         if c is None:
             raise Bad(f"`{target}` does not have type `{stmt}`")
         if kind == "proof":
             want_type = c
         else:
-            not_name = ref_name_id(ref, "Not")
+            not_name = ref.name_id("Not")
             not_c = table.get(("const", not_name, ()))
             want_type = table.get(("app", not_c, c)) if not_c is not None else None
     if want_type is None or got[2] != want_type:

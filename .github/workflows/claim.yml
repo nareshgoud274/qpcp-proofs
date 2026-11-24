@@ -1,7 +1,13 @@
 name: claim
 
 # Handles `/claim` and `/release` comments on step issues. This workflow always
-# runs the version on main and never checks out or runs contributed code.
+# runs the version on main and never checks out or runs contributed code (it
+# checks out only scripts/expire_claims.sh from main).
+#
+# Claims lapse after 24 hours without activity. Lapsed claims are released
+# here, when someone tries to claim, rather than only by the hourly
+# expire-claims backstop: scheduled runs have been unreliable on this
+# repository.
 
 on:
   issue_comment:
@@ -9,6 +15,7 @@ on:
 
 permissions:
   issues: write
+  contents: read
 
 jobs:
   claim:
@@ -23,13 +30,33 @@ jobs:
       ISSUE: ${{ github.event.issue.number }}
       ACTOR: ${{ github.event.comment.user.login }}
       BODY: ${{ github.event.comment.body }}
-      IS_CLAIMED: ${{ contains(github.event.issue.labels.*.name, 'claimed') }}
-      ASSIGNEES: ${{ join(github.event.issue.assignees.*.login, ' ') }}
+      COMMENT_ID: ${{ github.event.comment.id }}
     steps:
+      - uses: actions/checkout@v4
+        if: startsWith(github.event.comment.body, '/claim')
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/expire_claims.sh
+          sparse-checkout-cone-mode: false
+
+      # Release lapsed claims first: anywhere (so a stale claim does not block
+      # the person claiming now), then on this issue, judged by its last comment
+      # before this one.
+      - name: Release lapsed claims
+        if: startsWith(github.event.comment.body, '/claim')
+        run: |
+          set -euo pipefail
+          bash scripts/expire_claims.sh sweep --except "$ISSUE"
+          bash scripts/expire_claims.sh target "$ISSUE" "$COMMENT_ID"
+
       - name: Handle the command
         run: |
           set -euo pipefail
           cmd="$(printf '%s' "$BODY" | head -n 1 | tr -d '\r' | awk '{print $1}')"
+          # Read the claim state now, after any release above.
+          state="$(gh issue view "$ISSUE" --json labels,assignees \
+            --jq '[([.labels[].name] | index("claimed") != null), ([.assignees[].login] | join(" "))] | @tsv')"
+          IFS=$'\t' read -r IS_CLAIMED ASSIGNEES <<< "$state"
 
           is_assignee=false
           for a in $ASSIGNEES; do

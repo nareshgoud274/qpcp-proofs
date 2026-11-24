@@ -6,9 +6,12 @@ name: status
 # This workflow always runs the version on main, checks out main only, and
 # never runs contributed code.
 
+# Event-driven (pushes, issues, pull requests, releases, and a dispatch from
+# automerge after it merges). The hourly timer is only a backstop: scheduled
+# runs have been unreliable on this repository.
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "7 * * * *"
   push:
     branches: [main]
   issues:

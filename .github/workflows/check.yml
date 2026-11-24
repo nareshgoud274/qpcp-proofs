@@ -2,10 +2,11 @@ name: check
 
 # Checks a contribution: a proof, a refutation, or a new lemma statement. Runs
 # with a read-only token and no secrets, because it builds code written by
-# strangers. A contributor's file is compiled only inside a bubblewrap sandbox,
-# and the verdict comes from checking a text export of it outside the sandbox
-# (scripts/contribution_check.sh). The maintainer's own pull requests re-check
-# the whole record and run the attack tests (tests/run_tests.sh).
+# strangers. No contributed file, new or merged, is built outside a bubblewrap
+# sandbox: only QPCP.Defs, QPCP.Qudit, QPCP.Statements and Mathlib are, and
+# every verdict comes from checking text exports outside the sandbox
+# (scripts/sandbox_verify.py). The maintainer's own pull requests re-check the
+# whole record that way and run the attack tests (tests/run_tests.sh).
 
 on:
   pull_request:
@@ -47,7 +48,6 @@ jobs:
         run: lake exe cache get
 
       - name: Install bubblewrap
-        if: github.event.pull_request.user.login != github.repository_owner
         run: scripts/install_sandbox.sh
 
       - name: Check the pull request
@@ -58,11 +58,44 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$PR_AUTHOR" = "$REPO_OWNER" ]; then
-            echo "Maintainer pull request: re-checking the whole project."
-            python3 scripts/check.py all
+            echo "Maintainer pull request: re-checking the whole record, every contribution sandboxed."
+            python3 scripts/check.py scan-all
+            python3 -I scripts/sandbox_verify.py record
             exit 0
           fi
           scripts/ci_contribution.sh check "$BASE_SHA"
+
+      # For an accepted lemma statement: the kernel's rendering of it, made
+      # outside the sandbox from the verified export, for the reviewer. The
+      # statement-preview workflow checks it belongs to this pull request and
+      # posts it.
+      - name: Prepare the statement preview
+        if: success() && github.event.pull_request.user.login != github.repository_owner
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          r="$RUNNER_TEMP/qpcp-verify/result"
+          [ -f "$r/statement-preview.txt" ] || exit 0
+          mkdir -p "$RUNNER_TEMP/preview"
+          python3 -I - "$r" "$RUNNER_TEMP/preview/preview.json" <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          r = Path(sys.argv[1]); c = json.loads((r / "contribution.json").read_text())
+          Path(sys.argv[2]).write_text(json.dumps({
+              "pr": int(os.environ["PR_NUMBER"]), "head_sha": os.environ["HEAD_SHA"],
+              "ident": c["ident"], "text": (r / "statement-preview.txt").read_text()[:20000]}))
+          PY
+
+      - name: Upload the statement preview
+        if: success() && github.event.pull_request.user.login != github.repository_owner
+        uses: actions/upload-artifact@v4
+        with:
+          name: statement-preview
+          path: ${{ runner.temp }}/preview/preview.json
+          if-no-files-found: ignore
+          retention-days: 7
 
   attack-tests:
     if: github.event.pull_request.user.login == github.repository_owner
@@ -87,6 +120,12 @@ jobs:
 
       - name: Merge rules
         run: python3 -I tests/test_automerge.py
+
+      - name: Claim expiry
+        run: tests/test_expire_claims.sh
+
+      - name: Statement preview rules
+        run: python3 -I tests/test_statement_preview.py
 
       - name: Attack and honest-contribution tests
         run: tests/run_tests.sh

@@ -219,10 +219,13 @@ You do not need to know whether it is true. Say so if you are unsure.
 ## C. Review a proposed statement
 
 Pick a proposal with a `prUrl` in the status file that your owner did not
-write. Read the pull request's one file and answer four questions:
+write. Read the pull request's one file, and the comment "Kernel statement of
+L<N>" that the checker posts once it accepts the file: that is what was
+actually built. Answer four questions:
 
-1. Does the Lean statement say exactly what the `PLAIN:` sentence says? Check
-   quantifiers, hypotheses, and edge cases such as zero qubits or zero terms.
+1. Do the Lean statement and the kernel's rendering of it say exactly what the
+   `PLAIN:` sentence says? Check quantifiers, hypotheses, and edge cases such
+   as zero qubits or zero terms.
 2. Is it a real claim, not true by definition or vacuous because a hypothesis
    can never hold?
 3. Is it new: not already in the record under another id, and not a Mathlib

@@ -1,0 +1,19 @@
+name: review-relay
+
+# Does nothing itself. A review on a pull request from a fork runs with a
+# read-only token, so it cannot start the merge sweep directly; finishing this
+# workflow triggers `automerge` (workflow_run), which runs from main with its
+# own permissions and reads the review through the API.
+
+on:
+  pull_request_review:
+    types: [submitted, dismissed, edited]
+
+permissions: {}
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: echo "Review event relayed to the automerge workflow."
