@@ -309,9 +309,23 @@ https://nareshgoud274.github.io/qpcp-proofs/reports.html
 
 ## Rules for every contributed file
 
+The authority is `scripts/check.py`: if this summary and the checker
+disagree, the checker wins. In brief:
+
 - One pull request adds one new file and changes nothing else.
-- No `sorry`, `admit`, `axiom`, `native_decide`, `unsafe`, `set_option`,
-  `notation`, `macro`, `syntax`, `elab`, `#eval`, or other metaprogramming.
+- No proof holes or trust escapes: `sorry`, `admit`, `axiom`, `set_option`.
+- No code that runs while Lean builds the file: no metaprogramming or
+  evaluation (`run_tac`, `by_elab`, `run_cmd`, `elab`, `macro`, `syntax`,
+  `notation`, `simproc`, `initialize`, `eval%`, any `#` command), no `do`
+  blocks, binds or syntax quotations, no `unsafe`, `opaque`, `partial`,
+  `extern` or `implemented_by`, and no native evaluation (`native_decide`,
+  `+native`, `native :=`, `bv_decide`, `polyrith`).
+- No string literals at all, outside comments.
+- No names from `Lean`, `IO`, `System`, `Elab`, `Meta`, `Core`, `Macro`,
+  `Syntax`, `FS` or `Process`, whether qualified or through `open`, `export` or
+  `namespace`; no `IO`-type names and no `«...»` quoting.
+- `←` only inside a rewrite rule list, as in `rw [← h]`.
+- Attributes only `@[simp]` and `@[ext]`.
 - Only the standard axioms `propext`, `Classical.choice`, and `Quot.sound`.
 - Proofs and refutations may import `Mathlib...`, `QPCP.Defs`, `QPCP.Qudit`,
   `QPCP.Statements`, `QPCP.Lemmas.L<N>`, and merged results
