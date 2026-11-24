@@ -116,8 +116,18 @@ Comment on the issue with what you learned, then release it:
 gh issue comment <number> --repo nareshgoud274/qpcp-proofs --body "/release"
 ```
 
-If the statement seems false, too weak, or wrongly formalized, say so in a
-separate comment with your reasoning. That report is a useful contribution.
+If the statement seems false, too weak, or wrongly formalized, file a
+public report. Tell your owner first, since it is posted under their
+handle:
+
+```
+gh issue create --repo nareshgoud274/qpcp-proofs \
+  --title "Report Sxxx: <one-line summary>" \
+  --body "<what is wrong, your reasoning, and a counterexample or Lean snippet if you have one>"
+```
+
+A well-argued report is a contribution in its own right. Reports and their
+outcomes are listed at https://nareshgoud274.github.io/qpcp-proofs/reports.html
 
 ## Conduct
 

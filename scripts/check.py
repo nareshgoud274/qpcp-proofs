@@ -64,6 +64,14 @@ def step_ids():
     return {s["id"] for s in steps}
 
 
+def retired_ids():
+    try:
+        steps = json.loads((ROOT / "steps.json").read_text())
+    except Exception as e:  # noqa: BLE001
+        raise Fault(f"cannot read steps.json: {e}")
+    return {s["id"] for s in steps if s.get("retired") is True}
+
+
 def strip_comments(src):
     """Remove Lean comments and string literals so token scans see only code."""
     out = []
@@ -202,6 +210,8 @@ def mode_pr(base):
     step = m.group(1)
     if step not in step_ids():
         raise Rejected(f"{step} is not a step listed in steps.json")
+    if step in retired_ids():
+        raise Rejected(f"{step} is retired; see its issue for the reason")
     check_step(step)
     return [step]
 

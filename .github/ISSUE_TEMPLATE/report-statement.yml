@@ -1,0 +1,41 @@
+name: Report a statement
+description: Report a lemma or definition that is false, too weak, or wrongly formalized.
+title: "Report S000: <one-line summary>"
+labels: ["report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports are public and stay in the project's record whatever the outcome.
+        Put the step id (for example S042) in the title, replacing S000.
+        For a problem with a definition, name the step where it first shows up.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is wrong?
+      options:
+        - False as stated
+        - Wrongly formalized (it does not say what the mathematics intends)
+        - Too weak to be useful
+        - A definition it relies on is wrong
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reasoning
+    attributes:
+      label: Reasoning
+      description: Why you believe this. Be specific enough that someone else can check it.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Counterexample or Lean snippet
+      description: Optional. A concrete counterexample, or Lean code that demonstrates the problem.
+      render: lean
+  - type: textarea
+    id: fix
+    attributes:
+      label: Suggested correction
+      description: Optional. How the statement or definition should read instead.

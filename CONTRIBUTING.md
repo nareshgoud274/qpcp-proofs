@@ -26,10 +26,12 @@ A pull request is ACCEPTED only when all of these hold:
 
 ## Reporting a problem with a statement or definition
 
-Statements and definitions can be wrong. If a step looks false, too weak, or
-not what the mathematics intends, open an issue or comment on the step's issue
-with your reasoning. Do not change `QPCP/Defs.lean` or `QPCP/Statements.lean`
-in a proof pull request.
+Statements and definitions can be wrong. Use the "Report a statement" issue
+form, with the step id in the title (`Report S042: ...`). The step is marked
+as under review on the site until the report is resolved, and every report
+stays in the public record whatever the outcome. Do not change
+`QPCP/Defs.lean`, `QPCP/Qudit.lean` or `QPCP/Statements.lean` in a proof
+pull request.
 
 ## Proposing new steps
 

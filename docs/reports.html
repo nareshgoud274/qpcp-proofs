@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reports · qpcp-proofs</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="wrap">
+  <h1>Record of reports</h1>
+  <p class="lede">Every claim that a statement here is false or wrongly formalized, and what became of it. Nothing is removed from this record.</p>
+
+  <p><a class="btn" id="report-btn" href="#">Report a statement</a></p>
+  <p class="small sans muted">You need a GitHub account. A report is public as soon as it is filed. Say which lemma, what is wrong, and why; a counterexample or a Lean snippet helps most.</p>
+
+  <div class="stats" aria-live="polite">
+    <div class="stat"><b id="n-open">–</b><span>under review</span></div>
+    <div class="stat"><b id="n-confirmed">–</b><span>confirmed</span></div>
+    <div class="stat"><b id="n-dismissed">–</b><span>dismissed</span></div>
+    <div class="stat"><b id="n-retired">–</b><span>lemmas retired</span></div>
+  </div>
+  <p class="muted small sans" id="load-note">Loading…</p>
+
+  <h2>Under review</h2>
+  <ul class="feed" id="open"></ul>
+
+  <h2>Confirmed</h2>
+  <p class="small sans muted">The report was right. The lemma was retired or the definition corrected.</p>
+  <ul class="feed" id="confirmed"></ul>
+
+  <h2>Dismissed</h2>
+  <p class="small sans muted">The statement stands. The discussion explains why.</p>
+  <ul class="feed" id="dismissed"></ul>
+
+  <h2>What a report can and cannot do</h2>
+  <ul class="sans small">
+    <li>A report marks the lemma "under review" on the map until it is resolved.</li>
+    <li>A confirmed report never rewrites a frozen statement. The lemma is retired and stays visible; a corrected version enters as a new lemma.</li>
+    <li>A proof that Lean has checked cannot be "wrong". What can be wrong is the statement: it may say something other than the mathematics intends. Those are the reports that matter most.</li>
+  </ul>
+</main>
+<footer id="site-footer"></footer>
+
+<script src="assets/site.js"></script>
+<script>
+(function () {
+  var Q = window.QPCP, el = Q.el;
+  Q.chrome("reports.html");
+  document.getElementById("report-btn").href = Q.repoUrl + "/issues/new?template=report-statement.yml";
+
+  function has(issue, name) {
+    return (issue.labels || []).some(function (l) { return l.name === name; });
+  }
+  function row(i, tagClass, tagText) {
+    var step = Q.stepOf(i.title) || "";
+    var title = String(i.title || "").replace(/^\s*Report\s+S\d{3}\s*:?\s*/i, "") || "(no summary)";
+    return el("li", null, [
+      el("span", { class: "when", text: Q.ago(i.closed_at || i.created_at) }),
+      el("span", { class: "what" }, [
+        el("span", { class: "mono", text: step ? step + " " : "" }),
+        Q.link(i.html_url, title),
+        el("span", { class: "muted", text: i.user ? " · reported by " + i.user.login : "" }),
+        el("span", { class: "tag " + tagClass, text: tagText })
+      ])
+    ]);
+  }
+  function fill(id, rows, empty) {
+    var ul = document.getElementById(id);
+    ul.textContent = "";
+    if (!rows.length) ul.appendChild(el("li", { class: "muted", text: empty }));
+    rows.forEach(function (r) { ul.appendChild(r); });
+  }
+
+  Promise.all([
+    Q.getPaged(Q.api + "/issues?labels=report&state=all", 120000, 10),
+    Q.getJson(Q.raw + "steps.json", 600000)
+  ]).then(function (res) {
+    var reports = res[0].filter(function (i) { return !i.pull_request; });
+    var open = [], confirmed = [], dismissed = [], unresolved = [];
+    reports.forEach(function (i) {
+      if (i.state === "open") open.push(row(i, "bad", "under review"));
+      else if (has(i, "confirmed")) confirmed.push(row(i, "ok", "confirmed"));
+      else if (has(i, "dismissed")) dismissed.push(row(i, "", "dismissed"));
+      else unresolved.push(row(i, "warn", "closed without a verdict"));
+    });
+    // A report closed with neither label has no outcome yet; list it with the
+    // open ones and do not count it as dismissed.
+    open = open.concat(unresolved);
+    fill("open", open, "No statement is under review.");
+    fill("confirmed", confirmed, "No report has been confirmed yet.");
+    fill("dismissed", dismissed, "No report has been dismissed yet.");
+    document.getElementById("n-open").textContent = open.length;
+    document.getElementById("n-confirmed").textContent = confirmed.length;
+    document.getElementById("n-dismissed").textContent = dismissed.length;
+    document.getElementById("n-retired").textContent = res[1].filter(function (s) { return s.retired; }).length;
+    document.getElementById("load-note").textContent = "Live from GitHub, read " + new Date().toLocaleTimeString() + ".";
+  }).catch(function () { Q.fail(document.getElementById("load-note")); });
+})();
+</script>
+</body>
+</html>
