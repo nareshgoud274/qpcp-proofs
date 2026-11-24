@@ -23,14 +23,26 @@ EOF
   sudo apparmor_parser -r /etc/apparmor.d/qpcp-bwrap
 fi
 
-probe="$RUNNER_TEMP/qpcp-sandbox-probe"
-rm -f "$probe"
-"$BWRAP" --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-all --die-with-parent \
-  --new-session --cap-drop ALL --clearenv --setenv PATH /usr/bin:/bin -- \
-  sh -c "touch '$probe' 2>/dev/null; touch /tmp/inside; getent hosts github.com > /dev/null 2>&1 && echo NET || echo NONET" \
-  > "$RUNNER_TEMP/qpcp-sandbox-probe.out"
-out="$(cat "$RUNNER_TEMP/qpcp-sandbox-probe.out")"
-[ "$out" = "NONET" ] || { echo "sandbox check failed: network reachable ($out)"; exit 1; }
-[ ! -e "$probe" ] || { echo "sandbox check failed: it wrote to the host"; exit 1; }
-[ ! -e /tmp/inside ] || { echo "sandbox check failed: its /tmp is the host's"; exit 1; }
-echo "bubblewrap $("$BWRAP" --version) works: no network, read-only host, private /tmp"
+smoke() {  # prints NONET only if a sandbox has no network and cannot touch the host
+  local probe="$RUNNER_TEMP/qpcp-sandbox-probe"
+  rm -f "$probe" /tmp/qpcp-sandbox-inside
+  local out
+  out="$("$BWRAP" --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-all --die-with-parent \
+    --new-session --cap-drop ALL --clearenv --setenv PATH /usr/bin:/bin -- \
+    sh -c "touch '$probe' 2>/dev/null; touch /tmp/qpcp-sandbox-inside; getent hosts github.com > /dev/null 2>&1 && echo NET || echo NONET" 2>&1)" || true
+  echo "$out"
+  [ "$out" = "NONET" ] && [ ! -e "$probe" ] && [ ! -e /tmp/qpcp-sandbox-inside ]
+}
+
+if smoke; then
+  echo "sandbox works with the AppArmor profile for bwrap"
+else
+  # The runner's AppArmor policy still withholds capabilities inside new user
+  # namespaces (bwrap then cannot bring up loopback in its network namespace).
+  # Lift the restriction on this throwaway runner only, and test again.
+  sudo aa-status 2>/dev/null | grep -q qpcp-bwrap && echo "(profile qpcp-bwrap is loaded)" || echo "(profile qpcp-bwrap is not loaded)"
+  sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+  smoke || { echo "sandbox check failed: bubblewrap does not isolate on this runner"; exit 1; }
+  echo "sandbox works after lifting kernel.apparmor_restrict_unprivileged_userns on this runner"
+fi
+echo "bubblewrap $("$BWRAP" --version): no network, read-only host, private /tmp"
