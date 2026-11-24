@@ -27,11 +27,12 @@
     <div>
       <h3>It does verify</h3>
       <ul>
-        <li>The pull request adds one proof file and changes nothing else.</li>
+        <li>A contributor's pull request adds one proof file and changes nothing else.</li>
         <li>The file compiles under the pinned versions of Lean and Mathlib.</li>
         <li>The theorem has exactly the frozen statement as its type.</li>
         <li>The proof rests only on Lean's three standard axioms. A proof containing <span class="mono">sorry</span> fails.</li>
       </ul>
+      <p>The maintainer's own pull requests may change other files, such as this site or new statements. Those skip the one-file rule and instead re-check every proof in the record.</p>
     </div>
     <div>
       <h3>It cannot verify</h3>

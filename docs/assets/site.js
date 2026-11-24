@@ -70,6 +70,18 @@
     }).then(function (v) { cacheSet(key, v); return v; });
   }
 
+  // GitHub returns at most 100 rows per request; follow the pages.
+  function getPaged(url, maxAgeMs, maxPages) {
+    var out = [];
+    function page(n) {
+      return getJson(url + "&per_page=100&page=" + n, maxAgeMs).then(function (rows) {
+        out = out.concat(rows);
+        return rows.length === 100 && n < maxPages ? page(n + 1) : out;
+      });
+    }
+    return page(1);
+  }
+
   function ago(iso) {
     if (!iso) return "";
     var s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -90,8 +102,8 @@
     var age = maxAgeMs === undefined ? 120000 : maxAgeMs;
     return getJson(raw + "steps.json", 600000).then(function (steps) {
       return Promise.all([
-        getJson(api + "/issues?labels=step&state=all&per_page=100", age),
-        getJson(api + "/pulls?state=closed&sort=updated&direction=desc&per_page=100", age),
+        getPaged(api + "/issues?labels=step&state=all", age, 10),
+        getPaged(api + "/pulls?state=closed&sort=updated&direction=desc", age, 10),
         getJson(api + "/pulls?state=open&per_page=50", age)
       ]).then(function (r) { return build(steps, r[0], r[1], r[2]); });
     });
