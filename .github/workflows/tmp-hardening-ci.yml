@@ -49,7 +49,8 @@ jobs:
 
       - name: Simulate contributor pull requests through check.yml's script
         run: |
-          set -uo pipefail
+          # Expected rejections exit non-zero; the step must not stop on them.
+          set +e
           git config user.name qpcp-ci && git config user.email qpcp-ci@users.noreply.github.com
           base="$(git rev-parse HEAD)"; fails=0
           sim() {  # sim <description> <expected verdict prefix> <setup command...>
