@@ -20,6 +20,7 @@
     ["index.html", "Map"],
     ["live.html", "Live"],
     ["updates.html", "Updates"],
+    ["reports.html", "Reports"],
     ["how.html", "How it works"],
     ["contributors.html", "Contributors"],
     ["about.html", "What this is and is not"],
@@ -132,7 +133,13 @@
     var out = steps.map(function (s) {
       var issue = issueBy[s.id], pr = mergedBy[s.id];
       var status = "open", who = "", when = "";
-      if (issue && issue.state === "closed") {
+      var has = function (name) {
+        return !!issue && (issue.labels || []).some(function (l) { return l.name === name; });
+      };
+      if (s.retired) {
+        status = "retired";
+        when = issue ? issue.closed_at || issue.updated_at : "";
+      } else if (issue && issue.state === "closed") {
         status = "proved";
         who = pr ? pr.user.login : "";
         when = pr ? pr.merged_at : issue.closed_at;
@@ -140,7 +147,7 @@
           people[who] = people[who] || [];
           people[who].push(s.id);
         }
-      } else if (issue && (issue.labels || []).some(function (l) { return l.name === "claimed"; })) {
+      } else if (has("claimed")) {
         status = "claimed";
         who = (issue.assignees || []).map(function (a) { return a.login; }).join(", ");
         when = issue.updated_at;
@@ -148,14 +155,18 @@
       return {
         id: s.id, title: s.title, section: s.section, difficulty: s.difficulty, deps: s.deps || [],
         status: status, who: who, when: when,
+        disputed: !s.retired && has("disputed"), replacedBy: s.replaced_by || "",
         url: issue ? issue.html_url : repoUrl + "/issues",
         prUrl: pr ? pr.html_url : "",
         checking: checking[s.id] || null
       };
     });
 
-    var count = { proved: 0, claimed: 0, open: 0 };
-    out.forEach(function (s) { count[s.status]++; });
+    var count = { proved: 0, claimed: 0, open: 0, retired: 0, disputed: 0 };
+    out.forEach(function (s) {
+      count[s.status]++;
+      if (s.disputed) count.disputed++;
+    });
     return { steps: out, count: count, people: people, openPulls: openPulls };
   }
 
@@ -187,7 +198,7 @@
 
   window.QPCP = {
     cfg: CFG, repoUrl: repoUrl, raw: raw, api: api,
-    el: el, link: link, getJson: getJson, ago: ago, stepOf: stepOf,
+    el: el, link: link, getJson: getJson, getPaged: getPaged, ago: ago, stepOf: stepOf,
     loadCore: loadCore, chrome: chrome, fail: fail
   };
 })();

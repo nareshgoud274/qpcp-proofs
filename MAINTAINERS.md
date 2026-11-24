@@ -80,3 +80,29 @@ The site is static and reads its data from GitHub in the visitor's browser.
   `docs/sponsors.json` as `{"name": "...", "url": "https://...", "since": "2026-12"}`.
   List a supporter only with their agreement.
 - The site never handles payments or payment details itself.
+
+## Handling reports
+
+A report is an issue with the `report` label. The `report` workflow adds
+that label to any issue whose title starts with "Report S", and adds
+the `disputed` label to the step it names and removes it when no open
+report on that step remains.
+
+- **Dismiss:** explain why in a comment, add the `dismissed` label, close
+  the report.
+- **Confirm:** add the `confirmed` label and close the report, then retire
+  the step in one pull request:
+  1. In `steps.json`, add `"retired": true` to the step, and
+     `"replaced_by": "Sxxx"` if there is a corrected version.
+  2. Never edit or delete the frozen statement in `QPCP/Statements.lean`.
+     Add a doc-comment line above it: `RETIRED: see report #N.`
+  3. If there is a corrected statement, add it as a new step with a new id
+     at the end of `QPCP/Statements.lean` and `steps.json`, then run
+     `python3 scripts/create_issues.py`.
+  4. Add the `retired` label to the old step's issue and close it as "not
+     planned", with a link to the report.
+  5. If a proof of the retired step exists, leave it in place. It is still
+     a valid proof of the statement as written.
+- A report about a definition is confirmed the same way, and every step
+  whose meaning changes is retired and restated.
+- Never delete a report, whatever its outcome.

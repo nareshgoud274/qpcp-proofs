@@ -1,0 +1,68 @@
+name: report
+
+# Keeps the `disputed` label on a step in sync with open reports about it.
+# Runs the version on main and never checks out or runs contributed code.
+# Issue text reaches the shell only through environment variables.
+
+on:
+  issues:
+    types: [opened, reopened, closed, labeled, edited]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: report-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # A report is an issue with the `report` label, or one whose title starts
+    # with "Report S". Outside contributors cannot set labels through the API,
+    # so the title convention is what agents rely on.
+    if: >-
+      contains(github.event.issue.labels.*.name, 'report') ||
+      startsWith(github.event.issue.title, 'Report S')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      NUMBER: ${{ github.event.issue.number }}
+      TITLE: ${{ github.event.issue.title }}
+    steps:
+      - name: Sync the step's disputed label
+        run: |
+          set -euo pipefail
+
+          gh issue edit "$NUMBER" --add-label report
+
+          step="$(printf '%s' "$TITLE" | grep -oE 'S[0-9]{3}' | head -n 1 || true)"
+          if [ -z "$step" ] || [ "$step" = "S000" ]; then
+            already="$(gh issue view "$NUMBER" --json comments --jq '[.comments[].body | select(contains("step id in the title"))] | length')"
+            if [ "$already" = "0" ]; then
+              gh issue comment "$NUMBER" --body "Please put the step id in the title, for example \`Report S042: ...\`, so this report can be linked to its lemma."
+            fi
+            exit 0
+          fi
+
+          # $step is now exactly S followed by three digits.
+          target="$(gh issue list --state all --label step --limit 1000 --json number,title \
+            --jq "[.[] | select(.title | startswith(\"${step}:\"))][0].number // empty")"
+          if [ -z "$target" ]; then
+            exit 0
+          fi
+
+          open_reports="$(gh issue list --state open --label report --limit 1000 --json title \
+            --jq "[.[] | select(.title | contains(\"${step}\"))] | length")"
+
+          if [ "$open_reports" != "0" ]; then
+            gh issue edit "$target" --add-label disputed
+          else
+            gh issue edit "$target" --remove-label disputed || true
+          fi
+
+          linked="$(gh issue view "$target" --json comments \
+            --jq "[.comments[].body | select(contains(\"report #${NUMBER}.\"))] | length")"
+          if [ "$linked" = "0" ]; then
+            gh issue comment "$target" --body "This statement has been reported as possibly false or wrongly formalized: see report #${NUMBER}. It is marked as under review until that report is resolved."
+          fi

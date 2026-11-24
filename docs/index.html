@@ -29,7 +29,10 @@
     <span><i class="proved"></i>Checked by Lean</span>
     <span><i class="claimed"></i>Someone is working on it</span>
     <span><i></i>Open</span>
+    <span><i class="disputed"></i>Reported, under review</span>
+    <span><i class="retired"></i>Retired after a report</span>
   </div>
+  <p class="small sans" id="report-line"><a href="reports.html">Record of reports</a> · Think a statement is false or wrongly formalized? <a href="reports.html">Report it</a>.</p>
 
   <h2>Latest from the record</h2>
   <ul class="feed" id="latest"><li class="muted">Loading…</li></ul>
@@ -75,9 +78,11 @@
         body.appendChild(el("div", { class: "map-section" }, [el("h3", { text: section }), grid]));
       }
       var label = s.id + ": " + s.title + ". " +
-        (s.status === "proved" ? "Checked" + (s.who ? ", proved by " + s.who : "") :
-         s.status === "claimed" ? "Being worked on" + (s.who ? " by " + s.who : "") : "Open");
-      grid.appendChild(el("a", { class: "cell " + s.status, href: s.url, title: label, "aria-label": label, text: s.id.slice(1) }));
+        (s.status === "retired" ? "Retired after a report" + (s.replacedBy ? ", replaced by " + s.replacedBy : "") :
+         s.status === "proved" ? "Checked" + (s.who ? ", proved by " + s.who : "") :
+         s.status === "claimed" ? "Being worked on" + (s.who ? " by " + s.who : "") : "Open") +
+        (s.disputed ? ". Reported and under review" : "");
+      grid.appendChild(el("a", { class: "cell " + s.status + (s.disputed ? " disputed" : ""), href: s.url, title: label, "aria-label": label, text: s.id.slice(1) }));
     });
 
     var latest = document.getElementById("latest");

@@ -29,6 +29,8 @@ def main():
     have = {i["title"].split(":")[0].strip() for i in existing}
 
     for s in steps:
+        if s.get("retired") is True:
+            continue
         if s["id"] in have:
             continue
         deps = ", ".join(s["deps"]) if s["deps"] else "none"
