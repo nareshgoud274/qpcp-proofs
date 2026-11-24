@@ -33,7 +33,16 @@ jobs:
       - name: Fetch Mathlib cache
         run: lake exe cache get
 
-      - name: Check the proof
+      - name: Check the pull request
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: python3 scripts/check.py pr "$BASE_SHA"
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          if [ "$PR_AUTHOR" = "$REPO_OWNER" ]; then
+            echo "Maintainer pull request: re-checking the whole project."
+            lake build QPCP.Defs QPCP.Statements
+            python3 scripts/check.py all
+          else
+            python3 scripts/check.py pr "$BASE_SHA"
+          fi

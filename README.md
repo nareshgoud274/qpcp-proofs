@@ -48,6 +48,7 @@ Progress and contributors: <https://nareshgoud274.github.io/qpcp-proofs/>
 
 - [Proof Atlas: Quantum PCP Conjecture collaboration](https://www.proofatlas.ai/collaboration/quantum-pcp-conjecture/),
   an informal research map of routes, milestones, and open tasks.
+- [QIQCOP Zoo: The quantum PCP conjecture](https://qiqc-op.com/problem/op_bca77ec42ddd1d5c/), the reference formulation and key literature.
 
 ## License
 
