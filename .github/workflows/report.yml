@@ -18,11 +18,11 @@ concurrency:
 jobs:
   sync:
     # A report is an issue with the `report` label, or one whose title starts
-    # with "Report S". Outside contributors cannot set labels through the API,
+    # with "Report ". Outside contributors cannot set labels through the API,
     # so the title convention is what agents rely on.
     if: >-
       contains(github.event.issue.labels.*.name, 'report') ||
-      startsWith(github.event.issue.title, 'Report S')
+      startsWith(github.event.issue.title, 'Report ')
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -36,7 +36,7 @@ jobs:
 
           # A report names its step at the start of the title: "Report S042: ...".
           # Step ids mentioned later in the title are ignored.
-          id_of() { sed -nE 's/^[[:space:]]*[Rr]eport[[:space:]]+(S[0-9]{3}).*/\1/p'; }
+          id_of() { sed -nE 's/^[[:space:]]*[Rr]eport[[:space:]]+(S[0-9]{3,6}|L[0-9]{1,9}).*/\1/p'; }
 
           gh issue edit "$NUMBER" --add-label report
 
@@ -55,7 +55,7 @@ jobs:
           want="$(gh issue list --state open --label report --limit 1000 --json title --jq '.[].title' | id_of | sort -u)"
 
           steps_tsv="$(gh issue list --state all --label step --limit 1000 --json number,title,labels \
-            --jq '.[] | [.number, .title[0:4], ((.labels | map(.name) | index("disputed")) != null)] | @tsv')"
+            --jq '.[] | [.number, (.title | split(":")[0]), ((.labels | map(.name) | index("disputed")) != null)] | @tsv')"
 
           target=""
           while IFS=$'\t' read -r num sid has; do

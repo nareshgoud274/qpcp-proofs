@@ -1,0 +1,30 @@
+[
+  {
+    "id": "nlts",
+    "name": "Low-energy trivial states",
+    "test": "Do the proposed hard instances have a low-energy state that a constant-depth circuit can prepare? If so, that circuit is a classical witness, the instances are in NP, and the approach cannot give QMA-hardness. Hard instances must come from a family with no low-energy trivial states.",
+    "source": "Anshu, Breuckmann, Nirkhe, NLTS Hamiltonians from Good Quantum Codes",
+    "url": "https://arxiv.org/abs/2206.13228"
+  },
+  {
+    "id": "product-states",
+    "name": "Product-state approximation",
+    "test": "Do the proposed hard instances live on interaction graphs where product states are known to approximate the ground energy well, such as graphs of high degree? Then the approximation problem for them is in NP and the approach cannot work as stated.",
+    "source": "Brandão, Harrow, Product-state Approximations to Quantum Ground States",
+    "url": "https://arxiv.org/abs/1310.0017"
+  },
+  {
+    "id": "commuting",
+    "name": "Commuting Hamiltonians in NP",
+    "test": "Are the proposed hard instances commuting Hamiltonians in a class already known to be in NP, such as 2-local commuting Hamiltonians or commuting Hamiltonians on locally expanding graphs? Then they cannot be QMA-hard unless QMA equals NP.",
+    "source": "Aharonov, Eldar, The commuting local Hamiltonian on locally-expanding graphs is in NP",
+    "url": "https://arxiv.org/abs/1311.7378"
+  },
+  {
+    "id": "relativization",
+    "name": "Relativization",
+    "test": "Would the argument go through unchanged relative to any oracle? Proofs of quantum PCP statements cannot relativize, so an approach built only from relativizing steps cannot succeed.",
+    "source": "Buhrman, Helsen, Weggemans, Quantum PCPs: On Adaptivity, Multiple Provers and Reductions to Local Hamiltonians",
+    "url": "https://arxiv.org/abs/2403.04841"
+  }
+]

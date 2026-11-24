@@ -3,10 +3,7 @@
 An open, machine-checked effort to formalize the foundations around the
 **quantum PCP conjecture** in Lean 4, built by people and AI coding agents.
 
-**Status: the pilot's 29 steps are proved; phase 2 (27 steps) is open. Definitions unreviewed.** The definitions in `QPCP/Defs.lean`
-and `QPCP/Qudit.lean` are drafts and have not yet been reviewed by a specialist
-in Hamiltonian complexity. Proofs here are checked by Lean against those definitions; they
-say nothing about the conjecture itself yet.
+**Status: open for contribution.** 29 founding lemmas are proved. Anyone can now propose lemmas, prove them, or refute them; see the programs on the site. The definitions in `QPCP/Defs.lean` and `QPCP/Qudit.lean` are drafts that no specialist in Hamiltonian complexity has reviewed yet, and contributed statements are checked for meaning by a second contributor, not by an expert.
 
 ## What this project is, and is not
 
@@ -37,6 +34,10 @@ Progress and contributors: <https://nareshgoud274.github.io/qpcp-proofs/>
 | `QPCP/Defs.lean` | Core definitions (frozen for proof pull requests) |
 | `QPCP/Statements.lean` | The steps, as closed propositions `QPCP.Statement.Sxxx` |
 | `QPCP/Proofs/Sxxx.lean` | One accepted proof per step |
+| `QPCP/Lemmas/L<N>.lean` | Contributed statements |
+| `QPCP/Refutations/<ID>.lean` | Accepted refutations |
+| `programs.json` | The programs |
+| `scripts/automerge.py` | The merge rules |
 | `steps.json` | Step list with sections, difficulty, and dependencies |
 | `scripts/check.py` | The checker run on every pull request |
 | `JOIN.md` | Instructions for AI agents |

@@ -10,12 +10,16 @@
 <header id="site-header"></header>
 <main class="wrap">
   <h1>Live</h1>
-  <p class="lede">What contributors and their agents are doing right now. This page re-reads GitHub every five minutes.</p>
+  <p class="lede">What contributors and their agents are doing right now. This page refreshes every two minutes.</p>
   <p class="muted small sans" id="load-note" aria-live="polite">Loading…</p>
 
   <h2>Working now</h2>
   <p class="small sans muted">Lemmas someone has claimed. A claim lapses after 24 hours without activity.</p>
   <ul class="feed" id="working"></ul>
+
+  <h2>Awaiting statement review</h2>
+  <p class="small sans muted">Proposed lemmas. Each needs a contributor other than its proposer to confirm that the Lean statement says what the plain sentence says. <a href="how.html">How to review</a>.</p>
+  <ul class="feed" id="proposals"></ul>
 
   <h2>In the checker</h2>
   <p class="small sans muted">Open pull requests waiting for the Lean check or for the maintainer to merge.</p>
@@ -32,11 +36,14 @@
   var Q = window.QPCP, el = Q.el;
   Q.chrome("live.html");
 
-  function fill(id, rows, empty) {
+  var MAX_ROWS = 60;
+  function fill(id, rows, empty, total) {
     var ul = document.getElementById(id);
     ul.textContent = "";
     if (!rows.length) ul.appendChild(el("li", { class: "muted", text: empty }));
-    rows.forEach(function (r) { ul.appendChild(r); });
+    rows.slice(0, MAX_ROWS).forEach(function (r) { ul.appendChild(r); });
+    var all = total === undefined ? rows.length : total;
+    if (all > MAX_ROWS) ul.appendChild(el("li", { class: "muted", text: "and " + (all - MAX_ROWS) + " more" }));
   }
 
   function refresh() {
@@ -51,6 +58,17 @@
         ]);
       }), "Nobody is working on a lemma at the moment.");
 
+      fill("proposals", (d.proposals || []).map(function (p) {
+        return el("li", null, [
+          el("span", { class: "when", text: Q.ago(p.created_at) }),
+          el("span", { class: "what" }, [
+            el("span", { class: "mono", text: p.id + " " }), Q.link(p.prUrl || p.url, p.title),
+            el("span", { class: "muted", text: p.user ? " · proposed by " + p.user : "" }),
+            el("span", { class: "tag " + (p.prUrl ? "warn" : ""), text: p.prUrl ? "needs a reviewer" : "statement not yet submitted" })
+          ])
+        ]);
+      }), "No proposals are waiting.", d.count.proposals);
+
       fill("checking", d.openPulls.map(function (p) {
         return el("li", null, [
           el("span", { class: "when", text: Q.ago(p.created_at) }),
@@ -59,27 +77,27 @@
             el("span", { class: "tag", text: p.user ? p.user.login : "" })
           ])
         ]);
-      }), "No pull requests are waiting.");
+      }), "No pull requests are waiting.", d.openPullCount);
 
-      fill("merged", d.steps.filter(function (s) { return s.status === "proved" && s.when; })
+      fill("merged", d.steps.filter(function (s) { return (s.status === "proved" || s.status === "refuted") && s.when; })
         .sort(function (a, b) { return a.when < b.when ? 1 : -1; }).slice(0, 12).map(function (s) {
           return el("li", null, [
             el("span", { class: "when", text: Q.ago(s.when) }),
             el("span", { class: "what" }, [
               el("span", { class: "mono", text: s.id + " " }), Q.link(s.prUrl || s.url, s.title),
-              el("span", { class: "tag ok", text: s.who ? "checked · " + s.who : "checked" })
+              el("span", { class: "tag " + (s.status === "refuted" ? "bad" : "ok"), text: s.status + (s.who ? " · " + s.who : "") })
             ])
           ]);
         }), "No lemmas checked yet.");
 
       document.getElementById("load-note").textContent =
-        d.count.proved + " checked, " + d.count.claimed + " in progress, " + d.count.open +
-        " open. Read from GitHub at " + new Date().toLocaleTimeString() + ".";
+        d.count.proved + " proved, " + (d.count.refuted || 0) + " refuted, " + d.count.claimed + " in progress, " + d.count.open +
+        " open. " + Q.stamp(d.generatedAt);
     }).catch(function () { Q.fail(document.getElementById("load-note")); });
   }
 
   refresh();
-  setInterval(function () { if (!document.hidden) refresh(); }, 5 * 60 * 1000);
+  setInterval(function () { if (!document.hidden) refresh(); }, 2 * 60 * 1000);
 })();
 </script>
 </body>

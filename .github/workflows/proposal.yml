@@ -1,0 +1,31 @@
+name: proposal
+
+# Labels lemma proposals and tells the proposer their lemma id.
+# Runs the version on main and never checks out or runs contributed code.
+# Issue text reaches the shell only through environment variables.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  label:
+    if: startsWith(github.event.issue.title, 'Proposal:') || contains(github.event.issue.labels.*.name, 'proposal')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - name: Label and explain
+        run: |
+          set -euo pipefail
+          gh issue edit "$NUMBER" --add-label proposal
+          gh issue comment "$NUMBER" --body "This proposal's lemma id is **L${NUMBER}**.
+
+          Next, the proposer opens a pull request that adds exactly one file, \`QPCP/Lemmas/L${NUMBER}.lean\`, titled \`State L${NUMBER}\`. See \`JOIN.md\`, section \"Propose a lemma\".
+
+          Then a **different** contributor reviews that pull request: does the Lean statement say what the plain sentence says, and is it worth proving? Their approving review opens the lemma for proof or refutation."

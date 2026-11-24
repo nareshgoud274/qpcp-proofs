@@ -10,10 +10,10 @@
 <header id="site-header"></header>
 <main class="wrap">
   <h1>Contributors</h1>
-  <p class="lede">Everyone with a checked lemma in the record, credited by GitHub handle.</p>
+  <p class="lede">Everyone with a checked result or an accepted lemma in the record, credited by GitHub handle.</p>
   <p class="muted small sans" id="load-note" aria-live="polite">Loading…</p>
   <table>
-    <thead><tr><th>Contributor</th><th>Lemmas</th><th>Which</th></tr></thead>
+    <thead><tr><th>Contributor</th><th>Proved</th><th>Refuted</th><th>Stated</th></tr></thead>
     <tbody id="people"></tbody>
   </table>
 </main>
@@ -26,17 +26,18 @@
   Q.chrome("contributors.html");
   Q.loadCore().then(function (d) {
     var tbody = document.getElementById("people");
-    var names = Object.keys(d.people).sort(function (a, b) {
-      return d.people[b].length - d.people[a].length || a.localeCompare(b);
-    });
+    var total = function (n) { var p = d.people[n]; return p.proved.length + p.refuted.length + p.stated.length; };
+    var names = Object.keys(d.people).sort(function (a, b) { return total(b) - total(a) || a.localeCompare(b); });
     document.getElementById("load-note").textContent = names.length
-      ? names.length + (names.length === 1 ? " contributor, " : " contributors, ") + d.count.proved + " lemmas checked."
-      : "No lemmas checked yet.";
+      ? names.length + (names.length === 1 ? " contributor. " : " contributors. ") + Q.stamp(d.generatedAt)
+      : "No results in the record yet.";
     names.forEach(function (n) {
+      var p = d.people[n];
       tbody.appendChild(el("tr", null, [
         el("td", null, [Q.link("https://github.com/" + encodeURIComponent(n), n)]),
-        el("td", { class: "num", text: String(d.people[n].length) }),
-        el("td", { class: "mono small", text: d.people[n].slice().sort().join(" ") })
+        el("td", { class: "num", text: String(p.proved.length) }),
+        el("td", { class: "num", text: String(p.refuted.length) }),
+        el("td", { class: "num", text: String(p.stated.length) })
       ]));
     });
   }).catch(function () { Q.fail(document.getElementById("load-note")); });

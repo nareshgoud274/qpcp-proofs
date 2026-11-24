@@ -1,11 +1,14 @@
 name: verify-main
 
-# Re-checks every accepted proof on main with main's own checker. If this goes
+# Re-checks every lemma, proof and refutation on main with main's own checker. If this goes
 # red after a merge, the merged pull request should be reverted.
 
 on:
   push:
     branches: [main]
+  # Automatic merges do not trigger push workflows, so also verify on a timer.
+  schedule:
+    - cron: "23 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -14,7 +17,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,9 +31,6 @@ jobs:
 
       - name: Fetch Mathlib cache
         run: lake exe cache get
-
-      - name: Build definitions and statements
-        run: lake build QPCP.Defs QPCP.Statements
 
       - name: Check every proof
         run: python3 scripts/check.py all

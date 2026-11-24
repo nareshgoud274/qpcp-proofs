@@ -50,18 +50,13 @@
   Q.chrome("reports.html");
   document.getElementById("report-btn").href = Q.repoUrl + "/issues/new?template=report-statement.yml";
 
-  function has(issue, name) {
-    return (issue.labels || []).some(function (l) { return l.name === name; });
-  }
-  function row(i, tagClass, tagText) {
-    var step = Q.stepOf(i.title) || "";
-    var title = String(i.title || "").replace(/^\s*Report\s+S\d{3}\s*:?\s*/i, "") || "(no summary)";
+  function row(r, tagClass, tagText) {
     return el("li", null, [
-      el("span", { class: "when", text: Q.ago(i.closed_at || i.created_at) }),
+      el("span", { class: "when", text: Q.ago(r.when) }),
       el("span", { class: "what" }, [
-        el("span", { class: "mono", text: step ? step + " " : "" }),
-        Q.link(i.html_url, title),
-        el("span", { class: "muted", text: i.user ? " · reported by " + i.user.login : "" }),
+        el("span", { class: "mono", text: r.step ? r.step + " " : "" }),
+        Q.link(r.url, r.summary),
+        el("span", { class: "muted", text: r.user ? " · reported by " + r.user : "" }),
         el("span", { class: "tag " + tagClass, text: tagText })
       ])
     ]);
@@ -73,17 +68,13 @@
     rows.forEach(function (r) { ul.appendChild(r); });
   }
 
-  Promise.all([
-    Q.getPaged(Q.api + "/issues?labels=report&state=all", 120000, 10),
-    Q.getJson(Q.raw + "steps.json", 600000)
-  ]).then(function (res) {
-    var reports = res[0].filter(function (i) { return !i.pull_request; });
+  Q.loadReports().then(function (d) {
     var open = [], confirmed = [], dismissed = [], unresolved = [];
-    reports.forEach(function (i) {
-      if (i.state === "open") open.push(row(i, "bad", "under review"));
-      else if (has(i, "confirmed")) confirmed.push(row(i, "ok", "confirmed"));
-      else if (has(i, "dismissed")) dismissed.push(row(i, "", "dismissed"));
-      else unresolved.push(row(i, "warn", "closed without a verdict"));
+    d.reports.forEach(function (r) {
+      if (r.verdict === "open") open.push(row(r, "bad", "under review"));
+      else if (r.verdict === "confirmed") confirmed.push(row(r, "ok", "confirmed"));
+      else if (r.verdict === "dismissed") dismissed.push(row(r, "", "dismissed"));
+      else unresolved.push(row(r, "warn", "closed without a verdict"));
     });
     // A report closed with neither label has no outcome yet; list it with the
     // open ones and do not count it as dismissed.
@@ -94,8 +85,8 @@
     document.getElementById("n-open").textContent = open.length;
     document.getElementById("n-confirmed").textContent = confirmed.length;
     document.getElementById("n-dismissed").textContent = dismissed.length;
-    document.getElementById("n-retired").textContent = res[1].filter(function (s) { return s.retired; }).length;
-    document.getElementById("load-note").textContent = "Live from GitHub, read " + new Date().toLocaleTimeString() + ".";
+    document.getElementById("n-retired").textContent = d.retired;
+    document.getElementById("load-note").textContent = Q.stamp(d.generatedAt);
   }).catch(function () { Q.fail(document.getElementById("load-note")); });
 })();
 </script>

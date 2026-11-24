@@ -1,39 +1,58 @@
 # Contributing
 
-## Proving a step
+There are four ways to contribute. `JOIN.md` has the exact commands; they are
+the same for people and for AI agents.
 
-1. Find an open issue labelled `step` without the `claimed` label.
-2. Comment `/claim` on it. One handle holds one step at a time; a claim lapses
-   after 24 hours without a comment on the issue.
-3. Fork, clone, run `lake exe cache get`, and write `QPCP/Proofs/Sxxx.lean`
-   proving `QPCP.Statement.Sxxx` as `theorem QPCP.Proof.Sxxx`.
-4. Open a pull request that changes only that file, with `Closes #<issue>` in
-   the description.
+| | What you do | What you add |
+| --- | --- | --- |
+| **Prove** | Claim an open lemma and prove it | `QPCP/Proofs/<ID>.lean` |
+| **Refute** | Claim an open lemma and prove it false | `QPCP/Refutations/<ID>.lean` |
+| **Propose** | State a new lemma for one of the programs | `QPCP/Lemmas/L<N>.lean` |
+| **Review** | Check that someone else's proposed statement says what its plain sentence says | An approving review on their pull request |
 
-The full rules are in `JOIN.md`; they are the same for people and agents.
+Lemma ids: founding steps are `S001`, `S002`, ... and are stated in
+`QPCP/Statements.lean`. Contributed lemmas are `L<N>`, where `N` is the number
+of the lemma's issue.
 
 ## What the checker accepts
 
 A pull request is ACCEPTED only when all of these hold:
 
-- It adds or changes exactly one file, `QPCP/Proofs/Sxxx.lean`, for a step
-  listed in `steps.json`.
-- The file imports only Mathlib, `QPCP.Defs`, `QPCP.Qudit`, `QPCP.Statements`, and merged
-  proofs, and uses no `sorry`, new axioms, or metaprogramming.
-- `lake build QPCP.Proofs.Sxxx` succeeds.
-- `QPCP.Proof.Sxxx` has exactly the type `QPCP.Statement.Sxxx`.
-- The proof depends only on `propext`, `Classical.choice`, and `Quot.sound`.
+- It adds exactly one new file of one of the three kinds above and changes
+  nothing else.
+- The file uses only allowed imports, and no `sorry`, new axioms, or
+  metaprogramming.
+- It builds under the pinned Lean and Mathlib.
+- A proof has exactly the statement as its type; a refutation has exactly its
+  negation.
+- It depends only on `propext`, `Classical.choice`, and `Quot.sound`.
+- A lemma file names an open program, gives the statement in plain words, and
+  contains exactly one definition, of type `Prop`.
+
+For now the maintainer merges accepted contributions by hand, after reading
+the one changed file; automatic merging is switched off while the checker is
+hardened. An accepted lemma is merged once a contributor other than its author
+has approved it.
+
+## Reviewing a statement
+
+The checker cannot tell whether a Lean statement means what its plain sentence
+says. That is the reviewer's job, and the project depends on it being done
+honestly. Check quantifiers, hypotheses and edge cases; check that the claim is
+not vacuous, not a duplicate, and serves its program. Approve only what you
+have checked. Do not review your own proposals from another account.
 
 ## Reporting a problem with a statement or definition
 
-Statements and definitions can be wrong. Use the "Report a statement" issue
-form, with the step id in the title (`Report S042: ...`). The step is marked
-as under review on the site until the report is resolved, and every report
-stays in the public record whatever the outcome. Do not change
-`QPCP/Defs.lean`, `QPCP/Qudit.lean` or `QPCP/Statements.lean` in a proof
-pull request.
+A lemma that is false should be refuted in Lean. For a lemma that is true but
+says the wrong thing, or a definition that looks wrong, use the "Report a
+statement" issue form with the id in the title (`Report L123: ...`). The lemma
+is marked as under review on the site until the report is resolved, and every
+report stays in the public record whatever the outcome.
 
-## Proposing new steps
+## What contributors cannot change
 
-Open an issue describing the lemma informally and, if you can, as a Lean
-statement. New steps are added by the maintainer after review.
+Definitions (`QPCP/Defs.lean`, `QPCP/Qudit.lean`), founding statements
+(`QPCP/Statements.lean`), merged files, the checker, and the workflows. To
+propose a new definition or a new program, open an issue describing it; those
+are added by the maintainer after specialist review.

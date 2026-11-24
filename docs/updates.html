@@ -24,17 +24,16 @@
   Q.chrome("updates.html");
   document.getElementById("atom").href = Q.repoUrl + "/releases.atom";
 
-  Q.getJson(Q.api + "/releases?per_page=30", 120000).then(function (rels) {
+  Q.loadReleases().then(function (rels) {
     var box = document.getElementById("releases");
     var note = document.getElementById("load-note");
     box.textContent = "";
-    rels = rels.filter(function (r) { return !r.draft; });
     if (!rels.length) { note.textContent = "No updates published yet."; return; }
     note.textContent = "";
     rels.forEach(function (r) {
       var when = new Date(r.published_at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
-      box.appendChild(el("h2", null, [Q.link(r.html_url, r.name || r.tag_name)]));
-      box.appendChild(el("p", { class: "small sans muted", text: when + " · " + r.tag_name }));
+      box.appendChild(el("h2", null, [Q.link(r.url, r.name || r.tag)]));
+      box.appendChild(el("p", { class: "small sans muted", text: when + " · " + r.tag }));
       (r.body || "").split(/\n\s*\n/).forEach(function (para) {
         if (para.trim()) box.appendChild(el("p", { text: para.trim() }));
       });

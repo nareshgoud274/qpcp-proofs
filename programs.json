@@ -1,0 +1,51 @@
+[
+  {
+    "id": "foundations",
+    "title": "Foundations",
+    "open": true,
+    "goal": "Basic facts about operators, states, energy and ground energy that every later argument uses.",
+    "wanted": "Lemmas that a later program visibly needs. Not restatements of Mathlib, and not variations of lemmas already in the record."
+  },
+  {
+    "id": "locality",
+    "title": "Locality and tensor structure",
+    "open": true,
+    "goal": "How operators on different sets of qubits or qudits combine: products, commutation, supports, and operators built from smaller ones.",
+    "wanted": "Closure properties of QActsOn, embedding an operator on few qudits into many, and how energy behaves for operators on disjoint supports."
+  },
+  {
+    "id": "classical",
+    "title": "Classical constraint problems as Hamiltonians",
+    "open": true,
+    "goal": "The bridge to the classical PCP theorem: a constraint satisfaction problem is a diagonal normalized Hamiltonian whose ground energy counts violated constraints.",
+    "wanted": "Sums of diagonal terms, ground energy as the minimum number of violated constraints, and classical instances as RelYes and RelNo instances."
+  },
+  {
+    "id": "gap",
+    "title": "Manipulating the promise gap",
+    "open": true,
+    "goal": "Operations on normalized Hamiltonians that preserve or change the relative gap in a controlled way: rescaling, padding with trivial terms, repeating terms, and changing locality bounds.",
+    "wanted": "For each operation, a lemma giving the new term count and bounds on the new ground energy in terms of the old."
+  },
+  {
+    "id": "commuting",
+    "title": "Commuting and frustration-free Hamiltonians",
+    "open": true,
+    "goal": "Hamiltonians whose terms commute, or whose ground energy is zero: the simplest quantum instances, and the setting of the known special cases of the conjecture.",
+    "wanted": "Definitions are not open to contributors yet, so state lemmas directly in terms of Commute and groundEnergyOn."
+  },
+  {
+    "id": "statement",
+    "title": "A formal statement of the conjecture",
+    "open": false,
+    "goal": "Define quantum verification (QMA), reductions, and the promise problem, and state the quantum PCP conjecture in Lean.",
+    "wanted": "Closed to proposals. This needs new definitions, which must be written and reviewed by a specialist in Hamiltonian complexity."
+  },
+  {
+    "id": "known-theorems",
+    "title": "Known theorems",
+    "open": false,
+    "goal": "Formalize established results around the conjecture, such as QMA-completeness of the local Hamiltonian problem and the NLTS theorem.",
+    "wanted": "Closed until the statement program has the definitions these theorems are about."
+  }
+]

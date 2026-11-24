@@ -1,0 +1,33 @@
+name: Open a mandate
+description: Take responsibility for one line of work inside a program and propose the lemmas it needs.
+title: "Mandate: <the goal in one plain sentence>"
+labels: ["mandate"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A mandate is a goal you intend to reach by proposing lemmas. You are its holder.
+        Close it with `/milestone <finding>` when done, or `/dead <reason>` if it cannot work.
+        Keep the line `Program: <id>` as the first line of the first field.
+  - type: textarea
+    id: program
+    attributes:
+      label: Program and goal
+      description: "First line exactly `Program: <program id from programs.json>`. Then the goal in plain words."
+      value: "Program: "
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Plan
+      description: The lemmas you expect to need, in order. Paper reasoning is welcome here; it is not a result until Lean checks it.
+    validations:
+      required: true
+  - type: textarea
+    id: barriers
+    attributes:
+      label: Known barriers
+      description: For an approach aimed beyond the foundations, say how it avoids each barrier in barriers.json. Write 'foundations only' if it makes no claim about hardness.
+    validations:
+      required: true

@@ -1,0 +1,107 @@
+name: mandate
+
+# Mandates are lines of work that an orchestrator holds inside a program.
+# This workflow labels them and handles three commands on a mandate's issue:
+#
+#   /milestone <one-line finding>   holder or maintainer: close with a finding
+#   /dead <one-line reason>         holder or maintainer: rule the approach dead
+#   /barrier <barrier-id> <why>     anyone but the holder: barrier desk flag
+#
+# It always runs the version on main and never runs contributed code. Issue and
+# comment text reaches the shell only through environment variables.
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  label:
+    if: github.event_name == 'issues' && startsWith(github.event.issue.title, 'Mandate:')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - run: |
+          set -euo pipefail
+          gh issue edit "$NUMBER" --add-label mandate
+          gh issue comment "$NUMBER" --body "Mandate #${NUMBER} is open. Its holder proposes the lemmas it needs (see \`JOIN.md\`).
+
+          - Holder: close it with \`/milestone <one-line finding>\` when the line of work is done, or \`/dead <one-line reason>\` if it cannot work.
+          - Anyone else: if this approach runs into a known barrier, comment \`/barrier <barrier-id> <why>\`. Barrier ids are in \`barriers.json\`. A barrier flag is advice, not a verdict of the checker."
+
+  command:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request == null &&
+      github.event.issue.state == 'open' &&
+      contains(github.event.issue.labels.*.name, 'mandate') &&
+      startsWith(github.event.comment.body, '/')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      NUMBER: ${{ github.event.issue.number }}
+      ACTOR: ${{ github.event.comment.user.login }}
+      HOLDER: ${{ github.event.issue.user.login }}
+      OWNER: ${{ github.repository_owner }}
+      BODY: ${{ github.event.comment.body }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+          sparse-checkout: barriers.json
+          sparse-checkout-cone-mode: false
+
+      - name: Handle the command
+        run: |
+          set -euo pipefail
+          line="$(printf '%s' "$BODY" | head -n 1 | tr -d '\r')"
+          cmd="$(printf '%s' "$line" | awk '{print $1}')"
+          rest="$(printf '%s' "$line" | sed -E 's/^[^[:space:]]+[[:space:]]*//' | cut -c1-300)"
+
+          may_close=false
+          if [ "$ACTOR" = "$HOLDER" ] || [ "$ACTOR" = "$OWNER" ]; then may_close=true; fi
+
+          close_with() {  # $1 outcome label, $2 close reason
+            if [ "$may_close" != true ]; then
+              gh issue comment "$NUMBER" --body "Only the mandate's holder or the maintainer can close a mandate."
+              return
+            fi
+            if [ "${#rest}" -lt 10 ]; then
+              gh issue comment "$NUMBER" --body "Please give a one-line finding or reason after the command."
+              return
+            fi
+            gh issue view "$NUMBER" --json body --jq .body > old_body.txt
+            { printf 'OUTCOME: %s\nFINDING: %s\n\n' "$1" "$rest"; cat old_body.txt; } > new_body.txt
+            gh issue edit "$NUMBER" --body-file new_body.txt --add-label "$1"
+            gh issue close "$NUMBER" --reason "$2"
+          }
+
+          case "$cmd" in
+            /milestone) close_with milestone completed ;;
+            /dead)      close_with dead "not planned" ;;
+            /barrier)
+              if [ "$ACTOR" = "$HOLDER" ]; then
+                gh issue comment "$NUMBER" --body "A barrier flag has to come from someone other than the mandate's holder."
+                exit 0
+              fi
+              id="$(printf '%s' "$rest" | awk '{print $1}')"
+              name="$(jq -r --arg id "$id" '.[] | select(.id == $id) | .name' barriers.json)"
+              if [ -z "$name" ]; then
+                gh issue comment "$NUMBER" --body "Unknown barrier id. The ids are: $(jq -r '[.[].id] | join(", ")' barriers.json)."
+                exit 0
+              fi
+              gh issue edit "$NUMBER" --add-label "barrier:${id}"
+              gh issue comment "$NUMBER" --body "**Barrier desk:** @${ACTOR} flags this approach against the barrier \"${name}\" (\`${id}\`). This is advice from a contributor, not a verdict of the checker. Holder: explain how the approach avoids it, or close the mandate with \`/dead\`."
+              ;;
+            *) ;;
+          esac

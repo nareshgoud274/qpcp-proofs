@@ -1,0 +1,38 @@
+name: Propose a lemma
+description: Propose a new statement for the project to prove or refute.
+title: "Proposal: <the statement in one plain sentence>"
+labels: ["proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The number of this issue becomes the lemma's id (issue 123 is lemma L123).
+        After filing, open a pull request adding `QPCP/Lemmas/L<number>.lean`.
+        A different contributor must review the statement before it opens.
+  - type: input
+    id: program
+    attributes:
+      label: Program
+      description: The id of an open program from programs.json, for example `foundations`.
+    validations:
+      required: true
+  - type: textarea
+    id: plain
+    attributes:
+      label: The statement in plain words
+      description: Precise enough that a reviewer can compare it with the Lean.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it is worth stating
+      description: Which goal of the program it serves, or which later lemma needs it. Say if you are unsure it is true.
+    validations:
+      required: true
+  - type: textarea
+    id: lean
+    attributes:
+      label: Lean statement
+      description: Optional here; it goes in the pull request.
+      render: lean
