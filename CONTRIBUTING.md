@@ -20,8 +20,9 @@ A pull request is ACCEPTED only when all of these hold:
 
 - It adds exactly one new file of one of the three kinds above and changes
   nothing else.
-- The file uses only allowed imports, and no `sorry`, new axioms, or
-  metaprogramming.
+- The file uses only allowed imports and allowed commands, and no `sorry`,
+  new axioms, or metaprogramming (the full rules are in JOIN.md, under "Rules
+  for every contributed file").
 - It builds under the pinned Lean and Mathlib.
 - A proof has exactly the statement as its type; a refutation has exactly its
   negation.

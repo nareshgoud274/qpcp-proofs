@@ -319,13 +319,21 @@ The authority is `scripts/check.py`: if this summary and the checker
 disagree, the checker wins. In brief:
 
 - One pull request adds one new file and changes nothing else.
+- Only these commands: `import`, `namespace`, `section`, `end`, `open` (and
+  `open scoped`), `theorem`, `lemma`, `def`, with the modifiers
+  `noncomputable`, `private`, `protected` and `@[...]`. A lemma file may use
+  only `import`, `namespace`, `section`, `end`, `open` and `def`. Any other
+  command (`example`, `instance`, `abbrev`, `variable`, `universe`, `alias`,
+  ...) is refused wherever it appears, even indented or mid-line.
 - No proof holes or trust escapes: `sorry`, `admit`, `axiom`, `set_option`.
 - No code that runs while Lean builds the file: no metaprogramming or
   evaluation (`run_tac`, `by_elab`, `run_cmd`, `elab`, `macro`, `syntax`,
   `notation`, `simproc`, `initialize`, `eval%`, any `#` command), no `do`
   blocks, binds or syntax quotations, no `unsafe`, `opaque`, `partial`,
   `extern` or `implemented_by`, and no native evaluation (`native_decide`,
-  `+native`, `native :=`, `bv_decide`, `polyrith`).
+  `+native`, `native :=`, `bv_decide`, `polyrith`), and no `plausible`.
+- `aesop` only without clauses: no `aesop (add ...)`, `(rule_sets := ...)` or
+  `(config := ...)`.
 - No string literals at all, outside comments.
 - No names from `Lean`, `IO`, `System`, `Elab`, `Meta`, `Core`, `Macro`,
   `Syntax`, `FS` or `Process`, whether qualified or through `open`, `export` or

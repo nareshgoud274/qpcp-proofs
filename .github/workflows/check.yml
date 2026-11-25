@@ -2,7 +2,17 @@ name: check
 
 # Checks a contribution: a proof, a refutation, or a new lemma statement. Runs
 # with a read-only token and no secrets, because it builds code written by
-# strangers. No contributed file, new or merged, is built outside a bubblewrap
+# strangers.
+#
+# Which workflow runs: a `pull_request` workflow comes from the pull request's
+# own merge commit. A pull request that adds exactly one contribution file
+# changes nothing else, so for it this file and every script are main's. A
+# pull request that changes more than one file, or any file outside
+# QPCP/Proofs, QPCP/Refutations and QPCP/Lemmas, runs its own copy of this
+# workflow, which can drop the gate below and pass its own check. Its green
+# check therefore means nothing: automerge.py merges only pull requests that add
+# exactly one contribution file (it reads the file list from the API), and
+# such pull requests otherwise wait for the maintainer. No contributed file, new or merged, is built outside a bubblewrap
 # sandbox: only QPCP.Defs, QPCP.Qudit, QPCP.Statements and Mathlib are, and
 # every verdict comes from checking text exports outside the sandbox
 # (scripts/sandbox_verify.py). The maintainer's own pull requests re-check the
@@ -24,25 +34,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
 
       # Before anything from the pull request runs: it must add exactly one
-      # file under QPCP/Proofs, QPCP/Refutations or QPCP/Lemmas. Then every
-      # other file, including this workflow and the scripts, is main's.
+      # file under QPCP/Proofs, QPCP/Refutations or QPCP/Lemmas. If it does,
+      # every other file, including this workflow and the scripts, is main's.
+      # (A pull request that changes this workflow runs its own copy, which may
+      # not contain this step; see the note at the top.)
       - name: Refuse anything but one new contribution file
         if: github.event.pull_request.user.login != github.repository_owner
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: scripts/ci_contribution.sh gate "$BASE_SHA"
 
-      - name: Install elan
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
-            | sh -s -- -y --default-toolchain none
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Install elan (pinned release, checksum verified)
+        run: scripts/install_elan.sh
 
       - name: Fetch Mathlib cache
         run: lake exe cache get
@@ -90,7 +99,7 @@ jobs:
 
       - name: Upload the statement preview
         if: success() && github.event.pull_request.user.login != github.repository_owner
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: statement-preview
           path: ${{ runner.temp }}/preview/preview.json
@@ -102,15 +111,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
 
-      - name: Install elan
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
-            | sh -s -- -y --default-toolchain none
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Install elan (pinned release, checksum verified)
+        run: scripts/install_elan.sh
 
       - name: Fetch Mathlib cache
         run: lake exe cache get
@@ -126,6 +132,21 @@ jobs:
 
       - name: Statement preview rules
         run: python3 -I tests/test_statement_preview.py
+
+      - name: Source scanner cases
+        run: python3 -I tests/test_scanner.py
+
+      - name: Command table matches the toolchain and Mathlib
+        run: tests/test_command_tokens.sh
+
+      - name: Log output is safe
+        run: python3 -I tests/test_logsafe.py
+
+      - name: Actions and elan are pinned
+        run: python3 -I tests/test_pins.py
+
+      - name: Untrusted input reaches processes only through the sandbox
+        run: python3 -I tests/test_sandbox_static.py
 
       - name: Attack and honest-contribution tests
         run: tests/run_tests.sh

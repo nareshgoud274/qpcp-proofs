@@ -31,6 +31,7 @@ Verdicts are printed as ACCEPTED or REJECTED with a reason. Exit code 0 means
 accepted, 1 means rejected, 2 means the checker itself failed (FAULT).
 """
 
+import importlib.util
 import json
 import re
 import subprocess
@@ -38,6 +39,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+_spec = importlib.util.spec_from_file_location("qpcp_logsafe", ROOT / "scripts" / "logsafe.py")
+_logsafe = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_logsafe)
+log_safe = _logsafe.log_safe
 
 ID = r"(?:S\d{3,6}|L\d{1,9})"
 KINDS = {
@@ -76,8 +81,8 @@ FORBIDDEN_TOKENS = [
     # Code-shaped constructs a proof does not need.
     "do", "`(", "unsafe", "implemented_by", "extern", "opaque", "partial",
     "IO", "BaseIO", "EIO", "unsafeBaseIO", "unsafeIO", "unsafeEIO", "unsafeCast",
-    # External tools and native code.
-    "polyrith", "native_decide", "+native", "bv_decide", "include_str",
+    # External tools, native code, and tactics that compile and run code.
+    "polyrith", "native_decide", "+native", "bv_decide", "include_str", "plausible", "slim_check",
     # Name quoting, which could spell any forbidden name.
     "«",
 ]
@@ -94,6 +99,26 @@ LEMMA_FORBIDDEN_TOKENS = [
     "inductive", "class", "abbrev", "opaque", "deriving", "local", "scoped",
     "variable", "@[", "prefix", "infix", "infixl", "infixr", "postfix",
 ]
+# Top-level commands. scripts/command_tokens.txt lists every token that can
+# begin a command once Mathlib and the project's modules are loaded (generated
+# by tests/gen_command_tokens.lean). A contributed file cannot add commands of
+# its own (syntax, macros and notation are refused), so refusing every listed
+# token except these, wherever it occurs, makes the commands an allowlist.
+ALLOWED_COMMANDS = {
+    "proof": {"import", "namespace", "section", "end", "open", "theorem", "lemma", "def",
+              "noncomputable", "private", "protected", "@["},
+    "lemma": {"import", "namespace", "section", "end", "open", "def"},
+}
+ALLOWED_COMMANDS["refutation"] = ALLOWED_COMMANDS["proof"]
+# Listed tokens the scan does not look for, and why that is safe:
+#   /--  /-!  doc comments, removed with all comments before the scan;
+#   ?         also begins a synthetic hole (`?_`) in terms; the only command it
+#             begins continues with `binder_predicate`, which is refused.
+COMMAND_SCAN_EXEMPT = {"/--", "/-!", "?"}
+COMMAND_TOKENS = [t for t in (ROOT / "scripts" / "command_tokens.txt").read_text(encoding="utf-8").splitlines() if t]
+# Aesop with clauses: `aesop (add ...)`, `(rule_sets := ...)`, `(config := ...)`
+# can add rules and tactics of the file's own, so only plain `aesop` is allowed.
+AESOP_CLAUSE_RE = re.compile(r"(?<![A-Za-z0-9_.'])aesop[A-Za-z0-9_'!?]*\s*\(")
 MAX_BYTES = 200_000
 MIN_PLAIN_CHARS = 20
 
@@ -201,6 +226,28 @@ def has_token(code, tok):
     return re.search(pattern, code) is not None
 
 
+def has_command_token(code, tok):
+    """Whether `tok`, a token that begins a command, occurs in `code` as a token."""
+    if tok[0].isalpha() or tok[0] == "_":
+        pattern = r"(?<![A-Za-z0-9_.'!?])" + re.escape(tok) + r"(?![A-Za-z0-9_'!?])"
+    else:
+        pattern = re.escape(tok)
+    return re.search(pattern, code) is not None
+
+
+def forbidden_command(code, kind):
+    allowed = ALLOWED_COMMANDS[kind]
+    # `scoped` begins a command (`scoped notation ...`), but `open scoped X`
+    # only opens a namespace's scoped declarations; that use is allowed.
+    code = re.sub(r"(?<![A-Za-z0-9_.'!?])open\s+scoped(?![A-Za-z0-9_'!?])", "open", code)
+    for tok in COMMAND_TOKENS:
+        if tok in allowed or tok in COMMAND_SCAN_EXEMPT:
+            continue
+        if has_command_token(code, tok):
+            return f"the command `{tok}` (a {kind} file may use only: {', '.join(sorted(allowed))})"
+    return None
+
+
 NS_ALT = "|".join(EFFECT_NAMESPACES)
 # `IO.x`, `_root_.IO.x`, `Foo.Lean.x`: an effect namespace as any name component.
 QUALIFIED_NS_RE = re.compile(rf"(?<![A-Za-z0-9_'])(?:{NS_ALT})\.")
@@ -223,6 +270,8 @@ def forbidden_construct(code, kind):
             return f"`{tok}`"
     if ASCII_BIND_RE.search(code):
         return "`<-`"
+    if AESOP_CLAUSE_RE.search(code):
+        return "`aesop` with clauses (only plain `aesop` is allowed)"
     # `←` is a bind in `do` code. In a proof it only reverses a rewrite rule,
     # `rw [← h]` or `simp [a, ← b]`, so it is allowed only right after `[` or `,`.
     # This is the one exception to the H2 rules; see MAINTAINERS.md.
@@ -247,7 +296,7 @@ def forbidden_construct(code, kind):
                 return f"the attribute `{bad[0]}` (only {', '.join(sorted(ALLOWED_ATTRIBUTES))} are allowed)"
         if re.search(r"(?<![A-Za-z0-9_.'])attribute(?![A-Za-z0-9_'])", code) and not ATTRIBUTE_CMD_RE.search(code):
             return "`attribute`"
-    return None
+    return forbidden_command(code, kind)
 
 
 def lemma_header(src):
@@ -512,12 +561,12 @@ def main(argv):
             print(__doc__)
             return 2
     except Rejected as e:
-        print(f"REJECTED: {e}")
+        print(log_safe(f"REJECTED: {e}"))
         return 1
     except Fault as e:
-        print(f"FAULT: {e}")
+        print(log_safe(f"FAULT: {e}"))
         return 2
-    print("ACCEPTED: " + summarize(done))
+    print(log_safe("ACCEPTED: " + summarize(done)))
     return 0
 
 

@@ -65,7 +65,7 @@
       <ul>
         <li>A contribution adds one new file and changes nothing else.</li>
         <li>The file compiles under the pinned versions of Lean and Mathlib. No contributed file, new or already merged, is ever compiled outside a sandbox with no network and no write access to anything but its own output folder; only the project's own definitions and statements are.</li>
-        <li>What the sandbox hands back is a plain-text export of the result, never trusted: it is type-checked again by an independent checker (nanoda), and compared with an export of the statement made from the record itself.</li>
+        <li>What the sandbox hands back is a plain-text export of the result, never trusted: it is read strictly and rewritten in a canonical form, type-checked again by an independent checker (nanoda), and compared with an export of the statement made from the record itself. These checks run in sandboxes of their own too.</li>
         <li>A proof has exactly the frozen statement as its type, and a refutation exactly its negation.</li>
         <li>The result rests only on Lean's three standard axioms. A file containing <span class="mono">sorry</span> fails.</li>
         <li>A new statement adds one proposition and nothing that could change the meaning of other files.</li>
@@ -77,7 +77,7 @@
       <ul>
         <li>That a statement says what its plain sentence says. A second contributor reviews that, and anyone can <a href="reports.html">report</a> a mismatch later.</li>
         <li>That a definition captures the mathematics it is meant to. That takes a specialist's review, which the project does not yet have.</li>
-        <li>That a contributed file runs no code while it is built. Lean can run code during a build, so the checker refuses every known way for a file to do that. That list of refusals is a deny-list and cannot be proven complete.</li>
+        <li>That a contributed file runs no code while it is built. Lean can run code during a build. The checker allows only a short list of commands, and inside proofs refuses every known way to run code, but that second list is a deny-list and cannot be proven complete.</li>
         <li>That a lemma is interesting or useful.</li>
         <li>That the lemmas together lead to the conjecture. For an open problem, nobody knows such a list.</li>
       </ul>

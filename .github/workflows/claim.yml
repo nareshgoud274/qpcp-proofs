@@ -32,7 +32,7 @@ jobs:
       BODY: ${{ github.event.comment.body }}
       COMMENT_ID: ${{ github.event.comment.id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: startsWith(github.event.comment.body, '/claim')
         with:
           persist-credentials: false
