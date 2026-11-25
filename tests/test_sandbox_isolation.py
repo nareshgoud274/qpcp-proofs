@@ -132,8 +132,9 @@ def main():
         seen = [f for f in (out, log) if token in f.read_text(errors="replace")]
         seen += [f for f in rw.rglob("*") if f.is_file() and token in f.read_text(errors="replace")]
         check("1. the token appears nowhere in the step's output, log or directory", not seen, seen)
-        check("1. the step's environment is only what run_sandboxed sets",
-              set(res.get("env", {})) <= {"PATH", "LEAN_PATH", "HOME", "PWD"}, sorted(res.get("env", {})))
+        # LC_CTYPE: Python itself sets it at startup under the C locale (PEP 538 locale coercion).
+        check("1. the step's environment is only what run_sandboxed sets (and Python's own LC_CTYPE)",
+              set(res.get("env", {})) <= {"PATH", "LEAN_PATH", "HOME", "PWD", "LC_CTYPE"}, sorted(res.get("env", {})))
 
         # 2. sockets
         for p in args["connect"]:

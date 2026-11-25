@@ -158,7 +158,10 @@ class Env:
             (self.work / d).mkdir(parents=True)
         self.lib = self.work / "lib"
         # Inside a sandbox, package i's build is mounted at /qpcp/pkg/i.
-        self.packages = [(Path(e).resolve(), f"{SANDBOX}/pkg/{i}") for i, e in enumerate(self.package_entries)]
+        # An entry that does not exist (a package with nothing built, such as Cli) holds no
+        # module, so it is left out rather than mounted.
+        present = [Path(e).resolve() for e in self.package_entries if Path(e).is_dir()]
+        self.packages = [(p, f"{SANDBOX}/pkg/{i}") for i, p in enumerate(present)]
         if self.sandbox:
             self.sandbox_lean_path = ":".join([p for _, p in self.packages] + [self.inside(self.lib)])
             if not Path(sys.executable).resolve().is_relative_to("/usr"):
