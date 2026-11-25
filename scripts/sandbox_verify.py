@@ -34,10 +34,16 @@ sandbox of its own as well, so that a flaw in a parser cannot reach the host:
             well, which is how a contributed statement becomes a trusted
             reference.
 
-No untrusted .olean is read outside a sandbox. Every sandboxed step has a hard
-timeout (the whole process group is killed) and a file-size limit set with
-RLIMIT_FSIZE, and every file taken out of a sandbox is size-checked. Every
-sandboxed step is listed in logs/steps.log, for the tests.
+No untrusted .olean is read outside a sandbox. A sandbox sees none of the
+host beyond an explicit list of read-only mounts (see SYSTEM_MOUNTS and
+run_sandboxed): the system's /usr, Lean's toolchain, the Mathlib build, the
+step's own input files and its one writable directory, all under /qpcp and
+/usr. Nothing from /home, /root, /run, /var, /etc, the checkout or its .git
+is visible. Every sandboxed step has a hard timeout (the whole process group
+is killed) and a file-size limit (RLIMIT_FSIZE, set by scripts/limit_exec.py,
+which then execs the sandbox, so no Python runs between fork and exec), and
+every file taken out of a sandbox is size-checked. Every sandboxed step is
+listed in logs/steps.log, for the tests.
 
 `record` verifies every contribution in the tree (CI: the maintainer's pull
 requests and verify-main). `contribution` verifies one new file, with the
@@ -54,7 +60,6 @@ import importlib.util
 import json
 import os
 import re
-import resource
 import shutil
 import signal
 import subprocess
@@ -79,6 +84,22 @@ LIMITS = {
     "preview": (600, 10_000_000),
 }
 TRUSTED_EXPORT_TIMEOUT = 1800
+
+# What a sandbox sees of the host system, read-only, and why. Everything else
+# it sees is mounted by run_sandboxed under /qpcp: the toolchain, the Mathlib
+# build, the step's inputs and its one writable directory. On a merged-/usr
+# system (Ubuntu) /bin, /sbin, /lib, /lib64 are symlinks into /usr and are
+# recreated as symlinks; on others they are mounted read-only.
+SYSTEM_MOUNTS = [
+    "/usr",    # the C library, the dynamic loader's libraries, sleep and the
+               # system Python with its standard library (verify_export.py)
+    "/bin",    # (symlink) /bin/sh-style paths some tools use
+    "/sbin",   # (symlink) kept so the merged-/usr layout is complete
+    "/lib",    # (symlink) libraries Lean's binaries load (libc, libm, libstdc++)
+    "/lib64",  # (symlink) the dynamic loader /lib64/ld-linux-x86-64.so.2
+]
+SANDBOX = "/qpcp"
+LIMIT_EXEC = ROOT / "scripts" / "limit_exec.py"
 MAX_DEPS = 5000
 
 spec = importlib.util.spec_from_file_location("qpcp_check", ROOT / "scripts" / "check.py")
@@ -117,7 +138,8 @@ class Env:
         r = self.lake("env", "printenv", "LEAN_SYSROOT")
         if r.returncode != 0:
             raise Fault("cannot locate the toolchain")
-        self.bin = Path(r.stdout.strip()) / "bin"
+        self.sysroot = Path(r.stdout.strip()).resolve()
+        self.bin = self.sysroot / "bin"
         for tool in ("lean", "leanchecker", "leanexport", "nanoda_bin"):
             if not os.access(self.bin / tool, os.X_OK):
                 raise Fault(f"the toolchain has no {tool}")
@@ -135,7 +157,17 @@ class Env:
         for d in ("src", "out", "lib", "exp", "logs", "ref", "result", "canon", "scratch"):
             (self.work / d).mkdir(parents=True)
         self.lib = self.work / "lib"
-        self.sandbox_lean_path = ":".join(self.package_entries + [str(self.lib)])
+        # Inside a sandbox, package i's build is mounted at /qpcp/pkg/i.
+        # An entry that does not exist (a package with nothing built, such as Cli) holds no
+        # module, so it is left out rather than mounted.
+        present = [Path(e).resolve() for e in self.package_entries if Path(e).is_dir()]
+        self.packages = [(p, f"{SANDBOX}/pkg/{i}") for i, p in enumerate(present)]
+        if self.sandbox:
+            self.sandbox_lean_path = ":".join([p for _, p in self.packages] + [self.inside(self.lib)])
+            if not Path(sys.executable).resolve().is_relative_to("/usr"):
+                raise Fault(f"the sandbox runs Python from /usr only, not {sys.executable}")
+        else:
+            self.sandbox_lean_path = ":".join(self.package_entries + [str(self.lib)])
 
     # ------------------------------------------------------------ trusted build
 
@@ -155,35 +187,68 @@ class Env:
 
     # ---------------------------------------------------------------- sandbox
 
-    def run_sandboxed(self, step, argv, rw, log, stdout_path=None):
-        """Run argv in a fresh sandbox. Returns (ok, reason)."""
+    def inside(self, path):
+        """Where a host path is seen inside a sandbox (the same path without one)."""
+        path = Path(path)
+        if not self.sandbox:
+            return str(path)
+        for host, mount in ((self.sysroot, f"{SANDBOX}/toolchain"), (self.work, f"{SANDBOX}/work"),
+                            (ROOT / "scripts", f"{SANDBOX}/scripts"), (Path("/usr"), "/usr")):
+            if path.is_relative_to(host):
+                return str(Path(mount) / path.relative_to(host))
+        raise Fault(f"{path} is not visible inside the sandbox")
+
+    def mounts(self, ro, rw, lean):
+        """bubblewrap's mount arguments: SYSTEM_MOUNTS, the toolchain, for a Lean step
+        the Mathlib build and the shared library, the inputs `ro` and the writable `rw`."""
+        args = []
+        for d in SYSTEM_MOUNTS:
+            if os.path.islink(d):
+                args += ["--symlink", os.readlink(d), d]
+            elif os.path.isdir(d):
+                args += ["--ro-bind", d, d]
+        args += ["--ro-bind", str(self.sysroot), f"{SANDBOX}/toolchain"]
+        if lean:
+            for host, mount in self.packages:
+                args += ["--ro-bind", str(host), mount]
+            args += ["--ro-bind", str(self.lib), self.inside(self.lib)]
+        for f in ro:
+            if not Path(f).exists() or Path(f).is_symlink():
+                raise Fault(f"sandbox input {f} is missing or a symlink")
+            args += ["--ro-bind", str(f), self.inside(f)]
+        for d in rw:
+            args += ["--bind", str(d), self.inside(d)]
+        return args
+
+    def run_sandboxed(self, step, argv, rw, log, stdout_path=None, ro=(), lean=False):
+        """Run argv in a fresh sandbox. Returns (ok, reason).
+
+        argv's paths must already be the sandbox's (Env.inside). `ro` lists the
+        host files and directories the step reads, `rw` its one writable
+        directory, and `lean` mounts the Mathlib build and the shared library."""
         timeout, fsize = LIMITS[step]
         with self.lock, open(self.work / "logs" / "steps.log", "a") as fh:
             fh.write(f"{step} {'sandboxed' if self.sandbox else 'UNSANDBOXED'} {Path(argv[0]).name}"
                      f" {' '.join(Path(a).name for a in argv[1:4])}\n")
-        env = {"PATH": f"{self.bin}:/usr/bin:/bin", "LEAN_PATH": self.sandbox_lean_path}
+        env = {"PATH": f"{self.inside(self.bin)}:/usr/bin", "LEAN_PATH": self.sandbox_lean_path}
         if self.sandbox:
-            cmd = [self.bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"]
-            for d in rw:
-                cmd += ["--bind", str(d), str(d)]
-            cmd += ["--chdir", "/tmp", "--unshare-all", "--die-with-parent", "--new-session",
-                    "--cap-drop", "ALL", "--clearenv"]
+            cmd = [self.bwrap, *self.mounts(ro, rw, lean), "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
+                   "--remount-ro", "/", "--chdir", "/tmp", "--unshare-all", "--die-with-parent", "--new-session",
+                   "--cap-drop", "ALL", "--clearenv"]
             for k, v in {**env, "HOME": "/tmp"}.items():
                 cmd += ["--setenv", k, v]
             cmd += ["--", *argv]
             run_env, cwd = {"PATH": "/usr/bin:/bin"}, "/"
         else:
             cmd, run_env, cwd = argv, {**env, "HOME": str(rw[0])}, str(rw[0])
-
-        def limits():
-            resource.setrlimit(resource.RLIMIT_FSIZE, (fsize, fsize))
-            resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        # The limits are set by a separate launcher that then execs the sandbox:
+        # no preexec_fn, which is unsafe in the thread-pool workers that call this.
+        cmd = [sys.executable, "-I", str(LIMIT_EXEC), str(fsize), "--", *cmd]
 
         out = open(stdout_path, "wb") if stdout_path else subprocess.DEVNULL
         with open(log, "wb") as err:
             try:
-                p = subprocess.Popen(cmd, stdout=out, stderr=err, env=run_env, cwd=cwd,
-                                     preexec_fn=limits, start_new_session=True)
+                p = subprocess.Popen(cmd, stdout=out, stderr=err, env=run_env, cwd=cwd, start_new_session=True)
             except OSError as e:
                 raise Fault(f"cannot start the sandbox: {e}")
             try:
@@ -197,9 +262,17 @@ class Env:
                     out.close()
         if code == -signal.SIGXFSZ or code == 128 + signal.SIGXFSZ:
             return False, f"{step} wrote a file larger than {fsize} bytes"
+        if code == 125:
+            raise Fault(f"the {step} sandbox could not set its limits: {self.tail_of(log)}")
         if code != 0:
             return False, f"{step} failed (exit {code})"
         return True, ""
+
+    def tail_of(self, path, n=400):
+        try:
+            return Path(path).read_text(errors="replace")[-n:].strip()
+        except OSError:
+            return ""
 
 
 # ------------------------------------------------------------------- modules
@@ -328,8 +401,9 @@ class Verifier:
         out = e.work / "out" / m.name
         out.mkdir(parents=True)
         olean = out / "module.olean"
-        ok, why = e.run_sandboxed("compile", [str(e.bin / "lean"), f"--root={e.work / 'src'}", "-o", str(olean), str(src)],
-                                  [out], self.log(m.name, "compile"))
+        ok, why = e.run_sandboxed("compile", [e.inside(e.bin / "lean"), f"--root={e.inside(e.work / 'src')}",
+                                              "-o", e.inside(olean), e.inside(src)],
+                                  [out], self.log(m.name, "compile"), ro=[src], lean=True)
         if not ok:
             self.reject(m, f"does not compile ({why}): {self.tail(self.log(m.name, 'compile'), 600).strip()}")
             return None
@@ -343,14 +417,15 @@ class Verifier:
         e = self.env
         scratch = e.work / "exp" / m.name
         scratch.mkdir(parents=True, exist_ok=True)
-        ok, why = e.run_sandboxed("replay", [str(e.bin / "leanchecker"), m.name], [scratch], self.log(m.name, "replay"))
+        ok, why = e.run_sandboxed("replay", [e.inside(e.bin / "leanchecker"), m.name], [scratch], self.log(m.name, "replay"),
+                                  lean=True)
         if not ok:
             raise Reject(f"leanchecker's kernel replay failed ({why}): {self.tail(self.log(m.name, 'replay'), 400).strip()}")
         if not export:
             return None
         path = scratch / "export.ndjson"
-        ok, why = e.run_sandboxed("export", [str(e.bin / "leanexport"), m.name, "--", target_of(m.kind, m.ident)],
-                                  [scratch], self.log(m.name, "export"), stdout_path=path)
+        ok, why = e.run_sandboxed("export", [e.inside(e.bin / "leanexport"), m.name, "--", target_of(m.kind, m.ident)],
+                                  [scratch], self.log(m.name, "export"), stdout_path=path, lean=True)
         if not ok:
             raise Reject(f"cannot export {target_of(m.kind, m.ident)} ({why})")
         if "PANIC" in self.tail(self.log(m.name, "export"), 100000):
@@ -373,13 +448,17 @@ class Verifier:
         d.mkdir(parents=True)
         return d
 
-    def verify_export(self, m, step, *args):
-        """scripts/verify_export.py in a sandbox; returns (ok, last output line, scratch dir)."""
+    def verify_export(self, m, step, *args, inputs=()):
+        """scripts/verify_export.py in a sandbox that sees only `inputs` and its scratch
+        directory; a Path argument is passed as the sandbox sees it. Returns
+        (ok, output lines, scratch dir)."""
         e = self.env
         d = self.scratch(m, step)
         out = d.parent / f"{m.name}.{step}.out"
-        ok, why = e.run_sandboxed(step, [sys.executable, "-I", str(ROOT / "scripts" / "verify_export.py"), *map(str, args)],
-                                  [d], self.log(m.name, step), stdout_path=out)
+        argv = [e.inside(a) if isinstance(a, Path) else a for a in args]
+        ok, why = e.run_sandboxed(step, [sys.executable, "-I", e.inside(ROOT / "scripts" / "verify_export.py"), *argv],
+                                  [d], self.log(m.name, step), stdout_path=out,
+                                  ro=[ROOT / "scripts" / "verify_export.py", *inputs])
         lines = self.tail(out, 2_000_000).strip().splitlines() or [""]
         if not ok and not lines[-1].startswith("REJECTED"):
             raise Reject(f"the export check ({step}) did not finish: {why}")
@@ -388,7 +467,7 @@ class Verifier:
     def canonicalize(self, m, raw):
         # verify_export() recreates this directory and makes only it writable.
         d = self.env.work / "scratch" / f"{m.name}.canon"
-        ok, lines, _ = self.verify_export(m, "canon", "canon", raw, d / "canonical.ndjson")
+        ok, lines, _ = self.verify_export(m, "canon", "canon", raw, d / "canonical.ndjson", inputs=[raw])
         if not ok:
             raise Reject(lines[-1].removeprefix("REJECTED: "))
         made = d / "canonical.ndjson"
@@ -426,13 +505,13 @@ class Verifier:
         e = self.env
         cfg = e.work / "ref" / f"{m.name}.nanoda.json"
         cfg.write_text(json.dumps({
-            "export_file_path": str(export), "use_stdin": False,
+            "export_file_path": e.inside(export), "use_stdin": False,
             "permitted_axioms": ["propext", "Classical.choice", "Quot.sound"],
             "unpermitted_axiom_hard_error": True, "nat_extension": True, "string_extension": True,
             "print_success_message": True}))
         logf = self.log(m.name, "nanoda")
-        ok, why = e.run_sandboxed("nanoda", [str(e.bin / "nanoda_bin"), str(cfg)], [self.scratch(m, "nanoda")],
-                                  logf, stdout_path=logf.with_suffix(".out"))
+        ok, why = e.run_sandboxed("nanoda", [e.inside(e.bin / "nanoda_bin"), e.inside(cfg)], [self.scratch(m, "nanoda")],
+                                  logf, stdout_path=logf.with_suffix(".out"), ro=[cfg, export])
         text = self.tail(logf.with_suffix(".out"), 100000) + self.tail(logf, 100000)
         if not ok or "with no typechecker errors" not in text:
             raise Reject(f"the independent kernel (nanoda) rejects the export ({why or 'errors'}): {text[-400:].strip()}")
@@ -446,7 +525,7 @@ class Verifier:
             export = self.canonicalize(m, raw)
             refs, names = [], [*FIXED]
             if m.kind == "lemma":
-                ok, out, _ = self.verify_export(m, "verify", "deps", m.ident, export)
+                ok, out, _ = self.verify_export(m, "verify", "deps", m.ident, export, inputs=[export])
                 if not ok:
                     raise Reject(out[-1].removeprefix("REJECTED: "))
                 m.deps = [d for d in out if d]
@@ -465,7 +544,9 @@ class Verifier:
                 refs.append(lemma.export)
             ref, names_file = self.trusted_reference(m, names)
             self.nanoda(m, export)
-            ok, out, _ = self.verify_export(m, "verify", m.kind, m.ident, export, ",".join(map(str, [ref, *refs])), names_file)
+            ok, out, _ = self.verify_export(m, "verify", m.kind, m.ident, export,
+                                            ",".join(self.env.inside(p) for p in [ref, *refs]), names_file,
+                                            inputs=[export, ref, *refs, names_file])
             if not ok or out[-1] != f"ACCEPTED: {m.kind} {m.ident}":
                 raise Reject(out[-1].removeprefix("REJECTED: "))
             m.verdict, m.export = "ACCEPTED", export
@@ -593,7 +674,7 @@ def write_preview(env, m):
     cfg = env.work / "ref" / "preview.nanoda.json"
     out = env.work / "result" / "statement-preview.txt"
     cfg.write_text(json.dumps({
-        "export_file_path": str(m.export), "use_stdin": False,
+        "export_file_path": env.inside(m.export), "use_stdin": False,
         "permitted_axioms": ["propext", "Classical.choice", "Quot.sound"],
         "unpermitted_axiom_hard_error": True, "nat_extension": True, "string_extension": True,
         "pp_declars": [target_of(m.kind, m.ident)], "pp_to_stdout": True,
@@ -603,8 +684,8 @@ def write_preview(env, m):
     d = env.work / "scratch" / "preview"
     d.mkdir(parents=True, exist_ok=True)
     raw = d.parent / "preview.out"
-    ok, _ = env.run_sandboxed("preview", [str(env.bin / "nanoda_bin"), str(cfg)], [d],
-                              env.work / "logs" / "preview.log", stdout_path=raw)
+    ok, _ = env.run_sandboxed("preview", [env.inside(env.bin / "nanoda_bin"), env.inside(cfg)], [d],
+                              env.work / "logs" / "preview.log", stdout_path=raw, ro=[cfg, m.export])
     text = raw.read_text(encoding="utf-8", errors="replace")[:200_000] if ok and raw.is_file() else ""
     # Keep only the statement itself (the axioms follow it, separated by a blank line).
     text = text.split("\n\n")[0].strip()[:20000]

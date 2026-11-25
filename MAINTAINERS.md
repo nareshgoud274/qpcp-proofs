@@ -120,9 +120,12 @@ the id to `retired.json` if the statement itself is at fault.
 - The second defence, in CI (`scripts/sandbox_verify.py`): only the
   maintainer-written modules and Mathlib are built outside a sandbox. Every
   contribution, new or merged, is compiled in import order, one bubblewrap
-  sandbox per module, with no network, a read-only system, a private `/tmp`,
-  no way to gain privileges, and only its own output folder writable (earlier
-  outputs are mounted read-only). It is replayed with `leanchecker` and
+  sandbox per module, with no network, a private `/tmp`, no way to gain
+  privileges, and only its own output folder writable (earlier outputs are
+  mounted read-only). A sandbox does not see the host's file system: it sees
+  only the read-only mounts listed below, so the runner's home directory,
+  the checkout and its `.git`, `/etc`, `/run`, `/var` (and the Docker socket
+  in it) and the runner's temporary files are not there at all. It is replayed with `leanchecker` and
   exported to text in fresh sandboxes. Every sandboxed step has a hard timeout
   and a file-size limit. Then only the text export is used, by trusted code
   that also runs in a sandbox of its own, so that a flaw in a parser cannot
@@ -139,6 +142,33 @@ the id to `retired.json` if the statement itself is at fault.
   partial definitions, unsafe axioms, opaques and inductives, and any quot
   declaration other than Lean's four are refused. No untrusted `.olean` is
   read outside a sandbox.
+- What a sandbox sees (`SYSTEM_MOUNTS` and `Env.mounts` in
+  `scripts/sandbox_verify.py`; `tests/test_sandbox_isolation.py` checks it on
+  ubuntu-latest), all read-only except the step's one writable directory:
+
+  | Inside | From the host | Why |
+  |---|---|---|
+  | `/usr` | `/usr` | the C library and other shared libraries Lean's and nanoda's binaries load, `sleep`/`dd` for the tests, and the system Python and its standard library, which runs `verify_export.py` |
+  | `/bin`, `/sbin`, `/lib`, `/lib64` | symlinks into `/usr`, as on the host | the dynamic loader is `/lib64/ld-linux-x86-64.so.2`, and binaries name libraries under `/lib` |
+  | `/qpcp/toolchain` | the Lean toolchain (`LEAN_SYSROOT`) | `lean`, `leanchecker`, `leanexport`, `nanoda_bin`, Lean's shared library and its core `.olean` files |
+  | `/qpcp/pkg/0`, `/qpcp/pkg/1`, ... | each package's build in `LEAN_PATH` (Mathlib and its dependencies) | compiled imports; Lean steps only |
+  | `/qpcp/work/lib` | the shared library: the trusted modules' build and earlier contributions' compiled results | compiled imports; Lean steps only |
+  | `/qpcp/work/...` | only the step's own input files: the module's source; the raw or canonical export; the reference export and names; nanoda's config | the step's input |
+  | `/qpcp/scripts/verify_export.py` | that one file | the canon and verify steps |
+  | one directory under `/qpcp/work/` | the step's own output folder, writable | the step's output |
+  | `/dev`, `/proc`, `/tmp` | new, minimal: bubblewrap's devices, the sandbox's own processes, an empty tmpfs | programs expect them |
+
+  The root itself is an empty read-only tmpfs. Steps are given paths as the
+  sandbox sees them (`Env.inside`). `scripts/install_sandbox.sh`'s smoke test
+  of bubblewrap itself still mounts `/` read-only; it runs no contributed code.
+- Resource limits: `scripts/limit_exec.py` sets `RLIMIT_FSIZE` (in bytes, the
+  step's limit in `LIMITS`) and `RLIMIT_CORE` (0), restores the default
+  action of `SIGXFSZ`, and execs bubblewrap, so the limits are inherited by
+  every process in the sandbox. It replaced `preexec_fn`, which is unsafe in
+  the thread-pool workers that run the steps.
+- Every `actions/checkout` sets `persist-credentials: false`, so no token is
+  left in `.git/config`. (The status workflow pushes with an explicit token
+  URL instead.)
 - One exception to the name rule: Lean's macro-scope marker `_@` (from
   hygienic names such as `x._@.Mathlib.Foo._hyg.12`) is accepted as a name
   component, because main's own exports contain thousands of such names, but

@@ -148,5 +148,8 @@ jobs:
       - name: Untrusted input reaches processes only through the sandbox
         run: python3 -I tests/test_sandbox_static.py
 
+      - name: The sandbox sees only its explicit mounts (needs bubblewrap)
+        run: python3 -I tests/test_sandbox_isolation.py
+
       - name: Attack and honest-contribution tests
         run: tests/run_tests.sh
