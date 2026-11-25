@@ -1,0 +1,100 @@
+name: tmp-host-capture-ci
+
+# TEMPORARY: verifies the host-capture branch on ubuntu-latest before its
+# pull request is opened. Read-only token, no secrets. Delete before the PR.
+
+on:
+  push:
+    branches: [v2-host-capture]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install elan (pinned release, checksum verified)
+        run: scripts/install_elan.sh
+
+      - name: Fetch Mathlib cache
+        run: lake exe cache get
+
+      - name: Install bubblewrap
+        run: scripts/install_sandbox.sh
+
+      - name: What the sandboxed steps use (Python, libraries, /usr/local, LEAN_PATH)
+        run: |
+          python3 -I -c 'import sys, os, json, re; print("python:", sys.executable, "->", os.path.realpath(sys.executable), "prefix", sys.prefix); print("json from", json.__file__, "re from", re.__file__)'
+          echo "/usr/local:"; ls -A /usr/local; echo "/usr/local/bin (first 40):"; ls /usr/local/bin | head -40
+          SYSROOT="$(lake env printenv LEAN_SYSROOT)"
+          for t in lean leanchecker leanexport nanoda_bin; do echo "== ldd $t"; ldd "$SYSROOT/bin/$t"; done
+          ldd "$(readlink -f "$(command -v python3)")"
+          echo "LEAN_PATH: $(lake env printenv LEAN_PATH)"
+
+      - name: Sandbox isolation (explicit mounts, limits, timeouts)
+        if: always()
+        run: python3 -I tests/test_sandbox_isolation.py
+
+      - name: Host never opens a sandbox-planted path
+        if: always()
+        run: python3 -I tests/test_sandbox_host_paths.py
+
+      - name: Unit tests
+        if: always()
+        run: |
+          python3 -I tests/test_automerge.py
+          tests/test_expire_claims.sh
+          python3 -I tests/test_statement_preview.py
+          python3 -I tests/test_scanner.py
+          tests/test_command_tokens.sh
+          python3 -I tests/test_logsafe.py
+          python3 -I tests/test_pins.py
+          python3 -I tests/test_sandbox_static.py
+
+      - name: Record check, as on maintainer pull requests and verify-main
+        if: always()
+        run: |
+          python3 scripts/check.py scan-all
+          python3 -I scripts/sandbox_verify.py record
+          echo "sandboxed steps: $(cut -d' ' -f1,2 "$RUNNER_TEMP/qpcp-verify/logs/steps.log" | sort | uniq -c | tr '\n' ';')"
+          ! grep -q " UNSANDBOXED " "$RUNNER_TEMP/qpcp-verify/logs/steps.log"
+
+      - name: Nothing contributed was built outside the sandbox
+        run: |
+          # The runner's own build folder may hold only maintainer-written modules.
+          found="$(find .lake/build/lib/lean/QPCP -path '*/Proofs/*' -o -path '*/Lemmas/*' -o -path '*/Refutations/*' | head -5)"
+          if [ -n "$found" ]; then echo "contributed modules were built outside the sandbox: $found"; exit 1; fi
+          echo "the runner's build folder holds only: $(ls .lake/build/lib/lean/QPCP | tr '\n' ' ')"
+
+      - name: Attack and honest-contribution tests (with stage 6, merged files)
+        run: tests/run_tests.sh
+
+      - name: Simulate contributor pull requests through check.yml's script
+        run: |
+          # Expected rejections exit non-zero; the step must not stop on them.
+          set +e
+          git config user.name qpcp-ci && git config user.email qpcp-ci@users.noreply.github.com
+          main="$(git rev-parse HEAD)"; fails=0
+          sim() {  # sim <base> <description> <expected verdict prefix> <setup command...>
+            local base="$1" desc="$2" want="$3"; shift 3
+            git checkout -q -B sim "$base"; "$@"; git add -A; git commit -qm sim
+            out="$( { scripts/ci_contribution.sh gate "$base" && scripts/ci_contribution.sh check "$base"; } 2>&1 | grep -E '^(ACCEPTED|REJECTED|FAULT)' | tail -1 )"
+            case "$out" in "$want"*) echo "ok    $desc -> $out" ;; *) echo "FAIL  $desc -> $out"; fails=1 ;; esac
+            git checkout -q -f "$main"; git clean -fdq QPCP
+          }
+          sim "$main" "honest lemma" "ACCEPTED: lemma L900001" cp tests/honest/L900001.lean QPCP/Lemmas/L900001.lean
+          echo "statement preview: $(cat "$RUNNER_TEMP/qpcp-verify/result/statement-preview.txt" 2>/dev/null | head -4 | tr '\n' ' ')"
+          sim "$main" "run_tac attack as a proof" "REJECTED" cp tests/attacks/run_tac.lean QPCP/Proofs/S030.lean
+          sim "$main" "two files" "REJECTED" sh -c 'cp tests/honest/L900001.lean QPCP/Lemmas/L900001.lean; echo x >> README.md'
+          sim "$main" "modifies an existing file" "REJECTED" sh -c 'echo "-- x" >> QPCP/Proofs/S001.lean'
+          # A refutation of a lemma that is already on main (merged first).
+          git checkout -q -B base2 "$main"; cp tests/honest/L900002.lean QPCP/Lemmas/L900002.lean; git add -A; git commit -qm "merge L900002"
+          base2="$(git rev-parse HEAD)"; git checkout -q -f "$main"; git clean -fdq QPCP
+          sim "$base2" "refutation of a merged lemma" "ACCEPTED: refutation L900002" cp tests/honest/refute_L900002.lean QPCP/Refutations/L900002.lean
+          exit $fails

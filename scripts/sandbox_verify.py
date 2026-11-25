@@ -62,6 +62,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -99,6 +100,11 @@ SYSTEM_MOUNTS = [
     "/lib64",  # (symlink) the dynamic loader /lib64/ld-linux-x86-64.so.2
 ]
 SANDBOX = "/qpcp"
+# Under the work directory: the only folders a sandbox is ever given writable,
+# and the host-only folders the host writes captures and logs to. The host never
+# opens a path inside a sandbox-writable directory except through take().
+WRITABLE_ROOTS = ("out", "exp", "scratch")
+HOST_ONLY = ("src", "lib", "staged", "logs", "capture", "ref", "result", "canon")
 LIMIT_EXEC = ROOT / "scripts" / "limit_exec.py"
 MAX_DEPS = 5000
 
@@ -116,6 +122,102 @@ class Fault(Exception):
     pass
 
 
+def open_new(path):
+    """A fresh file for the host to write, created exclusively, never through a symlink."""
+    path = Path(path)
+    path.unlink(missing_ok=True)
+    return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+
+
+def open_regular(path):
+    """(fd, size) of a regular file, opened without following a symlink and without
+    blocking on a FIFO; None if it is anything else."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError:
+        return None
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode):
+        os.close(fd)
+        return None
+    return fd, st.st_size
+
+
+def read_tail(path, n):
+    """The last n bytes of a file, decoded; read from the end, never the whole file."""
+    got = open_regular(path)
+    if got is None:
+        return ""
+    fd, size = got
+    try:
+        os.lseek(fd, max(0, size - n), os.SEEK_SET)
+        chunks, left = [], min(n, size)
+        while left > 0:
+            b = os.read(fd, min(left, 1 << 20))
+            if not b:
+                break
+            chunks.append(b)
+            left -= len(b)
+        return b"".join(chunks).decode("utf-8", errors="replace")
+    finally:
+        os.close(fd)
+
+
+def read_head(path, n):
+    """The first n bytes of a file, decoded."""
+    got = open_regular(path)
+    if got is None:
+        return ""
+    fd, _ = got
+    try:
+        chunks, left = [], n
+        while left > 0:
+            b = os.read(fd, min(left, 1 << 20))
+            if not b:
+                break
+            chunks.append(b)
+            left -= len(b)
+        return b"".join(chunks).decode("utf-8", errors="replace")
+    finally:
+        os.close(fd)
+
+
+def take(src, dest, limit):
+    """Copy a file a sandbox produced, in its writable directory, to a host-only dest.
+
+    Runs only after that sandbox has exited (bubblewrap's PID namespace ends with
+    it, so nothing in it still runs). The file must be a regular file opened
+    without following a symlink, its directory must not be a symlink, and its
+    size must be within the limit, all checked on the open descriptor before a
+    byte is read. Returns None, or why it was refused."""
+    src = Path(src)
+    if src.parent.is_symlink() or not src.parent.is_dir():
+        return "its directory is not a plain directory"
+    got = open_regular(src)
+    if got is None:
+        return "it is missing, a symlink or not a regular file"
+    fd, size = got
+    try:
+        if size > limit:
+            return f"it is larger than {limit} bytes"
+        out = open_new(dest)
+        try:
+            copied = 0
+            while True:
+                b = os.read(fd, 1 << 20)
+                if not b:
+                    break
+                copied += len(b)
+                if copied > limit:
+                    return f"it is larger than {limit} bytes"
+                os.write(out, b)
+        finally:
+            os.close(out)
+    finally:
+        os.close(fd)
+    return None
+
+
 # ---------------------------------------------------------------- environment
 
 class Env:
@@ -128,7 +230,10 @@ class Env:
             self.bwrap = shutil.which("bwrap")
             if not self.bwrap:
                 raise Fault("bubblewrap (bwrap) is not installed; refusing to build untrusted code unsandboxed")
+            if not shutil.rmtree.avoids_symlink_attacks:
+                raise Fault("this Python's shutil.rmtree can follow symlinks; refusing to delete sandbox output with it")
         self.lock = threading.Lock()
+        self.rw_ever = set()  # every directory ever given to a sandbox writable, for the life of the Env
 
     def lake(self, *args, timeout=3600):
         r = subprocess.run(["lake", *args], cwd=ROOT, capture_output=True, text=True, timeout=timeout)
@@ -152,20 +257,30 @@ class Env:
             raise Fault(f"LEAN_PATH does not contain {self.repo_lib}")
         self.trusted_lean_path = ":".join(entries)
         self.package_entries = [e for e in entries if e != str(self.repo_lib)]
+        # Every entry must lie, once symlinks are resolved, in this repository's packages
+        # or build, or in the toolchain; anything else is a fault, never skipped.
+        allowed = [(ROOT / ".lake" / "packages").resolve(), (ROOT / ".lake" / "build").resolve(), self.sysroot]
+        for e in self.package_entries:
+            resolved = Path(e).resolve()
+            if not any(resolved.is_relative_to(a) for a in allowed):
+                raise Fault(f"LEAN_PATH entry {e} (resolved: {resolved}) is outside .lake/packages, "
+                            f".lake/build and the toolchain; refusing to mount it")
         if self.work.exists():
             shutil.rmtree(self.work)
-        for d in ("src", "out", "lib", "exp", "logs", "ref", "result", "canon", "scratch"):
+        for d in (*WRITABLE_ROOTS, *HOST_ONLY):
             (self.work / d).mkdir(parents=True)
         self.lib = self.work / "lib"
-        # Inside a sandbox, package i's build is mounted at /qpcp/pkg/i.
-        # An entry that does not exist (a package with nothing built, such as Cli) holds no
-        # module, so it is left out rather than mounted.
+        # Inside a sandbox, package i's build is mounted at /qpcp/pkg/i. An allowed entry
+        # that does not exist (a package with nothing built, such as Cli) holds no module,
+        # so it is not mounted; it is listed in self.absent_entries.
         present = [Path(e).resolve() for e in self.package_entries if Path(e).is_dir()]
+        self.absent_entries = [e for e in self.package_entries if not Path(e).is_dir()]
         self.packages = [(p, f"{SANDBOX}/pkg/{i}") for i, p in enumerate(present)]
         if self.sandbox:
             self.sandbox_lean_path = ":".join([p for _, p in self.packages] + [self.inside(self.lib)])
-            if not Path(sys.executable).resolve().is_relative_to("/usr"):
-                raise Fault(f"the sandbox runs Python from /usr only, not {sys.executable}")
+            py = Path(sys.executable).resolve()
+            if not py.is_relative_to("/usr") or py.is_relative_to("/usr/local"):
+                raise Fault(f"the sandbox runs Python from /usr (not /usr/local) only, not {sys.executable}")
         else:
             self.sandbox_lean_path = ":".join(self.package_entries + [str(self.lib)])
 
@@ -187,6 +302,24 @@ class Env:
 
     # ---------------------------------------------------------------- sandbox
 
+    def log_path(self, name):
+        """A step's stderr log: in logs/, which no sandbox ever sees."""
+        return self.work / "logs" / name
+
+    def capture_path(self, name):
+        """A step's stdout capture: in capture/, which no sandbox ever sees writable."""
+        return self.work / "capture" / name
+
+    def fresh_dir(self, root, name):
+        """A new, empty directory for one sandbox to write, under one of WRITABLE_ROOTS."""
+        if root not in WRITABLE_ROOTS:
+            raise Fault(f"{root} is not a sandbox-writable folder")
+        d = self.work / root / name
+        if d.exists() or d.is_symlink():
+            shutil.rmtree(d)
+        d.mkdir(parents=True)
+        return d
+
     def inside(self, path):
         """Where a host path is seen inside a sandbox (the same path without one)."""
         path = Path(path)
@@ -207,6 +340,10 @@ class Env:
                 args += ["--symlink", os.readlink(d), d]
             elif os.path.isdir(d):
                 args += ["--ro-bind", d, d]
+        # /usr/local holds what the runner image adds (other Pythons, tools); no step uses
+        # it, so an empty read-only tmpfs covers it.
+        if os.path.isdir("/usr/local"):
+            args += ["--tmpfs", "/usr/local", "--remount-ro", "/usr/local"]
         args += ["--ro-bind", str(self.sysroot), f"{SANDBOX}/toolchain"]
         if lean:
             for host, mount in self.packages:
@@ -227,6 +364,22 @@ class Env:
         host files and directories the step reads, `rw` its one writable
         directory, and `lean` mounts the Mathlib build and the shared library."""
         timeout, fsize = LIMITS[step]
+        log = Path(log)
+        # The host never opens a path inside a directory any sandbox could ever write.
+        with self.lock:
+            for d in rw:
+                d = Path(d)
+                if d.is_symlink() or not any(d.parent == self.work / r for r in WRITABLE_ROOTS):
+                    raise Fault(f"{d} is not a fresh directory under {', '.join(WRITABLE_ROOTS)}")
+                self.rw_ever.add(d.resolve())
+            for kind, pth, root in (("log", log, "logs"), ("stdout_path", stdout_path, "capture")):
+                if pth is None:
+                    continue
+                rp = Path(pth).resolve()
+                if any(rp.is_relative_to(d) for d in self.rw_ever):
+                    raise Fault(f"{kind} {pth} lies inside a directory a sandbox was given writable")
+                if rp.parent != (self.work / root).resolve():
+                    raise Fault(f"{kind} {pth} is not in the host-only folder {root}/")
         with self.lock, open(self.work / "logs" / "steps.log", "a") as fh:
             fh.write(f"{step} {'sandboxed' if self.sandbox else 'UNSANDBOXED'} {Path(argv[0]).name}"
                      f" {' '.join(Path(a).name for a in argv[1:4])}\n")
@@ -248,8 +401,11 @@ class Env:
         status.unlink(missing_ok=True)
         cmd = [sys.executable, "-I", str(LIMIT_EXEC), str(fsize), str(status), "--", *cmd]
 
-        out = open(stdout_path, "wb") if stdout_path else subprocess.DEVNULL
-        with open(log, "wb") as err:
+        # Both are created exclusively (O_EXCL, O_NOFOLLOW, mode 0600) in host-only
+        # folders, and the sandbox gets only the descriptors.
+        out = open_new(stdout_path) if stdout_path else subprocess.DEVNULL
+        err = open_new(log)
+        try:
             try:
                 p = subprocess.Popen(cmd, stdout=out, stderr=err, env=run_env, cwd=cwd, start_new_session=True)
             except OSError as e:
@@ -260,9 +416,10 @@ class Env:
                 os.killpg(p.pid, signal.SIGKILL)
                 p.wait()
                 return False, f"{step} timed out after {timeout} s"
-            finally:
-                if stdout_path:
-                    out.close()
+        finally:
+            os.close(err)
+            if stdout_path:
+                os.close(out)
         if status.exists():
             raise Fault(f"the {step} sandbox could not start: {self.tail_of(status)}")
         if code == -signal.SIGXFSZ or code == 128 + signal.SIGXFSZ:
@@ -272,10 +429,7 @@ class Env:
         return True, ""
 
     def tail_of(self, path, n=400):
-        try:
-            return Path(path).read_text(errors="replace")[-n:].strip()
-        except OSError:
-            return ""
+        return read_tail(path, n).strip()
 
 
 # ------------------------------------------------------------------- modules
@@ -360,13 +514,10 @@ class Verifier:
         self.env, self.mods, self.jobs = env, mods, max(1, jobs)
 
     def log(self, name, step):
-        return self.env.work / "logs" / f"{name}.{step}.log"
+        return self.env.log_path(f"{name}.{step}.log")
 
     def tail(self, path, n=1500):
-        try:
-            return path.read_text(errors="replace")[-n:]
-        except OSError:
-            return ""
+        return read_tail(path, n)
 
     def reject(self, m, reason):
         m.verdict, m.reason = "REJECTED", reason
@@ -391,7 +542,7 @@ class Verifier:
             # Only after the whole level: place its results in the shared library,
             # which every later sandbox sees read-only.
             for m, olean in zip(todo, results):
-                if olean:
+                if olean:  # a host-only copy, made by take()
                     dest = self.env.lib / m.rel.with_suffix(".olean")
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(olean, dest)
@@ -401,8 +552,7 @@ class Verifier:
         src = e.work / "src" / m.rel
         src.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(m.src, src)
-        out = e.work / "out" / m.name
-        out.mkdir(parents=True)
+        out = e.fresh_dir("out", m.name)
         olean = out / "module.olean"
         ok, why = e.run_sandboxed("compile", [e.inside(e.bin / "lean"), f"--root={e.inside(e.work / 'src')}",
                                               "-o", e.inside(olean), e.inside(src)],
@@ -410,46 +560,47 @@ class Verifier:
         if not ok:
             self.reject(m, f"does not compile ({why}): {self.tail(self.log(m.name, 'compile'), 600).strip()}")
             return None
-        if not olean.is_file() or olean.is_symlink():
-            self.reject(m, "does not compile (the sandbox produced no compiled file)")
+        staged = e.work / "staged" / f"{m.name}.olean"
+        why = take(olean, staged, LIMITS["compile"][1])
+        shutil.rmtree(out, ignore_errors=True)
+        if why:
+            self.reject(m, f"does not compile (the sandbox produced no usable compiled file: {why})")
             return None
-        return olean
+        return staged
 
     # ---- replay and export, in a fresh sandbox each
     def replay_and_export(self, m, export=True):
         e = self.env
-        scratch = e.work / "exp" / m.name
-        scratch.mkdir(parents=True, exist_ok=True)
-        ok, why = e.run_sandboxed("replay", [e.inside(e.bin / "leanchecker"), m.name], [scratch], self.log(m.name, "replay"),
-                                  lean=True)
+        # Separate fresh directories: nothing replay leaves behind is seen by export.
+        replay_dir = e.fresh_dir("exp", f"{m.name}.replay")
+        ok, why = e.run_sandboxed("replay", [e.inside(e.bin / "leanchecker"), m.name], [replay_dir],
+                                  self.log(m.name, "replay"), lean=True)
+        shutil.rmtree(replay_dir, ignore_errors=True)
         if not ok:
             raise Reject(f"leanchecker's kernel replay failed ({why}): {self.tail(self.log(m.name, 'replay'), 400).strip()}")
         if not export:
             return None
-        path = scratch / "export.ndjson"
+        export_dir = e.fresh_dir("exp", f"{m.name}.export")
+        # stdout goes straight to a host-only file the host created; nothing is copied out.
+        raw = e.capture_path(f"{m.name}.raw.ndjson")
         ok, why = e.run_sandboxed("export", [e.inside(e.bin / "leanexport"), m.name, "--", target_of(m.kind, m.ident)],
-                                  [scratch], self.log(m.name, "export"), stdout_path=path, lean=True)
+                                  [export_dir], self.log(m.name, "export"), stdout_path=raw, lean=True)
+        shutil.rmtree(export_dir, ignore_errors=True)
         if not ok:
             raise Reject(f"cannot export {target_of(m.kind, m.ident)} ({why})")
         if "PANIC" in self.tail(self.log(m.name, "export"), 100000):
             raise Reject(f"cannot export {target_of(m.kind, m.ident)}: it does not exist")
-        if not path.is_file() or path.is_symlink():
+        got = open_regular(raw)
+        if got is None:
             raise Reject("the sandbox produced no export")
-        if path.stat().st_size > LIMITS["export"][1]:
+        os.close(got[0])
+        if got[1] > LIMITS["export"][1]:
             raise Reject("the export is too large")
-        # Take the export out of the sandbox's reach before using it.
-        taken = e.work / "result" / f"{m.name}.raw.ndjson"
-        shutil.copyfile(path, taken)
-        shutil.rmtree(scratch, ignore_errors=True)
-        return taken
+        return raw
 
     # ---- trusted code on the untrusted text, each in a sandbox of its own
     def scratch(self, m, step):
-        d = self.env.work / "scratch" / f"{m.name}.{step}"
-        if d.exists():
-            shutil.rmtree(d)
-        d.mkdir(parents=True)
-        return d
+        return self.env.fresh_dir("scratch", f"{m.name}.{step}")
 
     def verify_export(self, m, step, *args, inputs=()):
         """scripts/verify_export.py in a sandbox that sees only `inputs` and its scratch
@@ -457,7 +608,7 @@ class Verifier:
         (ok, output lines, scratch dir)."""
         e = self.env
         d = self.scratch(m, step)
-        out = d.parent / f"{m.name}.{step}.out"
+        out = e.capture_path(f"{m.name}.{step}.out")
         argv = [e.inside(a) if isinstance(a, Path) else a for a in args]
         ok, why = e.run_sandboxed(step, [sys.executable, "-I", e.inside(ROOT / "scripts" / "verify_export.py"), *argv],
                                   [d], self.log(m.name, step), stdout_path=out,
@@ -473,13 +624,12 @@ class Verifier:
         ok, lines, _ = self.verify_export(m, "canon", "canon", raw, d / "canonical.ndjson", inputs=[raw])
         if not ok:
             raise Reject(lines[-1].removeprefix("REJECTED: "))
-        made = d / "canonical.ndjson"
-        if not made.is_file() or made.is_symlink() or made.stat().st_size > LIMITS["canon"][1]:
-            raise Reject("the canonical export is missing or too large")
-        # Into a directory that no untrusted step ever had writable.
+        # Into a directory that no sandbox ever had writable.
         canon = self.env.work / "canon" / f"{m.name}.ndjson"
-        shutil.copyfile(made, canon)
+        why = take(d / "canonical.ndjson", canon, LIMITS["canon"][1])
         shutil.rmtree(d, ignore_errors=True)
+        if why:
+            raise Reject(f"the canonical export is unusable: {why}")
         return canon
 
     # ---- trusted checks on the text export
@@ -512,10 +662,10 @@ class Verifier:
             "permitted_axioms": ["propext", "Classical.choice", "Quot.sound"],
             "unpermitted_axiom_hard_error": True, "nat_extension": True, "string_extension": True,
             "print_success_message": True}))
-        logf = self.log(m.name, "nanoda")
+        logf, outf = self.log(m.name, "nanoda"), e.capture_path(f"{m.name}.nanoda.out")
         ok, why = e.run_sandboxed("nanoda", [e.inside(e.bin / "nanoda_bin"), e.inside(cfg)], [self.scratch(m, "nanoda")],
-                                  logf, stdout_path=logf.with_suffix(".out"), ro=[cfg, export])
-        text = self.tail(logf.with_suffix(".out"), 100000) + self.tail(logf, 100000)
+                                  logf, stdout_path=outf, ro=[cfg, export])
+        text = self.tail(outf, 100000) + self.tail(logf, 100000)
         if not ok or "with no typechecker errors" not in text:
             raise Reject(f"the independent kernel (nanoda) rejects the export ({why or 'errors'}): {text[-400:].strip()}")
 
@@ -684,12 +834,11 @@ def write_preview(env, m):
         "pp_options": {"all": False, "explicit": False, "universes": False, "notation": True,
                        "proofs": False, "indent": 2, "width": 100},
         "print_success_message": False}))
-    d = env.work / "scratch" / "preview"
-    d.mkdir(parents=True, exist_ok=True)
-    raw = d.parent / "preview.out"
+    d = env.fresh_dir("scratch", "preview")
+    raw = env.capture_path("preview.out")
     ok, _ = env.run_sandboxed("preview", [env.inside(env.bin / "nanoda_bin"), env.inside(cfg)], [d],
-                              env.work / "logs" / "preview.log", stdout_path=raw, ro=[cfg, m.export])
-    text = raw.read_text(encoding="utf-8", errors="replace")[:200_000] if ok and raw.is_file() else ""
+                              env.log_path("preview.log"), stdout_path=raw, ro=[cfg, m.export])
+    text = read_head(raw, 200_000) if ok else ""
     # Keep only the statement itself (the axioms follow it, separated by a blank line).
     text = text.split("\n\n")[0].strip()[:20000]
     out.write_text((text or "(the kernel could not render this statement)") + "\n")
