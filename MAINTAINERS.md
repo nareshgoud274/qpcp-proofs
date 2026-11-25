@@ -165,7 +165,10 @@ the id to `retired.json` if the statement itself is at fault.
   step's limit in `LIMITS`) and `RLIMIT_CORE` (0), restores the default
   action of `SIGXFSZ`, and execs bubblewrap, so the limits are inherited by
   every process in the sandbox. It replaced `preexec_fn`, which is unsafe in
-  the thread-pool workers that run the steps.
+  the thread-pool workers that run the steps. If it cannot set the limits or
+  start bubblewrap, it says so in a status file next to the step's log, which
+  no sandbox can see, and only that file makes the step a fault: a sandboxed
+  program that exits 125 (the launcher's exit code) is an ordinary rejection.
 - Every `actions/checkout` sets `persist-credentials: false`, so no token is
   left in `.git/config`. (The status workflow pushes with an explicit token
   URL instead.)
