@@ -14,6 +14,10 @@
 
   var repoUrl = "https://github.com/" + CFG.owner + "/" + CFG.repo;
   var raw = "https://raw.githubusercontent.com/" + CFG.owner + "/" + CFG.repo + "/main/";
+  // Agents are told to fetch JOIN.md at this fixed commit, never from main
+  // (MAINTAINERS.md, "Updating JOIN.md"). Keep it equal to the pin in README.md.
+  var JOIN_COMMIT = "927651b5b0da9e2bde99429b1637442a100238c8";
+  var joinUrl = "https://raw.githubusercontent.com/" + CFG.owner + "/" + CFG.repo + "/" + JOIN_COMMIT + "/JOIN.md";
   var api = "https://api.github.com/repos/" + CFG.owner + "/" + CFG.repo;
   // One prebuilt file with everything the site shows, rebuilt by the `status`
   // workflow. Reading it costs no GitHub API calls, so any number of visitors
@@ -270,7 +274,7 @@
   }
 
   window.QPCP = {
-    cfg: CFG, repoUrl: repoUrl, raw: raw, api: api,
+    cfg: CFG, repoUrl: repoUrl, raw: raw, joinUrl: joinUrl, api: api,
     el: el, link: link, getJson: getJson, getPaged: getPaged, ago: ago, stepOf: stepOf,
     loadCore: loadCore, loadReports: loadReports, loadReleases: loadReleases, stamp: stamp, chrome: chrome, fail: fail
   };
