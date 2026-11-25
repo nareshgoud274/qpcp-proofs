@@ -243,7 +243,10 @@ class Env:
             cmd, run_env, cwd = argv, {**env, "HOME": str(rw[0])}, str(rw[0])
         # The limits are set by a separate launcher that then execs the sandbox:
         # no preexec_fn, which is unsafe in the thread-pool workers that call this.
-        cmd = [sys.executable, "-I", str(LIMIT_EXEC), str(fsize), "--", *cmd]
+        # The launcher reports its own failure only in this file, which no sandbox can see.
+        status = Path(log).with_suffix(".launcher")
+        status.unlink(missing_ok=True)
+        cmd = [sys.executable, "-I", str(LIMIT_EXEC), str(fsize), str(status), "--", *cmd]
 
         out = open(stdout_path, "wb") if stdout_path else subprocess.DEVNULL
         with open(log, "wb") as err:
@@ -260,10 +263,10 @@ class Env:
             finally:
                 if stdout_path:
                     out.close()
+        if status.exists():
+            raise Fault(f"the {step} sandbox could not start: {self.tail_of(status)}")
         if code == -signal.SIGXFSZ or code == 128 + signal.SIGXFSZ:
             return False, f"{step} wrote a file larger than {fsize} bytes"
-        if code == 125:
-            raise Fault(f"the {step} sandbox could not set its limits: {self.tail_of(log)}")
         if code != 0:
             return False, f"{step} failed (exit {code})"
         return True, ""

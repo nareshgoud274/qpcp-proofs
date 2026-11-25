@@ -11,12 +11,17 @@ Runs on ubuntu-latest in the attack-tests job. Without bubblewrap it FAILS
      appears nowhere in the step's output or log;
   2. sockets: a listening Unix socket on the host (in /tmp, and in the work
      directory's parent, which the sandbox does not mount) cannot be
-     connected to, and /var/run/docker.sock and /run/docker.sock do not exist;
+     connected to, nor can a listening abstract-namespace Unix socket (no
+     file at all: only the sandbox's own network namespace keeps it out),
+     and /var/run/docker.sock and /run/docker.sock do not exist;
   3. the sandbox's / contains only the expected entries;
   4. a step that writes past its file-size limit is reported as "wrote a file
      larger than N bytes", and the file stops at exactly N bytes;
   5. steps that sleep forever, run from thread-pool workers (several at
-     once), are killed and reported as timed out, and leave no process behind.
+     once), are killed and reported as timed out, and leave no process behind;
+  6. a sandboxed program that exits 125 on purpose (and prints what the
+     launcher would) is a rejection, "failed (exit 125)", not a fault; only
+     a real launcher failure, reported in its status file, is a fault.
 """
 
 import concurrent.futures as cf
@@ -56,7 +61,7 @@ for p in args["read"]:
 for p in args["connect"]:
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        s.connect(p)
+        s.connect("\0" + p[1:] if p.startswith("@") else p)
         res["connect"][p] = "connected"
     except OSError as e:
         res["connect"][p] = f"error: {type(e).__name__}"
@@ -94,6 +99,11 @@ def main():
         s.bind(str(path))
         s.listen(5)
         servers.append(s)
+    abstract = f"@qpcp-abstract-{token[:8]}"  # "@" stands for the leading NUL byte
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.bind("\0" + abstract[1:])
+    s.listen(5)
+    servers.append(s)
     try:
         # The host side really is reachable, so the sandbox's failures mean something.
         for c in canaries:
@@ -107,6 +117,14 @@ def main():
                 check(f"(host) the socket {path} accepts connections outside", False, e)
             finally:
                 t.close()
+        t = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            t.connect("\0" + abstract[1:])
+            check(f"(host) the abstract socket {abstract} accepts connections outside", True)
+        except OSError as e:
+            check(f"(host) the abstract socket {abstract} accepts connections outside", False, e)
+        finally:
+            t.close()
 
         probe_dir = env.work / "probe"
         probe_dir.mkdir()
@@ -117,7 +135,7 @@ def main():
         out, log = env.work / "logs" / "probe.out", env.work / "logs" / "probe.log"
         args = {"read": [str(c) for c in canaries] + [f"/proc/1/root{c}" for c in canaries]
                 + [str(ROOT / ".git" / "config"), str(home / ".gitconfig")],
-                "connect": [str(p) for p in sockets] + ["/var/run/docker.sock", "/run/docker.sock"],
+                "connect": [str(p) for p in sockets] + [abstract, "/var/run/docker.sock", "/run/docker.sock"],
                 "exists": ["/var/run/docker.sock", "/run/docker.sock", "/home", "/root", "/run", "/var", "/etc",
                            "/mnt", "/media", "/srv", str(home), str(ROOT), str(ROOT / ".git")]}
         ok, why = env.run_sandboxed("probe", [sys.executable, "-I", env.inside(probe), json.dumps(args)], [rw], log,
@@ -184,6 +202,23 @@ def main():
         time.sleep(1)
         left = subprocess.run(["pgrep", "-f", f"sleep {marker}"], capture_output=True, text=True).stdout.split()
         check("5. no sleeping process is left behind", not left, left)
+
+        # 6. exit 125 from the sandboxed program is the program's, not the launcher's
+        try:
+            got = env.run_sandboxed("probe", ["/usr/bin/sh", "-c", "echo 'limit_exec: OSError: forged' >&2; exit 125"],
+                                    [rw], log)
+            check(f"6. a sandboxed program exiting 125 is a rejection ({got[1]})",
+                  got == (False, "probe failed (exit 125)"), got)
+        except sv.Fault as f:
+            check("6. a sandboxed program exiting 125 is a rejection", False, f"raised a fault: {f}")
+        real, env.bwrap = env.bwrap, str(base / "no-such-bwrap")
+        try:
+            got = env.run_sandboxed("probe", ["/usr/bin/true"], [rw], log)
+            check("6. a launcher that cannot start the sandbox is a fault", False, f"returned {got}")
+        except sv.Fault as f:
+            check(f"6. a launcher that cannot start the sandbox is a fault ({f})", "could not start" in str(f), f)
+        finally:
+            env.bwrap = real
     finally:
         for s in servers:
             s.close()
