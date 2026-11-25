@@ -114,7 +114,9 @@ done
 if [ -z "$NS" ] && printf '%s\n' "$steps" | grep -q " UNSANDBOXED "; then bad "a step ran unsandboxed"; fi
 nanoda_in="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["export_file_path"])' \
   "$WORK/ref/QPCP.Proofs.S019.nanoda.json" 2>/dev/null)"
-case "$nanoda_in" in "$WORK/canon/"*) ok "nanoda read the canonical export" ;; *) bad "nanoda read $nanoda_in" ;; esac
+# Sandboxed, $WORK is mounted at /qpcp/work.
+canon_dir="/qpcp/work/canon/"; [ -n "$NS" ] && canon_dir="$WORK/canon/"
+case "$nanoda_in" in "$canon_dir"*) ok "nanoda read the canonical export" ;; *) bad "nanoda read $nanoda_in" ;; esac
 mv "$ROOT/.lake/qpcp-tests/S019.lean" QPCP/Proofs/S019.lean
 
 out=$(scripts/contribution_check.sh lemma L900001 tests/honest/L900001.lean $NS 2>/dev/null | tail -1)
