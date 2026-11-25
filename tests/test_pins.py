@@ -48,5 +48,6 @@ for wf in workflows:
     if "elan" in text:
         check(f"{wf.name}: installs elan only through scripts/install_elan.sh",
               "scripts/install_elan.sh" in text and "elan-init" not in text)
+fails += 1  # THROWAWAY: proves a failing attack-tests job blocks a merge; never merge
 print(f"failed {fails}")
 sys.exit(1 if fails else 0)
