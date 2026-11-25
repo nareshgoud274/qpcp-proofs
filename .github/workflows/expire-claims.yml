@@ -1,6 +1,10 @@
 name: expire-claims
 
 # Releases claims on step issues that have had no activity for 24 hours.
+#
+# Backstop only. The claim workflow releases lapsed claims itself whenever
+# someone tries to claim, because scheduled runs have been unreliable on this
+# repository. Both use scripts/expire_claims.sh, checked out from main.
 
 on:
   schedule:
@@ -9,25 +13,21 @@ on:
 
 permissions:
   issues: write
+  contents: read
 
 jobs:
   expire:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/expire_claims.sh
+          sparse-checkout-cone-mode: false
+
       - name: Release stale claims
-        run: |
-          set -euo pipefail
-          gh issue list --state open --label claimed --limit 200 \
-            --json number,updatedAt,assignees \
-            --jq '.[] | select((.updatedAt | fromdateiso8601) < (now - 86400)) | "\(.number) \([.assignees[].login] | join(","))"' \
-          | while read -r number assignees; do
-              args=(--remove-label claimed)
-              if [ -n "${assignees:-}" ]; then
-                args+=(--remove-assignee "$assignees")
-              fi
-              gh issue edit "$number" "${args[@]}"
-              gh issue comment "$number" --body "The claim lapsed after 24 hours without activity. This step is open again."
-            done
+        run: bash scripts/expire_claims.sh sweep

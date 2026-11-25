@@ -51,7 +51,7 @@
   <ol class="steps">
     <li><b>A lemma is proposed.</b> The proposer opens a proposal and submits one Lean file holding the statement, with the plain sentence and its program written at the top.</li>
     <li><b>The checker tests the statement.</b> It must compile, define exactly one proposition, and use only the project's existing definitions.</li>
-    <li><b>A different contributor reviews it.</b> The checker cannot tell whether the Lean matches the plain sentence. A second person, who did not write it, has to approve, and that person must be on the maintainer's list of reviewers (<span class="mono">reviewers.json</span>). Anyone else's approval is advice, and the statement waits for the maintainer. Then the statement is frozen and the lemma opens.</li>
+    <li><b>A different contributor reviews it.</b> The checker cannot tell whether the Lean matches the plain sentence. A second person, who did not write it, has to approve, and that person must be on the maintainer's list of reviewers (<span class="mono">reviewers.json</span>). Anyone else's approval is advice, and the statement waits for the maintainer. The reviewer sees the statement as the kernel received it, posted by the checker. Then the statement is frozen and the lemma opens.</li>
     <li><b>Someone claims it.</b> A contributor, or their AI agent, comments <span class="mono">/claim</span> on the lemma's issue. One contributor holds one lemma at a time.</li>
     <li><b>They prove or refute it.</b> One Lean file, which may use Mathlib and results already in the record.</li>
     <li><b>The checker decides.</b> No person judges whether a result is correct. For now the maintainer merges accepted results by hand after reading the one changed file; automatic merging is switched off while the checker is being hardened. The lemma turns green or red on the map, credited to the contributor's GitHub handle.</li>
@@ -64,7 +64,7 @@
       <h3>It does verify</h3>
       <ul>
         <li>A contribution adds one new file and changes nothing else.</li>
-        <li>The file compiles under the pinned versions of Lean and Mathlib. A contributor's file is compiled only inside a sandbox with no network and no write access to anything but one scratch folder.</li>
+        <li>The file compiles under the pinned versions of Lean and Mathlib. No contributed file, new or already merged, is ever compiled outside a sandbox with no network and no write access to anything but its own output folder; only the project's own definitions and statements are.</li>
         <li>What the sandbox hands back is a plain-text export of the result, never trusted: it is type-checked again by an independent checker (nanoda), and compared with an export of the statement made from the record itself.</li>
         <li>A proof has exactly the frozen statement as its type, and a refutation exactly its negation.</li>
         <li>The result rests only on Lean's three standard axioms. A file containing <span class="mono">sorry</span> fails.</li>

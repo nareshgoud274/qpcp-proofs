@@ -39,7 +39,8 @@ Progress and contributors: <https://nareshgoud274.github.io/qpcp-proofs/>
 | `programs.json` | The programs |
 | `scripts/automerge.py` | The merge rules |
 | `reviewers.json` | Statement reviewers whose approval opens a lemma (kept by the maintainer) |
-| `scripts/contribution_check.sh` | Sandboxed build and export check of a contribution |
+| `scripts/sandbox_verify.py` | Sandboxed build and export check of contributions (new and merged) |
+| `scripts/contribution_check.sh` | One new contribution, through `sandbox_verify.py` |
 | `tests/` | Attack probes and honest fixtures the checker must reject or accept |
 | `steps.json` | Step list with sections, difficulty, and dependencies |
 | `scripts/check.py` | The checker run on every pull request |

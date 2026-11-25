@@ -1,0 +1,61 @@
+name: statement-preview
+
+# Posts, on a lemma statement's pull request, the kernel's rendering of the
+# statement that the checker verified, so that the reviewer approves what was
+# actually built rather than only the source text.
+#
+# Trust: this runs the version on main, never checks out or runs contributed
+# code, and treats the artifact from the `check` run as data. It posts only if
+# the pull request's current head is the commit that was checked and the pull
+# request adds exactly that one lemma file, which means the `check` workflow
+# that produced the artifact was main's own.
+
+on:
+  workflow_run:
+    workflows: [check]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  post:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+      RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Fetch the preview, if the run made one
+        id: fetch
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/preview"
+          if gh run download "$RUN_ID" -n statement-preview -D "$RUNNER_TEMP/preview" > /dev/null 2>&1 \
+             && [ -f "$RUNNER_TEMP/preview/preview.json" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No statement preview in run $RUN_ID."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.fetch.outputs.found == 'true'
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/statement_preview.py
+          sparse-checkout-cone-mode: false
+
+      - name: Check it belongs to the pull request, then post it
+        if: steps.fetch.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          pr="$(python3 -I scripts/statement_preview.py "$RUNNER_TEMP/preview/preview.json" "$RUNNER_TEMP/preview/comment.md")"
+          if [ -n "$pr" ] && [ -s "$RUNNER_TEMP/preview/comment.md" ]; then
+            gh pr comment "$pr" --body-file "$RUNNER_TEMP/preview/comment.md"
+          fi

@@ -1,12 +1,18 @@
 name: verify-main
 
-# Re-checks every lemma, proof and refutation on main with main's own checker. If this goes
-# red after a merge, the merged pull request should be reverted.
+# Re-checks every lemma, proof and refutation on main. No contributed file is
+# built outside a bubblewrap sandbox: only QPCP.Defs, QPCP.Qudit,
+# QPCP.Statements and Mathlib are; every contribution is compiled, replayed
+# with leanchecker and exported in its own sandbox, and judged outside it from
+# its text export (scripts/sandbox_verify.py). If this goes red after a merge,
+# the merged pull request should be reverted.
 
 on:
   push:
     branches: [main]
-  # Automatic merges do not trigger push workflows, so also verify on a timer.
+  # Merges made with the workflow token do not trigger push workflows; the
+  # automerge workflow dispatches this one after it merges. The timer is a
+  # backstop only (scheduled runs have been unreliable on this repository).
   schedule:
     - cron: "23 */6 * * *"
   workflow_dispatch:
@@ -14,10 +20,20 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: verify-main
+  cancel-in-progress: false
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        # About a minute per contribution. When the record grows past a few
+        # hundred, split it: for example ["1/4", "2/4", "3/4", "4/4"].
+        shard: ["1/1"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,20 +48,13 @@ jobs:
       - name: Fetch Mathlib cache
         run: lake exe cache get
 
-      - name: Check every proof
-        run: python3 scripts/check.py all
+      - name: Install bubblewrap
+        run: scripts/install_sandbox.sh
 
-      # Replay every module of the record through the kernel, one module at a
-      # time: a whole-library run loads Mathlib once per module in parallel and
-      # runs out of memory. About 15 seconds a module; batch this when the
-      # record grows (see MAINTAINERS.md).
-      - name: Replay every module with leanchecker
-        run: |
-          set -euo pipefail
-          # Not the root module QPCP: it only imports, and leanchecker treats a
-          # name as a prefix, so `QPCP` would mean every module at once.
-          mods="$(git ls-files 'QPCP/*.lean' | sed 's/\.lean$//; s#/#.#g')"
-          for m in $mods; do
-            lake env leanchecker "$m" || { echo "leanchecker found a problem in $m"; exit 1; }
-          done
-          echo "leanchecker replayed $(printf '%s\n' $mods | wc -l) modules"
+      - name: Lean-free checks on the record
+        run: python3 scripts/check.py scan-all
+
+      - name: Verify every contribution, sandboxed
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: python3 -I scripts/sandbox_verify.py record --shard "$SHARD"

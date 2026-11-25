@@ -1,19 +1,16 @@
 name: automerge
 
 # DRY RUN ONLY. This job always passes --dry-run, so it only reports what it
-# would merge, and it does not refresh the site status. The maintainer merges
-# contributions by hand meanwhile.
+# would merge, and it does not dispatch the status and verify-main workflows.
+# The maintainer merges contributions by hand meanwhile, and decides when to
+# turn merging on.
 #
-# The hardening is NOT complete. The check on a new contribution is sandboxed
-# and export-verified, but previously merged contributions are still built
-# outside the sandbox in four places: the trusted first step of every
-# contributor check (scripts/contribution_check.sh), `check.py all` (maintainer
-# pull requests and verify-main), verify-main's leanchecker loop, and the
-# attack-tests job. A merged file that got past the scanner could forge later
-# verdicts there. Keep --dry-run forced until those four build only
-# maintainer-written modules outside a sandbox (MAINTAINERS.md, "How
-# contributions are merged"). Lemma statements also need an approval from a
-# reviewer listed in reviewers.json.
+# Where things stand: no contributed file, new or merged, is built outside a
+# bubblewrap sandbox in any workflow; only QPCP.Defs, QPCP.Qudit,
+# QPCP.Statements and Mathlib are, and every verdict comes from text exports
+# checked outside the sandbox (scripts/sandbox_verify.py). What this does not
+# cover is listed in MAINTAINERS.md ("Known limits of the checker"). Lemma
+# statements also need an approval from a reviewer listed in reviewers.json.
 #
 # When enabled, it merges contributions the checker has accepted, so no person
 # has to click.
@@ -22,12 +19,16 @@ name: automerge
 # and never runs contributed code. scripts/automerge.py decides from pull
 # request metadata read through the GitHub API. Its rules are in that file.
 
+# Event-driven: after every check run, after a review is submitted or
+# dismissed (relayed by review-relay, since review events from forks get a
+# read-only token), and after a claim changes. The timer is only a backstop:
+# scheduled runs have been unreliable on this repository.
 on:
   workflow_run:
-    workflows: [check]
+    workflows: [check, review-relay, claim]
     types: [completed]
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "41 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -60,10 +61,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/automerge.py --dry-run
 
-      # Merges made with the workflow token do not trigger other workflows, so
-      # ask for the site's status file to be rebuilt.
-      - name: Refresh the site status
+      # Merges made with the workflow token do not trigger push workflows, so
+      # dispatch the ones a merge should start (workflow_dispatch is allowed
+      # from the workflow token): the site status and the record check.
+      - name: Refresh the site status and re-verify main
         if: false  # disabled while automerge runs in dry-run mode only
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run status.yml --repo "$GITHUB_REPOSITORY" || true
+        run: |
+          gh workflow run status.yml --repo "$GITHUB_REPOSITORY" || true
+          gh workflow run verify-main.yml --repo "$GITHUB_REPOSITORY" || true
