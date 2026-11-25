@@ -1,0 +1,85 @@
+\documentclass[10pt]{article}
+\usepackage[a4paper,margin=2.1cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage[hidelinks]{hyperref}
+\setlength{\parskip}{4pt}\setlength{\parindent}{0pt}
+\title{\vspace{-1.2cm}\large\bfseries Intended promise problem for \texttt{qpcp-proofs}: encoding and semantics\\[2pt]
+\normalsize\mdseries Draft 3, revised after two AI-assisted reviews. Not yet formalized. Not reviewed by a human specialist.}
+\date{\vspace{-1.4cm}}
+\begin{document}
+\maketitle
+
+\textbf{Purpose.} This page states, in ordinary mathematics, what the first Lean definitions are meant to say.
+A reviewer should be able to compare each Lean declaration with one sentence below.
+
+\textbf{1. Fixed parameters.} A problem family fixes integers $q\ge 2$ (local dimension) and $k\ge 1$ (locality),
+and \emph{rational} thresholds $0\le a<b\le 1$. These do not vary with the instance. ($k=1$ is kept for
+definitions and tests; the hardness target is stated for $q,k\ge 2$. Energy lemmas may still quantify over real thresholds.)
+
+\textbf{2. Instance (finite input).} An instance consists of an integer $n\ge 0$ (number of sites) and a
+\emph{list} of $m\ge 1$ encoded terms $t_1,\dots,t_m$; repetitions are allowed and count separately.
+Each encoded term $t$ is a pair $(S,h)$ where
+\begin{itemize}\setlength{\itemsep}{0pt}
+\item $S=(i_1,\dots,i_j)$ is an ordered tuple of \emph{distinct} sites in $\{0,\dots,n-1\}$ with $0\le j\le k$;
+\item $h$ is a $q^{j}\times q^{j}$ matrix, indexed by $\{0,\dots,q-1\}^{j}$, whose entries have real and
+imaginary parts that are dyadic rationals, each given exactly as $(p,e)\in\mathbb{Z}\times\mathbb{N}$ meaning $p/2^{e}$.
+\end{itemize}
+\textbf{Size.} $p$ is written in signed binary and $e$ in \emph{unary}, so the length of $(p,e)$ bounds the length of
+the denominator $2^{e}$ (equivalently, up to polynomial-time translation, numerator and denominator $2^e$ both in binary). The number of sites $n$ is also written in \emph{unary}, so an instance cannot declare exponentially more sites than its length; running time is measured in the total encoded length. A problem family fixes polynomials bounding $m$ and each term's encoded length in $n+1$.
+
+\textbf{Validity (a checked input condition, separate from the promise).} A raw input is \emph{valid} if every $h$ is
+Hermitian with $0\preceq h\preceq I$. For fixed $q,k$ the matrices have bounded dimension, so validity is decidable
+in exact rational arithmetic. Malformed or invalid inputs are in neither \textsc{Yes} nor \textsc{No}.
+
+\textbf{3. Denotation.} Let $\mathcal{H}=(\mathbb{C}^{q})^{\otimes n}$ with basis $|x\rangle$, $x\in\{0,\dots,q-1\}^{n}$
+(for $n=0$ this is $\mathbb{C}^{1}$, with one empty configuration). The term $(S,h)$ denotes the operator
+\[
+\langle x|\,H_{(S,h)}\,|y\rangle \;=\;
+\begin{cases} h\big[(x_{i_1},\dots,x_{i_j}),\,(y_{i_1},\dots,y_{i_j})\big] & \text{if } x_i=y_i \text{ for all } i\notin S,\\
+0 & \text{otherwise,}\end{cases}
+\]
+so the $r$-th tensor factor of $h$ acts on site $i_r$ and the identity acts elsewhere. The instance denotes
+$H=\sum_{t=1}^{m}H_{t}$, and its ground energy is
+$\lambda_{\min}(H)=\min\{\langle\psi|H|\psi\rangle : \langle\psi|\psi\rangle=1\}$.
+Each valid encoding has exactly one denotation, and $0\preceq H\preceq m\,I$.
+
+\textbf{4. Promise.} For a valid instance:\quad
+\textsc{Yes} if $\lambda_{\min}(H)\le a\,m$;\qquad \textsc{No} if $\lambda_{\min}(H)\ge b\,m$.\\
+Because $a<b$ and $m\ge 1$, no instance is both. (With $m=0$ both would hold; hence $m\ge 1$ is part of the input condition.)
+
+\textbf{5. Precision.} Let $H'=\sum_{t=1}^{m}H'_t$, where each $H'_t$ is \emph{Hermitian} and
+$\|H_t-H'_t\|_{\mathrm{op}}\le\varepsilon$. Then
+$|\lambda_{\min}(H)-\lambda_{\min}(H')|\le \varepsilon m$ (Weyl's inequality), so the ground energy per term moves
+by at most $\varepsilon$. Hence: if every replacement is itself a valid local term on the same support with
+operator-norm error at most $\varepsilon<(b-a)/2$, every original \textsc{Yes} instance satisfies the new \textsc{Yes}
+bound at $a+\varepsilon$ and every original \textsc{No} instance the new \textsc{No} bound at $b-\varepsilon$.
+Entrywise rounding alone need \emph{not} preserve validity: $h=\tfrac1{16}\big(\begin{smallmatrix}1&3\\3&9\end{smallmatrix}\big)$
+is valid (eigenvalues $0,\tfrac58$), but rounding entries to the nearest quarter gives
+$\big(\begin{smallmatrix}0&1/4\\1/4&1/2\end{smallmatrix}\big)$ with determinant $-\tfrac1{16}$.
+(If $a+\varepsilon$, $b-\varepsilon$ are to be thresholds of a second family under \S1, fix a rational $\varepsilon<(b-a)/2$.) The first Lean draft uses exact dyadic entries and models no rounding.
+
+\textbf{6. What this is and is not.} With $a,b$ constant, this is the constant-relative-gap local Hamiltonian
+problem, the regime the quantum PCP conjecture concerns (QMA-hardness for some fixed $q,k,a<b$). The project has
+\emph{not} formalized QMA, reductions, or the conjecture itself; this page defines only the promise problem.
+
+\textbf{7. First end-to-end milestone (classical case, $q=2$).} A Boolean constraint is a pair $(S,P)$ with $S$ as
+above and $P:\{0,1\}^{j}\to\{\text{true},\text{false}\}$. Its term is the diagonal projector onto violating
+assignments, $\Pi_{(S,P)}=\sum_{x:\,P(x_{i_1},\dots,x_{i_j})=\text{false}}|x\rangle\langle x|$. For a list of $m\ge1$ constraints,
+\[
+\frac{\lambda_{\min}\!\big(\sum_{t}\Pi_{t}\big)}{m}\;=\;\min_{x\in\{0,1\}^{n}}\frac{\#\{t: x \text{ violates } t\}}{m}.
+\]
+\emph{Construction.} The local $2^{j}\times2^{j}$ violation matrix is built from the truth table of $P$ and passed through the
+\emph{same} decoder as \S3; the proof shows its diagonal entry at a global assignment is the violation indicator, and sums these.
+A passing milestone therefore exercises the encoding, site ordering and decoder that quantum terms will use.\\
+\emph{Test A (which assignments are penalized):} $n=1$ with the list $(x=1),(x=1),(x=0)$ must give
+$H=\mathrm{diag}(2,1)$ in basis order $(0,1)$ \emph{and} value exactly $1/3$. The value alone would not detect projecting onto
+satisfying assignments, which gives $\mathrm{diag}(1,2)$ and also $1/3$. It also catches deduplication and division in $\mathbb{N}$.\\
+\emph{Test B (which site each local coordinate names):} $n=2$, support tuple $(1,0)$, local projector onto the string $10$:
+the term must select exactly the global assignment $x_0=0,\ x_1=1$.
+
+\textbf{8. Status of open questions.}
+Settled in review 1: validity is a checked input condition; $0\le j\le k$ including the empty support (a $1\times1$
+matrix $[c]$ denoting $cI$). Still open:
+(i) Is any uniformity or precision assumption missing for this to be the intended local Hamiltonian problem?
+(Unary $e$ and unary $n$ were settled in review 2.)
+\end{document}
