@@ -29,6 +29,21 @@ case "$CMD" in
       echo "REJECTED: a contribution adds one new file QPCP/Proofs/<ID>.lean, QPCP/Refutations/<ID>.lean or QPCP/Lemmas/L<N>.lean"
       exit 1
     fi
+    # The Git entry, not the working copy, and before any content is read: a
+    # regular, non-executable file (mode 100644). A symlink (120000), an
+    # executable (100755) or a submodule (160000) is refused here.
+    path="$(printf '%s\n' "$files" | cut -f2)"
+    entry="$(git ls-tree HEAD -- "$path")"
+    mode="${entry%% *}"; rest="${entry#* }"; type="${rest%% *}"
+    if [ "$mode" != 100644 ] || [ "$type" != blob ]; then
+      echo "REJECTED: $path must be a regular file (Git mode 100644); this one has Git mode ${mode:-none}"
+      exit 1
+    fi
+    ident="$(basename "$path" .lean)"
+    if printf '%s\n' "$ident" | grep -qE '^[SL]9[0-9]{5}$'; then
+      echo "REJECTED: $ident is reserved for the test suite's fixtures"
+      exit 1
+    fi
     echo "gate: one new contribution file"
     ;;
   check)
@@ -37,10 +52,11 @@ case "$CMD" in
     line="$(printf '%s\n' "$scan" | sed -n 's/^CONTRIBUTION: //p')"
     read -r kind ident path <<< "$line"
     [ -n "${path:-}" ] || { echo "FAULT: the scanner named no contribution"; exit 2; }
-    # Move the contribution aside so that the trusted build is main's.
-    aside="${RUNNER_TEMP:-$PWD/.lake}/qpcp-aside"
-    rm -rf "$aside" && mkdir -p "$aside"
-    mv "$path" "$aside/$ident.lean"
+    # Move the contribution aside so that the trusted build is main's. The copy
+    # checked is the committed blob the scanner read, not the working copy.
+    aside="$(mktemp -d "${RUNNER_TEMP:-$PWD/.lake}/qpcp-aside.XXXXXX")"
+    git cat-file blob "HEAD:$path" > "$aside/$ident.lean"
+    rm -f -- "$path"
     scripts/contribution_check.sh "$kind" "$ident" "$aside/$ident.lean"
     ;;
   *) echo "usage: ci_contribution.sh <gate|check> <base-sha>"; exit 2 ;;

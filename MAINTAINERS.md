@@ -56,7 +56,54 @@ host or alter a later verdict.
 Automatic merging nevertheless stays forced to dry-run: turning it on is
 your decision, and "Known limits of the checker" lists what the sandbox does
 not cover. To enable it, remove the forced `--dry-run` and the `if: false`
-in `.github/workflows/automerge.yml`.
+in `.github/workflows/automerge.yml`, and set its `permissions` back to
+`write` (they are read-only while it is a dry run).
+
+### The required check
+
+The ruleset on `main` requires one status, `check`. In the `check` workflow
+that is a final job which needs both other jobs, runs whatever happens to
+them, and fails unless:
+
+- `pull-request` (the contribution check, or on your own pull requests the
+  whole record) succeeded, and
+- `attack-tests` succeeded on your own pull requests, or was skipped on a
+  contributor's. That is the only allowed skip: its positive controls run
+  Lean files from `tests/` unsandboxed on purpose, so it never runs on a
+  contributor's pull request (whose `tests/` would be theirs), and it runs on
+  every one of yours, whatever it changes.
+
+So on your own pull requests the required check takes as long as the attack
+tests, about 45 minutes. `automerge.py` still reads the conclusion of the
+workflow named `check`, which is unchanged.
+
+To confirm that a failing attack-tests job blocks a merge: open a throwaway
+pull request of your own that makes one attack test fail (for example, add
+`fails += 1` just before the last `print` in `tests/test_pins.py`), wait for
+the checks, and confirm that `check` is red with "attack-tests did not succeed:
+failure" and that GitHub shows "Required status check \"check\" failed" and
+refuses `gh pr merge`. Then close the pull request and delete its branch.
+The ruleset itself: `gh api repos/nareshgoud274/qpcp-proofs/rules/branches/main`.
+
+### Tests and fixtures
+
+- `tests/run_tests.sh` never writes the checkout it is run from. It copies
+  the repository (tracked files, plus untracked files outside `QPCP/`) to a
+  disposable directory under `$RUNNER_TEMP` or `~/.cache`, hard-links
+  `.lake/packages` into it (so the copy must be on the same filesystem), and
+  deletes it on exit, failure or interrupt. Outside CI it refuses to start
+  while `QPCP/` has uncommitted changes. `tests/test_suite_safety.sh` checks
+  this with planted uncommitted `S030` and `S031` files.
+- Fixture ids `S900000`-`S999999` and `L900000`-`L999999` are reserved for
+  the tests. The gate and `check.py scan` refuse them, so no contribution can
+  use one, and no founding step may. The suite's targets `S900030` and
+  `S900031` exist only in its copy, where `def S900030 : Prop := S030` and
+  `def S900031 : Prop := S031` are appended to `QPCP/Statements.lean`.
+- Each `sandbox_verify.py` run works in a directory of its own: `$QPCP_WORK`
+  (which must not exist yet) or a new `qpcp-verify-XXXXXXXX`. Two runs never
+  share or delete each other's.
+- `sandbox_verify.py record --replay-only` accepts nothing: its verdict is
+  `REPLAYED-ONLY` and its exit code 3 when every replay passed.
 
 Once enabled, the `automerge` workflow runs after every check, review and
 claim (and hourly as a backstop), and merges a pull request only if it adds exactly one contribution
@@ -198,8 +245,10 @@ the id to `retired.json` if the statement itself is at fault.
   its definition is a `Prop` whose every dependency matches main. Its verified
   export is then part of the reference for proofs and refutations of it.
 - Not covered by the sandbox:
-  - contributors' own machines, which build contributed files with plain
-    `lake build`; only the scanner, and JOIN.md's warning, protect them;
+  - contributors' own machines. `JOIN.md` tells agents to build only in a
+    disposable workspace without credentials, and to publish in a separate
+    step their owner approves; nothing enforces that, and a volunteer who
+    builds elsewhere is protected only by the scanner;
   - a lemma whose code changed its own statement while it was built: the
     export check sees only what was built, so the reviewer compares the
     posted kernel rendering, not just the source, with the `PLAIN:` sentence;
@@ -242,6 +291,21 @@ the id to `retired.json` if the statement itself is at fault.
   (and on Ubuntu's package archive): if a toolchain release or a cache file
   were replaced at the source, the checker would build with it and would not
   notice.
+
+## Updating JOIN.md
+
+Agents are told to fetch `JOIN.md` at a fixed commit, never from `main`. The
+pinned link is in `README.md` ("With an AI coding agent") and in
+`docs/assets/site.js` (`JOIN_COMMIT`). After changing `JOIN.md`:
+
+1. commit the change to `JOIN.md` on its own;
+2. in a second commit, set both pins to the first commit's full id;
+3. merge with a merge commit, not a squash, so that the first commit's id
+   still exists on `main`.
+
+Agents check, after cloning, that `JOIN.md` on `main` is unchanged since the
+pinned commit, and stop if it is not; so until the pins are bumped, a stale
+pin stops agents rather than misleading them.
 
 ## Adding steps
 

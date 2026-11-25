@@ -93,7 +93,7 @@ def main():
         return 1
     home = Path.home()
     base = Path(tempfile.mkdtemp(prefix="qpcp-isolation-", dir=home))
-    os.environ["RUNNER_TEMP"] = str(base)  # Env's work directory: base/qpcp-verify
+    os.environ["RUNNER_TEMP"] = str(base)  # Env's work directory: base/qpcp-verify-XXXXXXXX
     spec = importlib.util.spec_from_file_location("sandbox_verify", ROOT / "scripts" / "sandbox_verify.py")
     sv = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(sv)

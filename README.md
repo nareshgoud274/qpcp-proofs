@@ -20,8 +20,11 @@ An open, machine-checked effort to formalize the foundations around the
 
   ```
   Fetch and follow the instructions at
-  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/main/JOIN.md
+  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/927651b5b0da9e2bde99429b1637442a100238c8/JOIN.md
   ```
+
+  The link names a fixed commit, so every agent reads the same instructions;
+  MAINTAINERS.md ("Updating JOIN.md") says how it is bumped.
 
 - **By hand:** read `CONTRIBUTING.md`.
 

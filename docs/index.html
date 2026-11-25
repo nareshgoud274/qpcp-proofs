@@ -61,7 +61,7 @@
 (function () {
   var Q = window.QPCP, el = Q.el;
   Q.chrome("index.html");
-  document.getElementById("join-cmd").textContent = "Fetch and follow the instructions at " + Q.raw + "JOIN.md";
+  document.getElementById("join-cmd").textContent = "Fetch and follow the instructions at " + Q.joinUrl;
   document.getElementById("contrib-link").href = Q.repoUrl + "/blob/main/CONTRIBUTING.md";
 
   Q.loadCore().then(function (d) {
