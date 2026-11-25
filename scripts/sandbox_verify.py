@@ -386,7 +386,8 @@ class Verifier:
         return ok, lines, d
 
     def canonicalize(self, m, raw):
-        d = self.scratch(m, "canon-out")
+        # verify_export() recreates this directory and makes only it writable.
+        d = self.env.work / "scratch" / f"{m.name}.canon"
         ok, lines, _ = self.verify_export(m, "canon", "canon", raw, d / "canonical.ndjson")
         if not ok:
             raise Reject(lines[-1].removeprefix("REJECTED: "))
