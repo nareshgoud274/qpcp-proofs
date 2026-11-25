@@ -17,6 +17,19 @@ name: check
 # every verdict comes from checking text exports outside the sandbox
 # (scripts/sandbox_verify.py). The maintainer's own pull requests re-check the
 # whole record that way and run the attack tests (tests/run_tests.sh).
+#
+# Jobs. `pull-request` checks the contribution (or, on the maintainer's pull
+# requests, the whole record). `attack-tests` runs the isolation and
+# hostile-input tests. `check` runs last, always, and fails unless every job it
+# needs succeeded; the ruleset on main requires exactly that status, `check`,
+# so a failing or cancelled attack-tests job blocks a merge. The one allowed
+# skip: attack-tests does not run on a contributor's pull request. Its positive
+# controls deliberately run Lean files from tests/ with plain Lean, outside any
+# sandbox, and on a contributor's pull request those files would be the
+# contributor's. It therefore runs on every maintainer pull request, whatever it
+# changes (scripts/, tests/, .github/ included), and never on a contributor's;
+# a contributor's pull request that changes scripts/, tests/ or .github/ is
+# refused by the gate below and never merged automatically (automerge.py).
 
 on:
   pull_request:
@@ -30,7 +43,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  pull-request:
+    name: pull request
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -62,6 +76,8 @@ jobs:
       - name: Check the pull request
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # The verifier's own work directory; the preview step below reads its results.
+          QPCP_WORK: ${{ runner.temp }}/qpcp-verify-pr
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           REPO_OWNER: ${{ github.repository_owner }}
         run: |
@@ -83,9 +99,10 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          QPCP_WORK: ${{ runner.temp }}/qpcp-verify-pr
         run: |
           set -euo pipefail
-          r="$RUNNER_TEMP/qpcp-verify/result"
+          r="$QPCP_WORK/result"
           [ -f "$r/statement-preview.txt" ] || exit 0
           mkdir -p "$RUNNER_TEMP/preview"
           python3 -I - "$r" "$RUNNER_TEMP/preview/preview.json" <<'PY'
@@ -154,5 +171,46 @@ jobs:
       - name: The host never opens a path a sandbox could plant (needs bubblewrap)
         run: python3 -I tests/test_sandbox_host_paths.py
 
+      - name: A contribution is a regular file, read within its bound
+        run: python3 -I tests/test_contribution_files.py
+
+      - name: Verifier runs do not share state; replay-only accepts nothing
+        run: python3 -I tests/test_verifier_runs.py
+
+      - name: The test suite never touches uncommitted work (refused, failing, interrupted)
+        run: tests/test_suite_safety.sh
+
+      - name: Plant uncommitted S030 and S031 for the full run
+        run: tests/test_suite_safety.sh plant
+
       - name: Attack and honest-contribution tests
         run: tests/run_tests.sh
+
+      - name: The planted S030 and S031 are unchanged after the full run
+        if: always()
+        run: tests/test_suite_safety.sh verify
+
+  # The status the ruleset on main requires. See the note at the top.
+  check:
+    needs: [pull-request, attack-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every needed job succeeded
+        env:
+          PULL_REQUEST: ${{ needs.pull-request.result }}
+          ATTACK_TESTS: ${{ needs.attack-tests.result }}
+          MAINTAINER_PR: ${{ github.event.pull_request.user.login == github.repository_owner }}
+        run: |
+          echo "pull request: $PULL_REQUEST; attack tests: $ATTACK_TESTS; maintainer's pull request: $MAINTAINER_PR"
+          if [ "$PULL_REQUEST" != success ]; then
+            echo "the pull-request job did not succeed: $PULL_REQUEST"; exit 1
+          fi
+          if [ "$MAINTAINER_PR" = true ]; then
+            if [ "$ATTACK_TESTS" != success ]; then echo "attack-tests did not succeed: $ATTACK_TESTS"; exit 1; fi
+          elif [ "$ATTACK_TESTS" != skipped ]; then
+            # The only allowed skip, and on a contributor's pull request the only allowed result.
+            echo "attack-tests should not run on a contributor's pull request: $ATTACK_TESTS"; exit 1
+          fi
+          echo "every needed job succeeded"

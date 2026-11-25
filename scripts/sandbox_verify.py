@@ -6,6 +6,12 @@
     sandbox_verify.py contribution <kind> <ident> <file>
     common options: [--no-sandbox] [--skip-scan-for-tests]
 
+Each invocation works in a directory of its own, never shared and never
+deleted at start: $QPCP_WORK if set (it must not exist yet; it is created),
+otherwise a new qpcp-verify-XXXXXXXX under $RUNNER_TEMP or .lake/, whose path
+is printed on stderr. Whatever reads the results (result/, logs/) is given
+that path; nothing looks for a fixed name.
+
 Trust split. Only the maintainer-written modules QPCP.Defs, QPCP.Qudit and
 QPCP.Statements, and Mathlib, are ever built outside a sandbox
 (`trusted-build`). Every contributed module, under QPCP/Lemmas, QPCP/Proofs or
@@ -53,6 +59,9 @@ bubblewrap; CI never passes it. --skip-scan-for-tests skips the source scanner
 so that tests can model a merged file that got past it.
 
 Exit 0 if everything is ACCEPTED, 1 if anything is REJECTED, 2 on a FAULT.
+`record --replay-only` accepts nothing: it prints REPLAYED-ONLY for each module
+whose kernel replay passed, ends with a line starting REPLAYED-ONLY, and exits
+3 if every replay passed (never 0, so no caller can read it as acceptance).
 """
 
 import concurrent.futures as cf
@@ -65,6 +74,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
@@ -72,6 +82,8 @@ ROOT = Path(__file__).resolve().parent.parent
 TRUSTED_MODULES = ["QPCP.Defs", "QPCP.Qudit", "QPCP.Statements"]
 FIXED = ["propext", "Classical.choice", "Quot.sound", "Quot", "Quot.mk", "Quot.lift", "Quot.ind", "Not"]
 CONTRIB_FOLDERS = {"lemma": "QPCP/Lemmas", "proof": "QPCP/Proofs", "refutation": "QPCP/Refutations"}
+# The verdict of `record --replay-only`. Not an acceptance: see the docstring.
+REPLAYED_ONLY = "REPLAYED-ONLY"
 TARGET_NS = {"lemma": "QPCP.Lemma", "proof": "QPCP.Proof", "refutation": "QPCP.Refutation"}
 
 # Limits for sandboxed steps: (timeout seconds, largest file the step may write).
@@ -223,9 +235,25 @@ def take(src, dest, limit):
 class Env:
     def __init__(self, sandbox):
         self.sandbox = sandbox
-        self.work = Path(os.environ.get("RUNNER_TEMP") or (ROOT / ".lake")) / "qpcp-verify"
-        if str(self.work).startswith("/tmp"):
-            raise Fault("the work directory must not be under /tmp, which the sandbox replaces")
+        # A directory of this invocation's own: two runs never share or delete each other's.
+        given = os.environ.get("QPCP_WORK")
+        if given:
+            self.work = Path(given).absolute()
+            if str(self.work).startswith("/tmp"):
+                raise Fault("the work directory must not be under /tmp, which the sandbox replaces")
+            try:
+                self.work.mkdir()
+            except FileExistsError:
+                raise Fault(f"QPCP_WORK={given} already exists; each run needs a new directory")
+            except OSError as e:
+                raise Fault(f"cannot create QPCP_WORK={given}: {e.strerror}")
+        else:
+            base = Path(os.environ.get("RUNNER_TEMP") or (ROOT / ".lake"))
+            if str(base.absolute()).startswith("/tmp"):
+                raise Fault("the work directory must not be under /tmp, which the sandbox replaces")
+            base.mkdir(parents=True, exist_ok=True)
+            self.work = Path(tempfile.mkdtemp(prefix="qpcp-verify-", dir=base)).absolute()
+            print(f"work directory: {self.work}", file=sys.stderr)
         if sandbox:
             self.bwrap = shutil.which("bwrap")
             if not self.bwrap:
@@ -265,10 +293,11 @@ class Env:
             if not any(resolved.is_relative_to(a) for a in allowed):
                 raise Fault(f"LEAN_PATH entry {e} (resolved: {resolved}) is outside .lake/packages, "
                             f".lake/build and the toolchain; refusing to mount it")
-        if self.work.exists():
-            shutil.rmtree(self.work)
+        # self.work was created by this Env, so only this run's own files are cleared.
         for d in (*WRITABLE_ROOTS, *HOST_ONLY):
-            (self.work / d).mkdir(parents=True)
+            if (self.work / d).exists() or (self.work / d).is_symlink():
+                shutil.rmtree(self.work / d)
+            (self.work / d).mkdir()
         self.lib = self.work / "lib"
         # Inside a sandbox, package i's build is mounted at /qpcp/pkg/i. An allowed entry
         # that does not exist (a package with nothing built, such as Cli) holds no module,
@@ -457,7 +486,10 @@ class Module:
         self.kind, self.ident, self.src = kind, ident, Path(src_path)
         self.name = module_of(kind, ident)
         self.rel = Path(CONTRIB_FOLDERS[kind]) / f"{ident}.lean"
-        self.imports = imports_of(self.src.read_text(encoding="utf-8", errors="replace"))
+        # Read once, safely (no symlink, no FIFO, a regular non-executable file of at
+        # most check.MAX_BYTES); the sandbox gets exactly these bytes.
+        self.data = check.read_regular(self.src, str(self.rel))
+        self.imports = imports_of(self.data.decode("utf-8", errors="replace"))
         self.verdict, self.reason = None, ""
         self.export = None          # path of the verified export, once ACCEPTED
         self.deps = []              # for a lemma: what its definition refers to
@@ -551,7 +583,8 @@ class Verifier:
         e = self.env
         src = e.work / "src" / m.rel
         src.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(m.src, src)
+        with os.fdopen(open_new(src), "wb") as f:
+            f.write(m.data)
         out = e.fresh_dir("out", m.name)
         olean = out / "module.olean"
         ok, why = e.run_sandboxed("compile", [e.inside(e.bin / "lean"), f"--root={e.inside(e.work / 'src')}",
@@ -673,7 +706,7 @@ class Verifier:
         try:
             raw = self.replay_and_export(m, export=not replay_only)
             if replay_only:
-                m.verdict = "ACCEPTED"
+                m.verdict = REPLAYED_ONLY  # not an acceptance: nothing was exported or verified
                 return
             export = self.canonicalize(m, raw)
             refs, names = [], [*FIXED]
@@ -724,8 +757,9 @@ def replay_trusted(env):
             raise Fault(f"leanchecker found a problem in {m}: {(r.stdout + r.stderr)[-400:]}")
 
 
-def report(selected, mods):
-    rejected = [mods[n] for n in selected if mods[n].verdict != "ACCEPTED"]
+def report(selected, mods, replay_only=False):
+    passed = REPLAYED_ONLY if replay_only else "ACCEPTED"
+    rejected = [mods[n] for n in selected if mods[n].verdict != passed]
     for n in selected:
         m = mods[n]
         print(log_safe(f"  {m.verdict or 'NOT CHECKED':9} {m.kind} {m.ident}" + (f": {m.reason}" if m.reason else "")))
@@ -734,7 +768,11 @@ def report(selected, mods):
         print(log_safe(f"REJECTED: {m.kind} {m.ident}: {m.reason or 'not checked'}"
                        + (f" (and {len(rejected) - 1} more)" if len(rejected) > 1 else "")))
         return 1
-    print("ACCEPTED: " + check.summarize([f"{mods[n].kind} {mods[n].ident}" for n in selected]))
+    summary = check.summarize([f"{mods[n].kind} {mods[n].ident}" for n in selected])
+    if replay_only:
+        print(f"{REPLAYED_ONLY}: {summary} (kernel replay only; nothing was exported, verified or accepted)")
+        return 3
+    print("ACCEPTED: " + summary)
     return 0
 
 
@@ -770,7 +808,7 @@ def cmd_record(env, opts):
     v = Verifier(env, mods, opts["jobs"])
     v.compile_all(needed)
     v.verify_all(needed, opts["replay_only"])
-    return report(selected, mods)
+    return report(selected, mods, opts["replay_only"])
 
 
 def cmd_contribution(env, opts, kind, ident, file):
@@ -886,6 +924,9 @@ def main(argv):
             return cmd_record(env, opts)
         if len(rest) == 4 and rest[0] == "contribution":
             return cmd_contribution(env, opts, rest[1], rest[2], rest[3])
+    except check.Rejected as e:  # a contribution file that is not a safe, regular file
+        print(log_safe(f"REJECTED: {e}"))
+        return 1
     except Fault as e:
         print(log_safe(f"FAULT: {e}"))
         return 2

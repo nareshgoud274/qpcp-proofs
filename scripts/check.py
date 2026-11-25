@@ -31,9 +31,12 @@ Verdicts are printed as ACCEPTED or REJECTED with a reason. Exit code 0 means
 accepted, 1 means rejected, 2 means the checker itself failed (FAULT).
 """
 
+import errno
 import importlib.util
 import json
+import os
 import re
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -45,6 +48,10 @@ _spec.loader.exec_module(_logsafe)
 log_safe = _logsafe.log_safe
 
 ID = r"(?:S\d{3,6}|L\d{1,9})"
+# Ids reserved for the test suite's fixtures (tests/run_tests.sh installs them
+# only in a disposable copy of the repository): S900000-S999999 and
+# L900000-L999999. No founding step and no contribution may use one.
+FIXTURE_ID = re.compile(r"^[SL]9\d{5}$")
 KINDS = {
     "proof": ("QPCP/Proofs", "QPCP.Proofs", "QPCP.Proof"),
     "refutation": ("QPCP/Refutations", "QPCP.Refutations", "QPCP.Refutation"),
@@ -120,6 +127,8 @@ COMMAND_TOKENS = [t for t in (ROOT / "scripts" / "command_tokens.txt").read_text
 # can add rules and tactics of the file's own, so only plain `aesop` is allowed.
 AESOP_CLAUSE_RE = re.compile(r"(?<![A-Za-z0-9_.'])aesop[A-Za-z0-9_'!?]*\s*\(")
 MAX_BYTES = 200_000
+# The only Git entry a contribution may be: a regular, non-executable file.
+REGULAR_MODE = "100644"
 MIN_PLAIN_CHARS = 20
 
 
@@ -306,14 +315,93 @@ def lemma_header(src):
     return (program.group(1) if program else None, plain.group(1) if plain else None)
 
 
-def scan_source(kind, ident, path=None):
-    path = Path(path) if path else file_of(kind, ident)
-    rel = f"{KINDS[kind][0]}/{ident}.lean"
-    if not path.is_file():
+def too_large(rel):
+    return Rejected(f"{rel} is larger than {MAX_BYTES} bytes")
+
+
+def read_regular(path, rel):
+    """The bytes of a contribution file in the working tree, read safely.
+
+    Opens with O_NOFOLLOW (a symlink is refused, never followed) and O_NONBLOCK
+    (a FIFO cannot stall the reader), confirms with fstat that it is a regular,
+    non-executable file of at most MAX_BYTES, and never reads more than
+    MAX_BYTES + 1 bytes, so a file that grows after the fstat is refused too."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    except FileNotFoundError:
         raise Rejected(f"{rel} does not exist")
-    data = path.read_bytes()
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            raise Rejected(f"{rel} is a symbolic link; a contribution must be a regular file")
+        raise Rejected(f"{rel} cannot be opened ({e.strerror})")
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise Rejected(f"{rel} is not a regular file")
+        if st.st_mode & 0o111:
+            raise Rejected(f"{rel} is executable; a contribution must be a plain file (Git mode {REGULAR_MODE})")
+        if st.st_size > MAX_BYTES:
+            raise too_large(rel)
+        chunks, n = [], 0
+        while n <= MAX_BYTES:
+            b = os.read(fd, MAX_BYTES + 1 - n)
+            if not b:
+                break
+            chunks.append(b)
+            n += len(b)
+        if n > MAX_BYTES:
+            raise too_large(rel)
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
+
+
+def git(*args):
+    try:
+        r = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise Fault(f"git {args[0]} failed: {e}")
+    if r.returncode != 0:
+        raise Fault(f"git {args[0]} failed: {r.stderr.decode(errors='replace').strip()[:300]}")
+    return r.stdout
+
+
+def tree_entries(rev, *paths):
+    """{path: (mode, type, object)} for the Git tree entries at or under `paths` in `rev`."""
+    out = {}
+    for rec in git("ls-tree", "-z", "-r", rev, "--", *paths).split(b"\0"):
+        if rec:
+            meta, name = rec.split(b"\t", 1)
+            mode, typ, obj = meta.decode().split()
+            out[name.decode("utf-8", errors="replace")] = (mode, typ, obj)
+    return out
+
+
+def require_regular_entry(entry, rel):
+    if entry is None:
+        raise Rejected(f"{rel} is not in the commit")
+    mode, typ, _ = entry
+    if typ != "blob" or mode != REGULAR_MODE:
+        what = {"120000": "a symbolic link", "100755": "an executable file", "160000": "a submodule"}.get(mode, f"Git mode {mode}")
+        raise Rejected(f"{rel} is {what}; a contribution must be a regular file (Git mode {REGULAR_MODE})")
+
+
+def read_blob(rev, rel):
+    """The bytes of `rel` as committed in `rev`: a regular blob of at most MAX_BYTES, from Git, not the working copy."""
+    entry = tree_entries(rev, rel).get(rel)
+    require_regular_entry(entry, rel)
+    if int(git("cat-file", "-s", entry[2]).decode().strip()) > MAX_BYTES:
+        raise too_large(rel)
+    data = git("cat-file", "blob", entry[2])
     if len(data) > MAX_BYTES:
-        raise Rejected(f"{rel} is larger than {MAX_BYTES} bytes")
+        raise too_large(rel)
+    return data
+
+
+def scan_source(kind, ident, path=None, data=None):
+    rel = f"{KINDS[kind][0]}/{ident}.lean"
+    if data is None:
+        data = read_regular(Path(path) if path else file_of(kind, ident), rel)
     try:
         src = data.decode("utf-8")
     except UnicodeDecodeError:
@@ -456,6 +544,10 @@ def precheck(base):
         raise Rejected(f"`{name}` is not a proof, refutation or lemma file")
     if status != "A":
         raise Rejected(f"`{name}` already exists; contributions add new files only")
+    if FIXTURE_ID.match(ident):
+        raise Rejected(f"{ident} is reserved for the test suite's fixtures")
+    # The Git entry, not the working copy: a regular file, read from its blob.
+    data = read_blob("HEAD", name)
 
     if kind in ("proof", "refutation"):
         if not statement_exists(ident):
@@ -465,7 +557,7 @@ def precheck(base):
         other = "refutation" if kind == "proof" else "proof"
         if file_of(other, ident).is_file():
             raise Rejected(f"{ident} is already settled by a {other}")
-    scan_source(kind, ident)
+    scan_source(kind, ident, data=data)
     return kind, ident, name
 
 
@@ -498,7 +590,12 @@ def mode_pr(base):
 def record_items(skip_scan=False):
     """Every contribution in the tree, after every check that runs no Lean."""
     items = []
+    # Every committed entry under the contribution folders must be a regular file.
+    for name, entry in tree_entries("HEAD", *(f for f, _, _ in KINDS.values())).items():
+        require_regular_entry(entry, name)
     for kind, (folder, _, _) in KINDS.items():
+        if (ROOT / folder).is_symlink() or not (ROOT / folder).is_dir():
+            raise Rejected(f"{folder} is not a plain directory")
         for path in sorted((ROOT / folder).glob("*.lean")):
             got_kind, ident = classify(f"{folder}/{path.name}")
             if got_kind != kind:
