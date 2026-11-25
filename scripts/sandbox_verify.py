@@ -12,9 +12,9 @@ otherwise a new qpcp-verify-XXXXXXXX under $RUNNER_TEMP or .lake/, whose path
 is printed on stderr. Whatever reads the results (result/, logs/) is given
 that path; nothing looks for a fixed name.
 
-Trust split. Only the maintainer-written modules QPCP.Defs, QPCP.Qudit and
-QPCP.Statements, and Mathlib, are ever built outside a sandbox
-(`trusted-build`). Every contributed module, under QPCP/Lemmas, QPCP/Proofs or
+Trust split. Only the maintainer-written modules QPCP.Defs, QPCP.Qudit,
+QPCP.Statements and QPCP.Promise, and Mathlib, are ever built outside a
+sandbox (`trusted-build`), and each is replayed with leanchecker. Every contributed module, under QPCP/Lemmas, QPCP/Proofs or
 QPCP/Refutations, merged or new, is handled only inside bubblewrap:
 
   compile   lean, in import order, one module per sandbox; the only writable
@@ -79,7 +79,7 @@ import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TRUSTED_MODULES = ["QPCP.Defs", "QPCP.Qudit", "QPCP.Statements"]
+TRUSTED_MODULES = ["QPCP.Defs", "QPCP.Qudit", "QPCP.Statements", "QPCP.Promise"]
 FIXED = ["propext", "Classical.choice", "Quot.sound", "Quot", "Quot.mk", "Quot.lift", "Quot.ind", "Not"]
 CONTRIB_FOLDERS = {"lemma": "QPCP/Lemmas", "proof": "QPCP/Proofs", "refutation": "QPCP/Refutations"}
 # The verdict of `record --replay-only`. Not an acceptance: see the docstring.
@@ -320,6 +320,11 @@ class Env:
         if r.returncode != 0:
             print((r.stdout + r.stderr)[-3000:])
             raise Fault("main's maintainer-written modules do not build")
+        # For the log (stderr; stdout is the verdict): what lake built, and the list.
+        for line in (r.stdout + r.stderr).splitlines():
+            if re.search(r"\bBuilt (" + "|".join(map(re.escape, TRUSTED_MODULES)) + r")\b", line):
+                print("trusted build: " + log_safe(line.strip()), file=sys.stderr)
+        print("trusted build: built " + ", ".join(TRUSTED_MODULES), file=sys.stderr)
         # A private copy of exactly those compiled modules seeds the sandbox library.
         for m in TRUSTED_MODULES:
             rel = Path(*m.split("."))
@@ -755,6 +760,7 @@ def replay_trusted(env):
         r = env.lake("env", "leanchecker", m, timeout=1800)
         if r.returncode != 0:
             raise Fault(f"leanchecker found a problem in {m}: {(r.stdout + r.stderr)[-400:]}")
+        print(f"trusted replay: leanchecker {m}: ok", file=sys.stderr)
 
 
 def report(selected, mods, replay_only=False):

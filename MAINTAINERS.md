@@ -42,8 +42,10 @@ each contribution, read the one changed file, confirm the `check` workflow
 succeeded on the pull request's current head commit, and merge it yourself.
 
 **No contributed file is built outside a sandbox, in any workflow.** Only
-the maintainer-written modules `QPCP.Defs`, `QPCP.Qudit` and
-`QPCP.Statements`, and Mathlib, are ever built on the runner itself. Every
+the maintainer-written modules `QPCP.Defs`, `QPCP.Qudit`, `QPCP.Statements`
+and `QPCP.Promise`, and Mathlib, are ever built on the runner itself, and each
+of those four is replayed with `leanchecker` (`TRUSTED_MODULES` in
+`scripts/sandbox_verify.py`). Every
 contribution, new or merged, is compiled, replayed with `leanchecker` and
 exported in its own bubblewrap sandbox, and judged outside it from its text
 export (`scripts/sandbox_verify.py`). That covers the four places that used to

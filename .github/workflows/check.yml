@@ -13,7 +13,8 @@ name: check
 # check therefore means nothing: automerge.py merges only pull requests that add
 # exactly one contribution file (it reads the file list from the API), and
 # such pull requests otherwise wait for the maintainer. No contributed file, new or merged, is built outside a bubblewrap
-# sandbox: only QPCP.Defs, QPCP.Qudit, QPCP.Statements and Mathlib are, and
+# sandbox: only QPCP.Defs, QPCP.Qudit, QPCP.Statements, QPCP.Promise and
+# Mathlib are, and
 # every verdict comes from checking text exports outside the sandbox
 # (scripts/sandbox_verify.py). The maintainer's own pull requests re-check the
 # whole record that way and run the attack tests (tests/run_tests.sh).

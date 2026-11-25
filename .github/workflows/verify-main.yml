@@ -2,7 +2,7 @@ name: verify-main
 
 # Re-checks every lemma, proof and refutation on main. No contributed file is
 # built outside a bubblewrap sandbox: only QPCP.Defs, QPCP.Qudit,
-# QPCP.Statements and Mathlib are; every contribution is compiled, replayed
+# QPCP.Statements, QPCP.Promise and Mathlib are; every contribution is compiled, replayed
 # with leanchecker and exported in its own sandbox, and judged outside it from
 # its text export (scripts/sandbox_verify.py). If this goes red after a merge,
 # the merged pull request should be reverted.

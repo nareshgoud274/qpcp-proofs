@@ -1,6 +1,5 @@
 import QPCP.Defs
 import QPCP.Qudit
-import QPCP.Statements
 
 /-!
 # QPCP: the intended promise problem (docs/spec/promise.tex, sections 1-4 and 7)
@@ -530,9 +529,10 @@ theorem testA_hamiltonian :
 theorem testA_numTerms : (boolHamiltonian testA).numTerms = 3 := rfl
 
 -- §7 Test A: "and value exactly 1/3"
-/-- Test A's ground energy over `m = 3` is `1/3`, given `S027` (the ground energy of a
-classical cost operator is its minimum), which the record proves. -/
-theorem testA_value (h27 : QPCP.Statement.S027) :
+/-- Test A's ground energy over `m = 3` is `1/3`, given the proposition of step `S027` (the
+ground energy of a classical cost operator is its minimum), written out here so that this
+module does not import `QPCP.Statements`; the record proves it as `QPCP.Proof.S027`. -/
+theorem testA_value (h27 : ∀ (n : ℕ) (f : Config n → ℝ), groundEnergy (costOp f) = ⨅ x, f x) :
     groundEnergyOn (boolHamiltonian testA).toOp / (boolHamiltonian testA).numTerms = 1 / 3 := by
   rw [testA_hamiltonian, testA_numTerms]
   have hcost : (Matrix.diagonal fun x : QConfig 2 1 => ![(2 : ℂ), 1] (x 0)) =
