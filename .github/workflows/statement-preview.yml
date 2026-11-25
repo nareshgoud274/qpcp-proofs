@@ -5,10 +5,13 @@ name: statement-preview
 # actually built rather than only the source text.
 #
 # Trust: this runs the version on main, never checks out or runs contributed
-# code, and treats the artifact from the `check` run as data. It posts only if
-# the pull request's current head is the commit that was checked and the pull
-# request adds exactly that one lemma file, which means the `check` workflow
-# that produced the artifact was main's own.
+# code, and treats the artifact from the `check` run as data. Before it
+# downloads anything, it finds the pull request through the API and checks that
+# it is open at the commit that was checked and adds exactly one lemma file,
+# which means the `check` workflow that produced the artifact was main's own
+# (a pull request that changes any other file, such as a workflow, runs its
+# own). The pull request number and lemma id come from the API; only the
+# rendered text comes from the artifact (scripts/statement_preview.py).
 
 on:
   workflow_run:
@@ -32,30 +35,16 @@ jobs:
       RUN_ID: ${{ github.event.workflow_run.id }}
       RUN_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - name: Fetch the preview, if the run made one
-        id: fetch
-        run: |
-          set -uo pipefail
-          mkdir -p "$RUNNER_TEMP/preview"
-          if gh run download "$RUN_ID" -n statement-preview -D "$RUNNER_TEMP/preview" > /dev/null 2>&1 \
-             && [ -f "$RUNNER_TEMP/preview/preview.json" ]; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No statement preview in run $RUN_ID."
-          fi
-
-      - uses: actions/checkout@v4
-        if: steps.fetch.outputs.found == 'true'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           sparse-checkout: scripts/statement_preview.py
           sparse-checkout-cone-mode: false
 
-      - name: Check it belongs to the pull request, then post it
-        if: steps.fetch.outputs.found == 'true'
+      - name: Validate the pull request, then fetch and post the preview
         run: |
           set -euo pipefail
-          pr="$(python3 -I scripts/statement_preview.py "$RUNNER_TEMP/preview/preview.json" "$RUNNER_TEMP/preview/comment.md")"
+          pr="$(python3 -I scripts/statement_preview.py run "$RUNNER_TEMP/preview" "$RUNNER_TEMP/preview/comment.md")"
           if [ -n "$pr" ] && [ -s "$RUNNER_TEMP/preview/comment.md" ]; then
             gh pr comment "$pr" --body-file "$RUNNER_TEMP/preview/comment.md"
           fi

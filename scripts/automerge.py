@@ -25,6 +25,7 @@ Anything that does not qualify is left alone for a person to look at.
 Usage: automerge.py [--dry-run]
 """
 
+import importlib.util
 import json
 import os
 import re
@@ -34,6 +35,10 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+_spec = importlib.util.spec_from_file_location("qpcp_logsafe", ROOT / "scripts" / "logsafe.py")
+_logsafe = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_logsafe)
+log_safe = _logsafe.log_safe
 
 ID = r"(?:S\d{3,6}|L\d{1,9})"
 PROOF_RE = re.compile(rf"^QPCP/Proofs/({ID})\.lean$")
@@ -95,7 +100,7 @@ class Api:
     def write(self, method, path, body=None):
         """A call that changes something. Skipped, but logged, in a dry run."""
         if self.dry_run:
-            print(f"    [dry run] {method} {path} {json.dumps(body) if body else ''}")
+            print(log_safe(f"    [dry run] {method} {path} {json.dumps(body) if body else ''}"))
             return {}
         return self.call(method, f"/repos/{self.repo}{path}", body)
 
@@ -271,9 +276,10 @@ def main(argv):
     for pr in api.open_pulls():
         kind, detail = decide(pr, api, cache, allowed)
         if kind == "skip":
-            print(f"#{pr['number']}: left alone ({detail})")
+            # File names in `detail` are the contributor's: make them safe to log.
+            print(log_safe(f"#{pr['number']}: left alone ({detail})"))
             continue
-        print(f"#{pr['number']}: merging {kind} of {detail['ident']} by {detail['author']}")
+        print(log_safe(f"#{pr['number']}: merging {kind} of {detail['ident']} by {detail['author']}"))
         if apply(pr, kind, detail, api):
             merged += 1
     print(f"merged {merged} pull request(s){' (dry run)' if dry_run else ''}")

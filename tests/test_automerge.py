@@ -70,6 +70,12 @@ CASES = [
     ("proof of a retired lemma", pr("QPCP/Proofs/L72.lean"), [], "skip", "not open"),
     ("check failed", pr("QPCP/Proofs/S030.lean", check="FAILURE"), [], "skip", "check has not succeeded"),
     ("two files", pr("QPCP/Proofs/S030.lean", files=2), [], "skip", "changes 2 files"),
+    # A pull request that changes more than one file runs its own copy of the
+    # check workflow, so its green check means nothing (see check.yml).
+    ("two files, one of them the check workflow, check green",
+     dict(pr("QPCP/Proofs/S030.lean", files=2), files={"nodes": [
+         {"path": "QPCP/Proofs/S030.lean", "changeType": "ADDED"},
+         {"path": ".github/workflows/check.yml", "changeType": "MODIFIED"}]}), [], "skip", "changes 2 files"),
     ("modified, not added", pr("QPCP/Proofs/S030.lean", change="MODIFIED"), [], "skip", "not added"),
     ("draft", pr("QPCP/Proofs/S030.lean", draft=True), [], "skip", "draft"),
     ("not a contribution path", pr("scripts/check.py"), [], "skip", "not a contribution file"),

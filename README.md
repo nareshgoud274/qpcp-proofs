@@ -44,6 +44,8 @@ Progress and contributors: <https://nareshgoud274.github.io/qpcp-proofs/>
 | `tests/` | Attack probes and honest fixtures the checker must reject or accept |
 | `steps.json` | Step list with sections, difficulty, and dependencies |
 | `scripts/check.py` | The checker run on every pull request |
+| `scripts/verify_export.py` | Strict reading, canonical form and comparison of an export with main's |
+| `scripts/command_tokens.txt` | Every token that can begin a command; the scanner allows only a few |
 | `JOIN.md` | Instructions for AI agents |
 | `BLUEPRINT.md` | Scope of the pilot and the road beyond it |
 | `MAINTAINERS.md` | Setup and merge rules for the maintainer |

@@ -17,20 +17,27 @@ QPCP/Refutations, merged or new, is handled only inside bubblewrap:
   replay    leanchecker on the module, in a fresh sandbox (an early reject);
   export    leanexport of the module's result constant, to text.
 
-Outside the sandbox, trusted code reads only those text exports:
+The text export is then checked by trusted code, each step in a fresh
+sandbox of its own as well, so that a flaw in a parser cannot reach the host:
 
-  * nanoda_bin, an independent kernel, type-checks each export with only
-    propext, Classical.choice and Quot.sound;
-  * scripts/verify_export.py compares it with a reference exported from the
-    maintainer-written modules: the statement and the axioms with their whole
-    dependency closure, and, for a lemma, everything its definition refers to.
-    Lemmas are verified first. A proof or refutation of a contributed lemma is
-    then compared with that lemma's verified export as well, which is how a
-    contributed statement becomes a trusted reference.
+  canon     scripts/verify_export.py reads the export strictly and writes it
+            again in canonical form; every later step reads only that file;
+  nanoda    nanoda_bin, an independent kernel, type-checks the canonical
+            export with only propext, Classical.choice and Quot.sound;
+  verify    scripts/verify_export.py compares it with a reference exported
+            (outside the sandbox, from trusted files only) from the
+            maintainer-written modules: the statement, the axioms, the Quot
+            declarations and Not, with their whole dependency closure, and,
+            for a lemma, everything its definition refers to. Lemmas are
+            verified first. A proof or refutation of a contributed lemma is
+            then compared with that lemma's verified canonical export as
+            well, which is how a contributed statement becomes a trusted
+            reference.
 
 No untrusted .olean is read outside a sandbox. Every sandboxed step has a hard
 timeout (the whole process group is killed) and a file-size limit set with
-RLIMIT_FSIZE, and every file taken out of a sandbox is size-checked.
+RLIMIT_FSIZE, and every file taken out of a sandbox is size-checked. Every
+sandboxed step is listed in logs/steps.log, for the tests.
 
 `record` verifies every contribution in the tree (CI: the maintainer's pull
 requests and verify-main). `contribution` verifies one new file, with the
@@ -57,7 +64,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TRUSTED_MODULES = ["QPCP.Defs", "QPCP.Qudit", "QPCP.Statements"]
-FIXED = ["propext", "Classical.choice", "Quot.sound", "Quot", "Quot.mk", "Quot.lift", "Quot.ind"]
+FIXED = ["propext", "Classical.choice", "Quot.sound", "Quot", "Quot.mk", "Quot.lift", "Quot.ind", "Not"]
 CONTRIB_FOLDERS = {"lemma": "QPCP/Lemmas", "proof": "QPCP/Proofs", "refutation": "QPCP/Refutations"}
 TARGET_NS = {"lemma": "QPCP.Lemma", "proof": "QPCP.Proof", "refutation": "QPCP.Refutation"}
 
@@ -66,15 +73,18 @@ LIMITS = {
     "compile": (1500, 1_000_000_000),
     "replay": (900, 100_000_000),
     "export": (900, 1_000_000_000),
+    "canon": (1800, 1_100_000_000),
+    "nanoda": (1800, 100_000_000),
+    "verify": (1800, 100_000_000),
+    "preview": (600, 10_000_000),
 }
-NANODA_TIMEOUT = 1800
-VERIFY_TIMEOUT = 1800
 TRUSTED_EXPORT_TIMEOUT = 1800
 MAX_DEPS = 5000
 
 spec = importlib.util.spec_from_file_location("qpcp_check", ROOT / "scripts" / "check.py")
 check = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(check)
+log_safe = check.log_safe
 
 
 class Reject(Exception):
@@ -122,7 +132,7 @@ class Env:
         self.package_entries = [e for e in entries if e != str(self.repo_lib)]
         if self.work.exists():
             shutil.rmtree(self.work)
-        for d in ("src", "out", "lib", "exp", "logs", "ref", "result"):
+        for d in ("src", "out", "lib", "exp", "logs", "ref", "result", "canon", "scratch"):
             (self.work / d).mkdir(parents=True)
         self.lib = self.work / "lib"
         self.sandbox_lean_path = ":".join(self.package_entries + [str(self.lib)])
@@ -148,6 +158,9 @@ class Env:
     def run_sandboxed(self, step, argv, rw, log, stdout_path=None):
         """Run argv in a fresh sandbox. Returns (ok, reason)."""
         timeout, fsize = LIMITS[step]
+        with self.lock, open(self.work / "logs" / "steps.log", "a") as fh:
+            fh.write(f"{step} {'sandboxed' if self.sandbox else 'UNSANDBOXED'} {Path(argv[0]).name}"
+                     f" {' '.join(Path(a).name for a in argv[1:4])}\n")
         env = {"PATH": f"{self.bin}:/usr/bin:/bin", "LEAN_PATH": self.sandbox_lean_path}
         if self.sandbox:
             cmd = [self.bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"]
@@ -347,10 +360,44 @@ class Verifier:
         if path.stat().st_size > LIMITS["export"][1]:
             raise Reject("the export is too large")
         # Take the export out of the sandbox's reach before using it.
-        taken = e.work / "result" / f"{m.name}.ndjson"
+        taken = e.work / "result" / f"{m.name}.raw.ndjson"
         shutil.copyfile(path, taken)
         shutil.rmtree(scratch, ignore_errors=True)
         return taken
+
+    # ---- trusted code on the untrusted text, each in a sandbox of its own
+    def scratch(self, m, step):
+        d = self.env.work / "scratch" / f"{m.name}.{step}"
+        if d.exists():
+            shutil.rmtree(d)
+        d.mkdir(parents=True)
+        return d
+
+    def verify_export(self, m, step, *args):
+        """scripts/verify_export.py in a sandbox; returns (ok, last output line, scratch dir)."""
+        e = self.env
+        d = self.scratch(m, step)
+        out = d.parent / f"{m.name}.{step}.out"
+        ok, why = e.run_sandboxed(step, [sys.executable, "-I", str(ROOT / "scripts" / "verify_export.py"), *map(str, args)],
+                                  [d], self.log(m.name, step), stdout_path=out)
+        lines = self.tail(out, 2_000_000).strip().splitlines() or [""]
+        if not ok and not lines[-1].startswith("REJECTED"):
+            raise Reject(f"the export check ({step}) did not finish: {why}")
+        return ok, lines, d
+
+    def canonicalize(self, m, raw):
+        d = self.scratch(m, "canon-out")
+        ok, lines, _ = self.verify_export(m, "canon", "canon", raw, d / "canonical.ndjson")
+        if not ok:
+            raise Reject(lines[-1].removeprefix("REJECTED: "))
+        made = d / "canonical.ndjson"
+        if not made.is_file() or made.is_symlink() or made.stat().st_size > LIMITS["canon"][1]:
+            raise Reject("the canonical export is missing or too large")
+        # Into a directory that no untrusted step ever had writable.
+        canon = self.env.work / "canon" / f"{m.name}.ndjson"
+        shutil.copyfile(made, canon)
+        shutil.rmtree(d, ignore_errors=True)
+        return canon
 
     # ---- trusted checks on the text export
     def trusted_reference(self, m, names):
@@ -383,33 +430,23 @@ class Verifier:
             "unpermitted_axiom_hard_error": True, "nat_extension": True, "string_extension": True,
             "print_success_message": True}))
         logf = self.log(m.name, "nanoda")
-        with open(logf, "wb") as out:
-            try:
-                r = subprocess.run([str(e.bin / "nanoda_bin"), str(cfg)], stdout=out, stderr=subprocess.STDOUT,
-                                   timeout=NANODA_TIMEOUT)
-            except subprocess.TimeoutExpired:
-                raise Reject(f"the independent kernel (nanoda) timed out after {NANODA_TIMEOUT} s")
-        if r.returncode != 0 or "with no typechecker errors" not in self.tail(logf, 100000):
-            raise Reject(f"the independent kernel (nanoda) rejects the export: {self.tail(logf, 400).strip()}")
-
-    def verify_export(self, *args):
-        try:
-            r = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "verify_export.py"), *map(str, args)],
-                               capture_output=True, text=True, timeout=VERIFY_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            raise Reject("the export comparison timed out")
-        return r.returncode, (r.stdout.strip().splitlines() or [""])
+        ok, why = e.run_sandboxed("nanoda", [str(e.bin / "nanoda_bin"), str(cfg)], [self.scratch(m, "nanoda")],
+                                  logf, stdout_path=logf.with_suffix(".out"))
+        text = self.tail(logf.with_suffix(".out"), 100000) + self.tail(logf, 100000)
+        if not ok or "with no typechecker errors" not in text:
+            raise Reject(f"the independent kernel (nanoda) rejects the export ({why or 'errors'}): {text[-400:].strip()}")
 
     def verify_one(self, m, replay_only=False):
         try:
-            export = self.replay_and_export(m, export=not replay_only)
+            raw = self.replay_and_export(m, export=not replay_only)
             if replay_only:
                 m.verdict = "ACCEPTED"
                 return
+            export = self.canonicalize(m, raw)
             refs, names = [], [*FIXED]
             if m.kind == "lemma":
-                code, out = self.verify_export("deps", m.ident, export)
-                if code != 0:
+                ok, out, _ = self.verify_export(m, "verify", "deps", m.ident, export)
+                if not ok:
                     raise Reject(out[-1].removeprefix("REJECTED: "))
                 m.deps = [d for d in out if d]
                 if len(m.deps) > MAX_DEPS:
@@ -427,8 +464,8 @@ class Verifier:
                 refs.append(lemma.export)
             ref, names_file = self.trusted_reference(m, names)
             self.nanoda(m, export)
-            code, out = self.verify_export(m.kind, m.ident, export, ",".join(map(str, [ref, *refs])), names_file)
-            if code != 0:
+            ok, out, _ = self.verify_export(m, "verify", m.kind, m.ident, export, ",".join(map(str, [ref, *refs])), names_file)
+            if not ok or out[-1] != f"ACCEPTED: {m.kind} {m.ident}":
                 raise Reject(out[-1].removeprefix("REJECTED: "))
             m.verdict, m.export = "ACCEPTED", export
         except Reject as r:
@@ -456,11 +493,11 @@ def report(selected, mods):
     rejected = [mods[n] for n in selected if mods[n].verdict != "ACCEPTED"]
     for n in selected:
         m = mods[n]
-        print(f"  {m.verdict or 'NOT CHECKED':9} {m.kind} {m.ident}" + (f": {m.reason}" if m.reason else ""))
+        print(log_safe(f"  {m.verdict or 'NOT CHECKED':9} {m.kind} {m.ident}" + (f": {m.reason}" if m.reason else "")))
     if rejected:
         m = rejected[0]
-        print(f"REJECTED: {m.kind} {m.ident}: {m.reason or 'not checked'}"
-              + (f" (and {len(rejected) - 1} more)" if len(rejected) > 1 else ""))
+        print(log_safe(f"REJECTED: {m.kind} {m.ident}: {m.reason or 'not checked'}"
+                       + (f" (and {len(rejected) - 1} more)" if len(rejected) > 1 else "")))
         return 1
     print("ACCEPTED: " + check.summarize([f"{mods[n].kind} {mods[n].ident}" for n in selected]))
     return 0
@@ -471,7 +508,7 @@ def cmd_record(env, opts):
         try:
             check.record_items()
         except check.Rejected as e:
-            print(f"REJECTED: {e}")
+            print(log_safe(f"REJECTED: {e}"))
             return 1
     env.setup()
     env.trusted_build()
@@ -534,7 +571,7 @@ def cmd_contribution(env, opts, kind, ident, file):
         write_preview(env, new)
     (env.work / "result" / "contribution.json").write_text(json.dumps({
         "kind": kind, "ident": ident, "verdict": new.verdict,
-        "export": str(new.export or env.work / "result" / f"{new.name}.ndjson"),
+        "export": str(new.export or env.work / "canon" / f"{new.name}.ndjson"),
         "references": sorted(str(p) for p in (env.work / "ref").glob(f"{new.name}.ndjson"))
         + ([str(mods[module_of('lemma', ident)].export)] if kind != "lemma" and ident.startswith("L")
            and mods[module_of('lemma', ident)].export else []),
@@ -542,15 +579,16 @@ def cmd_contribution(env, opts, kind, ident, file):
     if new.verdict == "ACCEPTED":
         print(f"ACCEPTED: {kind} {ident}")
         return 0
-    print(f"REJECTED: {new.reason}")
+    print(log_safe(f"REJECTED: {new.reason}"))
     return 1
 
 
 def write_preview(env, m):
     """The kernel's own rendering of a verified statement, for the reviewer.
 
-    nanoda_bin, outside the sandbox, prints the declaration from the verified
-    export; the statement-preview workflow posts it on the pull request."""
+    nanoda_bin, in a sandbox of its own, prints the declaration from the
+    verified canonical export; the statement-preview workflow posts it on the
+    pull request."""
     cfg = env.work / "ref" / "preview.nanoda.json"
     out = env.work / "result" / "statement-preview.txt"
     cfg.write_text(json.dumps({
@@ -561,12 +599,12 @@ def write_preview(env, m):
         "pp_options": {"all": False, "explicit": False, "universes": False, "notation": True,
                        "proofs": False, "indent": 2, "width": 100},
         "print_success_message": False}))
-    try:
-        r = subprocess.run([str(env.bin / "nanoda_bin"), str(cfg)], capture_output=True, text=True,
-                           timeout=NANODA_TIMEOUT)
-        text = r.stdout if r.returncode == 0 else ""
-    except subprocess.TimeoutExpired:
-        text = ""
+    d = env.work / "scratch" / "preview"
+    d.mkdir(parents=True, exist_ok=True)
+    raw = d.parent / "preview.out"
+    ok, _ = env.run_sandboxed("preview", [str(env.bin / "nanoda_bin"), str(cfg)], [d],
+                              env.work / "logs" / "preview.log", stdout_path=raw)
+    text = raw.read_text(encoding="utf-8", errors="replace")[:200_000] if ok and raw.is_file() else ""
     # Keep only the statement itself (the axioms follow it, separated by a blank line).
     text = text.split("\n\n")[0].strip()[:20000]
     out.write_text((text or "(the kernel could not render this statement)") + "\n")
@@ -615,7 +653,7 @@ def main(argv):
         if len(rest) == 4 and rest[0] == "contribution":
             return cmd_contribution(env, opts, rest[1], rest[2], rest[3])
     except Fault as e:
-        print(f"FAULT: {e}")
+        print(log_safe(f"FAULT: {e}"))
         return 2
     print(__doc__)
     return 2

@@ -16,8 +16,11 @@
 #      attack, and no attack leaves a marker on the host.
 #   4. The pipeline accepts an honest proof (the merged S019), an honest lemma
 #      and an honest refutation.
-#   5. Forged exports of each honest contribution (proof, lemma, refutation)
-#      are all rejected.
+#      For each, the export was canonicalized, type-checked by nanoda and
+#      compared in sandboxes of their own, and nanoda read the canonical file.
+#   5. Forged and malformed exports of each honest contribution (proof, lemma,
+#      refutation) are all rejected, each for its expected reason, and a
+#      reference without `Not` is refused.
 #   6. A merged file whose code runs at build time (tests/merged/) cannot alter a
 #      later verdict in any of the four places that build merged files: the
 #      contributor check, the record check (maintainer pull requests and
@@ -101,6 +104,17 @@ for i, ref in enumerate(r["references"]):
 PYKEEP
 }
 keep proof-S019
+# The trusted checks on the export ran in sandboxes of their own, on the canonical file.
+steps="$(cat "$WORK/logs/steps.log" 2>/dev/null)"
+for step in canon nanoda verify; do
+  want="sandboxed"; [ -n "$NS" ] && want="UNSANDBOXED"
+  if printf '%s\n' "$steps" | grep -q "^$step $want "; then ok "honest proof: the $step step ran $want"
+  else bad "honest proof: no $want $step step in steps.log"; fi
+done
+if [ -z "$NS" ] && printf '%s\n' "$steps" | grep -q " UNSANDBOXED "; then bad "a step ran unsandboxed"; fi
+nanoda_in="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["export_file_path"])' \
+  "$WORK/ref/QPCP.Proofs.S019.nanoda.json" 2>/dev/null)"
+case "$nanoda_in" in "$WORK/canon/"*) ok "nanoda read the canonical export" ;; *) bad "nanoda read $nanoda_in" ;; esac
 mv "$ROOT/.lake/qpcp-tests/S019.lean" QPCP/Proofs/S019.lean
 
 out=$(scripts/contribution_check.sh lemma L900001 tests/honest/L900001.lean $NS 2>/dev/null | tail -1)
@@ -120,17 +134,40 @@ for label in proof-S019 lemma-L900001 refutation-L900002; do
   if [ ! -f "$honest" ] || [ -z "$ref" ]; then bad "no honest $kind export to forge from (step 4 failed)"; continue; fi
   dir="$ROOT/.lake/qpcp-tests/forged-$label"
   rm -rf "$dir"
-  python3 -I tests/forge_exports.py "$kind" "$ident" "$honest" "$ref" "$dir" > /dev/null || { bad "cannot forge the $kind export"; continue; }
   out=$(python3 -I scripts/verify_export.py "$kind" "$ident" "$honest" "$ref")
   case "$out" in ACCEPTED*) ok "$kind $ident: the honest export itself is accepted" ;; *) bad "$kind $ident: honest export rejected: $out" ;; esac
   # An incomplete reference (a requested name main lacks) must be refused too.
   printf 'propext\nQPCP.NoSuchConstant\n' > "$dir.names"
   out=$(python3 -I scripts/verify_export.py "$kind" "$ident" "$honest" "$ref" "$dir.names")
   case "$out" in REJECTED*"QPCP.NoSuchConstant"*) ok "$kind $ident: refuses an incomplete reference" ;; *) bad "$kind $ident: incomplete reference not refused: $out" ;; esac
-  for f in "$dir"/*.ndjson; do
-    out=$(python3 -I scripts/verify_export.py "$kind" "$ident" "$f" "$ref")
-    case "$out" in REJECTED*) ok "$kind $ident: rejects $(basename "$f" .ndjson): ${out#REJECTED: }" ;; *) bad "$kind $ident: accepts forged $(basename "$f" .ndjson): $out" ;; esac
+  while IFS=$'\t' read -r name expect; do
+    out=$(python3 -I scripts/verify_export.py "$kind" "$ident" "$dir/$name.ndjson" "$ref")
+    case "$out" in
+      "REJECTED: "*"$expect"*) ok "$kind $ident: rejects $name: ${out#REJECTED: }" ;;
+      REJECTED*) bad "$kind $ident: rejects $name for another reason than [$expect]: $out" ;;
+      *) bad "$kind $ident: accepts forged $name: $out" ;;
+    esac
+  done < <(python3 -I tests/forge_exports.py "$kind" "$ident" "$honest" "$ref" "$dir")
+  # A reference that lacks `Not` (always required) is refused: drop it from every reference file.
+  noNot=""; i=0
+  IFS=',' read -r -a refs <<< "$ref"
+  for r in "${refs[@]}"; do
+    i=$((i + 1))
+    python3 -I - "$r" "$dir.noNot$i.ndjson" <<'PYNOT'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+names = {0: ""}
+for r in rows:
+    if "in" in r:
+        pre, val = (r["str"]["pre"], r["str"]["str"]) if "str" in r else (r["num"]["pre"], r["num"]["i"])
+        names[r["in"]] = (names[pre] + "." if names[pre] else "") + str(val)
+keep = [r for r in rows if not ("def" in r and names[r["def"]["name"]] == "Not")]
+open(sys.argv[2], "w").write("".join(json.dumps(r) + "\n" for r in keep))
+PYNOT
+    noNot="${noNot:+$noNot,}$dir.noNot$i.ndjson"
   done
+  out=$(python3 -I scripts/verify_export.py "$kind" "$ident" "$honest" "$noNot")
+  case "$out" in REJECTED*"main has no \`Not\`"*) ok "$kind $ident: refuses a reference without Not" ;; *) bad "$kind $ident: reference without Not: $out" ;; esac
 done
 echo "6. Merged files with build-time code"
 SYSROOT="$(lake env printenv LEAN_SYSROOT)"

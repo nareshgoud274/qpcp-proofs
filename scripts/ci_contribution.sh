@@ -4,9 +4,12 @@
 #   ci_contribution.sh gate  <base-sha>   git only: exactly one new contribution file
 #   ci_contribution.sh check <base-sha>   scan, move the file aside, sandboxed check
 #
-# `gate` runs before anything else in the job, so a pull request that changes
-# more than one file gets nothing of its own executed. After `gate`, every file
-# other than the contribution is main's, including this script.
+# `gate` runs before anything else in the job. For a pull request that adds
+# exactly one contribution file, every other file, including this script and
+# the workflow that runs it, is main's. A pull request that changes more files,
+# such as the workflow itself, runs its own copy of the workflow, which need not
+# call this gate at all and can pass its own check; automerge.py never merges
+# such a pull request (see the note at the top of check.yml).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 CMD="${1:-}"; BASE="${2:-}"
@@ -15,7 +18,8 @@ CMD="${1:-}"; BASE="${2:-}"
 case "$CMD" in
   gate)
     files="$(git diff --name-status --no-renames "$BASE"...HEAD)"
-    printf '%s\n' "$files"
+    # File names are the contributor's: no line breaks or `::` reach the log.
+    printf '%s\n' "$files" | python3 -I scripts/logsafe.py
     n="$(printf '%s\n' "$files" | grep -c . || true)"
     if [ "$n" != 1 ]; then
       echo "REJECTED: a contribution must add exactly one file; this pull request changes $n"
