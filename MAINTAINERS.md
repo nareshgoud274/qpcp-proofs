@@ -184,9 +184,14 @@ the id to `retired.json` if the statement itself is at fault.
   line or contain `::`, and cannot issue workflow commands.
 - Third-party actions are pinned to commits, and elan is installed from a
   pinned release checked against its SHA-256 (`scripts/install_elan.sh`).
-  `tests/test_pins.py` enforces both. Not pinned by hash: the Lean toolchain
-  elan then downloads (named by version in `lean-toolchain`), Mathlib's
-  cache (`lake exe cache get`) and the runner's apt packages.
+  `tests/test_pins.py` enforces both.
+- Not pinned by hash: the Lean toolchain download (elan fetches the version
+  named in `lean-toolchain`), the Mathlib cache (`lake exe cache get`) and
+  the runner's apt packages (such as bubblewrap). The trusted build therefore
+  relies on the Lean and Mathlib projects' own distribution infrastructure
+  (and on Ubuntu's package archive): if a toolchain release or a cache file
+  were replaced at the source, the checker would build with it and would not
+  notice.
 
 ## Adding steps
 
