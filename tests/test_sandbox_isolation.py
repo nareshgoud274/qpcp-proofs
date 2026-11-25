@@ -19,6 +19,10 @@ Runs on ubuntu-latest in the attack-tests job. Without bubblewrap it FAILS
      larger than N bytes", and the file stops at exactly N bytes;
   5. steps that sleep forever, run from thread-pool workers (several at
      once), are killed and reported as timed out, and leave no process behind;
+  d. the read-canary, listing and /usr/local probes again with lean=True,
+     the mounts Lean's compile, replay and export steps get (the Mathlib
+     build at /qpcp/pkg/N and the shared library): the canaries stay
+     unreadable, / is the same, and /usr/local is empty and read-only;
   6. a sandboxed program that exits 125 on purpose (and prints what the
      launcher would) is a rejection, "failed (exit 125)", not a fault; only
      a real launcher failure, reported in its status file, is a fault.
@@ -70,6 +74,14 @@ for p in args["connect"]:
 for p in args["exists"]:
     res["exists"][p] = os.path.lexists(p)
 res["root"] = sorted(os.listdir("/"))
+res["usr_local"] = sorted(os.listdir("/usr/local")) if os.path.isdir("/usr/local") else None
+try:
+    open("/usr/local/qpcp-write-test", "w").close()
+    res["usr_local_write"] = "written"
+except OSError as e:
+    res["usr_local_write"] = f"error: {type(e).__name__}"
+res["qpcp"] = sorted(os.listdir("/qpcp"))
+res["pkg"] = sorted(os.listdir("/qpcp/pkg")) if os.path.isdir("/qpcp/pkg") else []
 res["env"] = dict(os.environ)
 print(json.dumps(res))
 '''
@@ -132,7 +144,7 @@ def main():
         probe.write_text(PROBE)
         rw = env.work / "scratch" / "probe"
         rw.mkdir(parents=True)
-        out, log = env.work / "logs" / "probe.out", env.work / "logs" / "probe.log"
+        out, log = env.capture_path("probe.out"), env.log_path("probe.log")
         args = {"read": [str(c) for c in canaries] + [f"/proc/1/root{c}" for c in canaries]
                 + [str(ROOT / ".git" / "config"), str(home / ".gitconfig")],
                 "connect": [str(p) for p in sockets] + [abstract, "/var/run/docker.sock", "/run/docker.sock"],
@@ -171,6 +183,32 @@ def main():
         expected = {"usr", "dev", "proc", "tmp", "qpcp"} | {d for d in ("bin", "sbin", "lib", "lib64")
                                                             if os.path.lexists(f"/{d}")}
         check(f"3. / inside is exactly {sorted(expected)}", set(res["root"]) == expected, res["root"])
+        check(f"3. /usr/local inside is empty ({res.get('usr_local')})", res.get("usr_local") in ([], None),
+              res.get("usr_local"))
+        check(f"3. /usr/local inside is read-only ({res.get('usr_local_write')})",
+              str(res.get("usr_local_write")).startswith("error"), res.get("usr_local_write"))
+
+        # d. the same probes with the mounts of Lean's steps
+        okd, whyd = env.run_sandboxed("probe", [sys.executable, "-I", env.inside(probe), json.dumps(args)], [rw], log,
+                                      stdout_path=out, ro=[probe], lean=True)
+        check("d. the probe ran with the Lean mounts", okd, f"{whyd}: {env.tail_of(log)}")
+        rd = json.loads(out.read_text()) if okd else {"read": {}, "root": [], "qpcp": [], "pkg": []}
+        for p in args["read"]:
+            got = rd["read"].get(p, "")
+            check(f"d. with the Lean mounts, cannot read {p} ({got})", got.startswith("error"), got[:80])
+        check("d. with the Lean mounts, the token appears nowhere in the output or log",
+              not [f for f in (out, log) if token in f.read_text(errors="replace")])
+        check(f"d. with the Lean mounts, / is the same: {rd['root']}", set(rd["root"]) == expected, rd["root"])
+        check(f"d. with the Lean mounts, /qpcp holds {rd['qpcp']}", set(rd["qpcp"]) == {"toolchain", "work", "pkg"},
+              rd["qpcp"])
+        check(f"d. one mount per existing LEAN_PATH package entry ({len(rd['pkg'])} of {len(env.packages)})",
+              rd["pkg"] == sorted(str(i) for i in range(len(env.packages))), rd["pkg"])
+        check(f"d. with the Lean mounts, /usr/local is empty ({rd.get('usr_local')}) and read-only "
+              f"({rd.get('usr_local_write')})",
+              rd.get("usr_local") in ([], None) and str(rd.get("usr_local_write")).startswith("error"))
+        for f in ("LEAN_PATH",):
+            print(f"  note  inside, {f}={rd.get('env', {}).get(f, '')}")
+
         ok2, _ = env.run_sandboxed("probe", ["/usr/bin/ls", "-A", f"{sv.SANDBOX}", f"{sv.SANDBOX}/work"], [rw],
                                    log, stdout_path=out)
         check(f"3. /qpcp holds only the toolchain and the step's work files: {out.read_text().split()}",

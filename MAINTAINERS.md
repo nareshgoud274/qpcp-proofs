@@ -144,23 +144,40 @@ the id to `retired.json` if the statement itself is at fault.
   read outside a sandbox.
 - What a sandbox sees (`SYSTEM_MOUNTS` and `Env.mounts` in
   `scripts/sandbox_verify.py`; `tests/test_sandbox_isolation.py` checks it on
-  ubuntu-latest), all read-only except the step's one writable directory:
+  ubuntu-latest, with and without the Lean mounts), all read-only except the
+  step's one writable directory:
 
   | Inside | From the host | Why |
   |---|---|---|
-  | `/usr` | `/usr` | the C library and other shared libraries Lean's and nanoda's binaries load, `sleep`/`dd` for the tests, and the system Python and its standard library, which runs `verify_export.py` |
+  | `/usr` | `/usr` | the C library and other shared libraries Lean's and nanoda's binaries load, `sleep`/`dd` for the tests, and the system Python (`/usr/bin/python3`) and its standard library, which runs `verify_export.py` |
+  | `/usr/local` | nothing: an empty, read-only tmpfs over it | what the runner image adds there (other Pythons and tools) is not used by any step, so it is hidden |
   | `/bin`, `/sbin`, `/lib`, `/lib64` | symlinks into `/usr`, as on the host | the dynamic loader is `/lib64/ld-linux-x86-64.so.2`, and binaries name libraries under `/lib` |
   | `/qpcp/toolchain` | the Lean toolchain (`LEAN_SYSROOT`) | `lean`, `leanchecker`, `leanexport`, `nanoda_bin`, Lean's shared library and its core `.olean` files |
-  | `/qpcp/pkg/0`, `/qpcp/pkg/1`, ... | each package's build in `LEAN_PATH` (Mathlib and its dependencies) | compiled imports; Lean steps only |
+  | `/qpcp/pkg/0`, `/qpcp/pkg/1`, ... | each existing package build in `LEAN_PATH` (Mathlib and its dependencies, and the toolchain's own `lib/lean`) | compiled imports; Lean steps only. Every entry, with symlinks resolved, must be inside this repository's `.lake/packages` or `.lake/build`, or the toolchain; any other entry is a fault, never skipped. An allowed entry that does not exist (Cli, which has nothing built) is not mounted |
   | `/qpcp/work/lib` | the shared library: the trusted modules' build and earlier contributions' compiled results | compiled imports; Lean steps only |
-  | `/qpcp/work/...` | only the step's own input files: the module's source; the raw or canonical export; the reference export and names; nanoda's config | the step's input |
+  | `/qpcp/work/...` | only the step's own input files: the module's source; the raw export (in `capture/`) or the canonical export; the reference export and names; nanoda's config | the step's input |
   | `/qpcp/scripts/verify_export.py` | that one file | the canon and verify steps |
-  | one directory under `/qpcp/work/` | the step's own output folder, writable | the step's output |
+  | one directory under `/qpcp/work/out`, `exp` or `scratch` | a fresh, empty folder for this step alone, writable; replay and export get separate ones | the step's output |
   | `/dev`, `/proc`, `/tmp` | new, minimal: bubblewrap's devices, the sandbox's own processes, an empty tmpfs | programs expect them |
 
   The root itself is an empty read-only tmpfs. Steps are given paths as the
   sandbox sees them (`Env.inside`). `scripts/install_sandbox.sh`'s smoke test
   of bubblewrap itself still mounts `/` read-only; it runs no contributed code.
+- The host never opens a path inside a sandbox-writable directory. A step's
+  stdout and stderr go to files the host creates itself, exclusively
+  (`O_CREAT|O_EXCL|O_NOFOLLOW`, mode 0600), in the host-only folders
+  `capture/` and `logs/`, which no sandbox ever gets writable; the sandbox is
+  handed only the open descriptors. `run_sandboxed` refuses to run if a
+  capture or log path lies inside any directory it has ever been given as
+  writable, and every writable directory must be a fresh folder under `out/`,
+  `exp/` or `scratch/`. The two files a sandbox writes itself (a compiled
+  `module.olean`, a `canonical.ndjson`) are taken out only by `take()`, after
+  the sandbox has exited: opened with `O_NOFOLLOW|O_NONBLOCK`, checked on the
+  open descriptor to be a regular file within the size limit, then copied to
+  a host-only folder. Sandbox directories are deleted with `shutil.rmtree`,
+  which does not follow symlinks (checked at start-up). Logs are read from
+  the end, never whole. `tests/test_sandbox_host_paths.py` and
+  `tests/test_sandbox_static.py` check all of this.
 - Resource limits: `scripts/limit_exec.py` sets `RLIMIT_FSIZE` (in bytes, the
   step's limit in `LIMITS`) and `RLIMIT_CORE` (0), restores the default
   action of `SIGXFSZ`, and execs bubblewrap, so the limits are inherited by
