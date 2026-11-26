@@ -141,7 +141,8 @@
     return getJson(raw + "steps.json", 600000).then(function (steps) {
       return Promise.all([
         getPaged(api + "/issues?labels=step&state=all", age, 10),
-        getPaged(api + "/pulls?state=closed&sort=updated&direction=desc", age, 10),
+        // Credit is never guessed from titles (#115): without the feed, no pull request is credited.
+        Promise.resolve([]),
         getJson(api + "/pulls?state=open&per_page=50", age)
       ]).then(function (r) { return build(steps, r[0], r[1], r[2]); });
     });
@@ -154,11 +155,8 @@
       if (id && !i.pull_request) issueBy[id] = i;
     });
 
-    var mergedBy = {};
-    closedPulls.forEach(function (p) {
-      var id = stepOf(p.title);
-      if (id && p.merged_at && p.user && !mergedBy[id]) mergedBy[id] = p;
-    });
+    // closedPulls is ignored: credit comes only from the feed, which takes it
+    // from the commit that added each file (#115), never from a title.
 
     var checking = {};
     openPulls.forEach(function (p) {
@@ -168,7 +166,7 @@
 
     var people = {};
     var out = steps.map(function (s) {
-      var issue = issueBy[s.id], pr = mergedBy[s.id];
+      var issue = issueBy[s.id];
       var status = "open", who = "", when = "";
       var has = function (name) {
         return !!issue && (issue.labels || []).some(function (l) { return l.name === name; });
@@ -190,7 +188,7 @@
         status: status, who: who, when: when,
         disputed: !s.retired && has("disputed"), replacedBy: s.replaced_by || "",
         url: issue ? issue.html_url : repoUrl + "/issues",
-        prUrl: pr ? pr.html_url : "",
+        prUrl: "",
         checking: checking[s.id] || null
       };
     });

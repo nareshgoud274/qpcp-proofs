@@ -53,6 +53,8 @@ jobs:
           ref: main
           # The publish step pushes with an explicit token URL, not stored credentials.
           persist-credentials: false
+          # Full history: credit comes from the commit that added each contribution file (#115).
+          fetch-depth: 0
 
       - name: Fetch the latest verification record
         id: latest
@@ -63,12 +65,15 @@ jobs:
           set -euo pipefail
           python3 -I scripts/site_data.py fetch-latest "github:$REPO" "$RUNNER_TEMP/record.json"
           if [ -f "$RUNNER_TEMP/record.json" ]; then echo "found=true" >> "$GITHUB_OUTPUT"; fi
+          # The last published feed, only so that credits already found are not looked up again.
+          curl -sSf "https://raw.githubusercontent.com/$REPO/site-data/status.json" -o "$RUNNER_TEMP/previous.json" \
+            || rm -f "$RUNNER_TEMP/previous.json"
 
       - name: Build status.json
         if: steps.latest.outputs.found == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/build_status.py "$RUNNER_TEMP/out/status.json" "$RUNNER_TEMP/record.json"
+        run: python3 scripts/build_status.py "$RUNNER_TEMP/out/status.json" "$RUNNER_TEMP/record.json" "$RUNNER_TEMP/previous.json"
 
       - name: Publish status.json on site-data
         if: steps.latest.outputs.found == 'true'

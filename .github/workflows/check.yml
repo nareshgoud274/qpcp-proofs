@@ -172,6 +172,9 @@ jobs:
       - name: Merge rules
         run: python3 -I tests/test_automerge.py
 
+      - name: Credit and review links come from files, not titles (#115)
+        run: python3 -I tests/test_credit.py
+
       - name: Claim expiry
         run: tests/test_expire_claims.sh
 
