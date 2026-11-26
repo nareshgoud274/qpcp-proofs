@@ -301,7 +301,7 @@ install_merged
 before="$(snapshot)"
 newwork
 out=$(python3 -I scripts/sandbox_verify.py trusted-build $NS 2>/dev/null | tail -1)
-case "$out" in "trusted build:"*) ok "place 4: the trusted build builds only Defs, Qudit and Statements" ;; *) bad "place 4: trusted build: $out" ;; esac
+case "$out" in "trusted build:"*) ok "place 4: the trusted build builds only Defs, Qudit, Statements and Promise" ;; *) bad "place 4: trusted build: $out" ;; esac
 after "place 4 (trusted build)" "$before"
 
 if [ -n "$NS" ]; then
