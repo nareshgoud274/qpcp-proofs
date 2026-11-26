@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Step · qpcp-proofs</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header id="site-header"></header>
+<main class="wrap">
+  <p class="verdict sans" id="verdict">Loading…</p>
+  <h1 id="title">Step</h1>
+  <p class="lede" id="summary"></p>
+  <p class="muted small sans" id="load-note" aria-live="polite"></p>
+  <div id="detail"></div>
+</main>
+<footer id="site-footer"></footer>
+
+<script src="assets/site.js"></script>
+<script>
+(function () {
+  var Q = window.QPCP, el = Q.el;
+  Q.chrome("");
+  var note = document.getElementById("load-note");
+  var box = document.getElementById("detail");
+  var id = new URLSearchParams(location.search).get("id") || "";
+  if (!/^(S\d{3,6}|L\d{1,9})$/.test(id)) {
+    document.getElementById("verdict").textContent = "Unknown step";
+    document.getElementById("title").textContent = "No such step";
+    note.textContent = "A step id looks like S059 or L123.";
+    return;
+  }
+  document.title = id + " · qpcp-proofs";
+
+  function row(label, kids) {
+    return el("tr", null, [el("th", { text: label }), el("td", null, kids)]);
+  }
+  function blob(commit, path, line) {
+    return Q.repoUrl + "/blob/" + commit + "/" + path + (line ? "#L" + line : "");
+  }
+  function rawAt(commit, path) {
+    return "https://raw.githubusercontent.com/" + Q.cfg.owner + "/" + Q.cfg.repo + "/" + commit + "/" + path;
+  }
+  // The statement's source: its doc-comment and definition, starting at its line.
+  function statementBlock(text, line) {
+    var lines = text.split("\n"), start = line - 1, end = line - 1;
+    // Statements are separated by blank lines: take the block around the definition.
+    while (start > 0 && lines[start - 1].trim() !== "" && !/^\s*(end|namespace)\b/.test(lines[start - 1])) start--;
+    while (end + 1 < lines.length && lines[end + 1].trim() !== "") end++;
+    return lines.slice(start, end + 1).join("\n");
+  }
+  function code(text) { return el("pre", { class: "mono small", text: text }); }
+
+  Q.loadCore().then(function (d) {
+    var s = d.steps.filter(function (x) { return x.id === id; })[0];
+    if (!s) {
+      document.getElementById("verdict").textContent = "Unknown step";
+      document.getElementById("title").textContent = id;
+      note.textContent = "The record lists no step " + id + ".";
+      return;
+    }
+    var verdict = {
+      proved: "Proved, checked by Lean", refuted: "Refuted, checked by Lean",
+      pending: "Merged, pending verification", unknown: "Verification status unavailable",
+      claimed: "Open, being worked on", open: "Open", retired: "Retired after a report"
+    }[s.status] || s.status;
+    document.getElementById("verdict").textContent = verdict;
+    document.getElementById("title").textContent = id + ": " + s.title;
+    document.getElementById("summary").textContent = (s.section ? s.section + ". " : "") +
+      (s.reviewed ? "Reviewed by a human specialist." : "Not reviewed by a human.");
+    note.textContent = Q.verificationLine(d.verification) + " " + Q.stamp(d.generatedAt);
+
+    var v = s.verified;
+    var table = el("table", { class: "small sans" });
+    if (v) {
+      table.appendChild(row("Statement", [Q.link(blob(v.commit, v.statementPath, v.statementLine), v.statementPath + ", line " + v.statementLine),
+        el("span", { class: "muted", text: " at the verified commit" })]));
+      table.appendChild(row("Proof", [Q.link(blob(v.commit, v.path), v.path),
+        el("span", { class: "mono muted", text: "  " + v.declaration + ", Git blob " + v.blob.slice(0, 12) })]));
+      table.appendChild(row("Verified commit", [Q.link(Q.repoUrl + "/commit/" + v.commit, v.commit.slice(0, 12)),
+        el("span", { class: "muted", text: d.verification.verifiedAt ? " · " + new Date(d.verification.verifiedAt).toUTCString() : "" })]));
+      table.appendChild(row("Verification run", [Q.link(v.runUrl, v.runUrl.replace(/^https:\/\/github\.com\//, "")),
+        el("span", { class: "muted", text: " · " + (d.verification.toolchain || "") + ", Mathlib " + (d.verification.mathlib || "").slice(0, 12) })]));
+      table.appendChild(row("Checks", [el("span", { text:
+        "Compiled, replayed with leanchecker and exported in a sandbox; type-checked by an independent kernel (nanoda); " +
+        "compared with the statement exported from the maintainer-written modules. Axioms allowed: propext, Classical.choice, Quot.sound." })]));
+      table.appendChild(row("Statement digest", [el("span", { class: "mono", text: v.statementDigest })]));
+      table.appendChild(row("Record", [Q.link(Q.siteData + v.record, v.record)]));
+    } else if (s.status === "pending") {
+      table.appendChild(row("Verification", [el("span", { text: "A file for this step is on main but no successful verification covers it yet." })]));
+    }
+    table.appendChild(row("Submitted by", s.who ? [Q.link("https://github.com/" + encodeURIComponent(s.who), s.who),
+      el("span", { text: " " }), s.prUrl ? Q.link(s.prUrl, "pull request") : el("span")] : [el("span", { class: "muted", text: s.status === "open" || s.status === "claimed" ? "not yet submitted" : "unknown" })]));
+    table.appendChild(row("Human review", [el("span", { text: s.reviewed ? "Reviewed by a human specialist." : "Not reviewed by a human." })]));
+    table.appendChild(row("Discussion", [Q.link(s.url, "issue")]));
+    box.appendChild(table);
+
+    if (v) {
+      box.appendChild(el("h2", { text: "Definitions it depends on" }));
+      box.appendChild(el("p", { class: "small sans muted", text: "The project's definitions in the statement's dependency closure, read from the reference it was judged against." }));
+      box.appendChild(code(v.dependsOn.join("\n") || "(none)"));
+      var stmt = el("div", null, [el("p", { class: "muted small sans", text: "Loading…" })]);
+      var proof = el("div", null, [el("p", { class: "muted small sans", text: "Loading…" })]);
+      box.appendChild(el("h2", { text: "Statement" }));
+      box.appendChild(stmt);
+      box.appendChild(el("h2", { text: "Proof" }));
+      box.appendChild(proof);
+      fetch(rawAt(v.commit, v.statementPath)).then(function (r) { return r.ok ? r.text() : Promise.reject(); })
+        .then(function (t) { stmt.textContent = ""; stmt.appendChild(code(statementBlock(t, v.statementLine))); })
+        .catch(function () { stmt.textContent = "Could not load the statement; follow the link above."; });
+      fetch(rawAt(v.commit, v.path)).then(function (r) { return r.ok ? r.text() : Promise.reject(); })
+        .then(function (t) { proof.textContent = ""; proof.appendChild(code(t)); })
+        .catch(function () { proof.textContent = "Could not load the proof; follow the link above."; });
+    }
+  }).catch(function () { Q.fail(note); });
+})();
+</script>
+</body>
+</html>

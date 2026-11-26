@@ -65,6 +65,7 @@ whose kernel replay passed, ends with a line starting REPLAYED-ONLY, and exits
 """
 
 import concurrent.futures as cf
+import hashlib
 import importlib.util
 import json
 import os
@@ -497,6 +498,7 @@ class Module:
         self.imports = imports_of(self.data.decode("utf-8", errors="replace"))
         self.verdict, self.reason = None, ""
         self.export = None          # path of the verified export, once ACCEPTED
+        self.references = []        # the reference exports it was judged against, once ACCEPTED
         self.deps = []              # for a lemma: what its definition refers to
 
     def __repr__(self):
@@ -740,7 +742,7 @@ class Verifier:
                                             inputs=[export, ref, *refs, names_file])
             if not ok or out[-1] != f"ACCEPTED: {m.kind} {m.ident}":
                 raise Reject(out[-1].removeprefix("REJECTED: "))
-            m.verdict, m.export = "ACCEPTED", export
+            m.verdict, m.export, m.references = "ACCEPTED", export, [ref, *refs]
         except Reject as r:
             self.reject(m, str(r))
 
@@ -814,7 +816,40 @@ def cmd_record(env, opts):
     v = Verifier(env, mods, opts["jobs"])
     v.compile_all(needed)
     v.verify_all(needed, opts["replay_only"])
+    write_evidence(env, opts, selected, mods)
     return report(selected, mods, opts["replay_only"])
+
+
+def write_evidence(env, opts, selected, mods):
+    """result/record-items.json: what this run judged, for scripts/verification_record.py.
+
+    Host-held state only: the bytes each module was built from (its Git blob id
+    is computed from them), its verdict, and the trusted reference exports it was
+    compared with (paths and SHA-256). Says whether the run was partial (--only,
+    --shard) or replay-only; such a run can never become a published record.
+    """
+    def sha256(path):
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    items = []
+    for n in selected:
+        m = mods[n]
+        items.append({
+            "kind": m.kind, "id": m.ident, "module": m.name, "declaration": target_of(m.kind, m.ident),
+            "path": str(m.rel),
+            "blob": hashlib.sha1(b"blob %d\0" % len(m.data) + m.data).hexdigest(),
+            "verdict": m.verdict or "NOT CHECKED", "reason": m.reason,
+            "references": [{"path": str(r), "sha256": sha256(r)} for r in m.references],
+        })
+    (env.work / "result" / "record-items.json").write_text(json.dumps({
+        "only": sorted(opts["only"]) if opts["only"] else None,
+        "shard": list(opts["shard"]) if opts["shard"] else None,
+        "replayOnly": bool(opts["replay_only"]),
+        "items": items,
+    }, indent=1))
 
 
 def cmd_contribution(env, opts, kind, ident, file):

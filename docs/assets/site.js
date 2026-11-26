@@ -21,8 +21,11 @@
   var api = "https://api.github.com/repos/" + CFG.owner + "/" + CFG.repo;
   // One prebuilt file with everything the site shows, rebuilt by the `status`
   // workflow. Reading it costs no GitHub API calls, so any number of visitors
-  // can watch. If it is missing, the pages fall back to the API.
-  var statusUrl = "https://raw.githubusercontent.com/" + CFG.owner + "/" + CFG.repo + "/site-data/status.json";
+  // can watch. Its verdicts come only from the latest verification record. If
+  // it is missing, the pages fall back to the API, which can show claims and
+  // open steps but never a verdict: verification status is then unavailable.
+  var siteData = "https://raw.githubusercontent.com/" + CFG.owner + "/" + CFG.repo + "/site-data/";
+  var statusUrl = siteData + "status.json";
 
   var PAGES = [
     ["index.html", "Map"],
@@ -126,6 +129,7 @@
         openPullCount: s.openPullCount || 0,
         programs: s.programs || [], proposals: s.proposals || [],
         mandates: s.mandates || [], barriers: s.barriers || [],
+        verification: s.verification || { available: false },
         generatedAt: s.generated_at
       };
     }).catch(function () { return loadCoreFromApi(maxAgeMs); });
@@ -172,13 +176,9 @@
         status = "retired";
         when = issue ? issue.closed_at || issue.updated_at : "";
       } else if (issue && issue.state === "closed") {
-        status = "proved";
-        who = pr ? pr.user.login : "";
-        when = pr ? pr.merged_at : issue.closed_at;
-        if (who) {
-          people[who] = people[who] || { proved: [], refuted: [], stated: [] };
-          people[who].proved.push(s.id);
-        }
+        // A closed issue is not a verdict: it may be proved, superseded or
+        // abandoned. Only the verification record says which (#113).
+        status = "unknown";
       } else if (has("claimed")) {
         status = "claimed";
         who = (issue.assignees || []).map(function (a) { return a.login; }).join(", ");
@@ -194,12 +194,13 @@
       };
     });
 
-    var count = { proved: 0, refuted: 0, claimed: 0, open: 0, retired: 0, disputed: 0, proposals: 0 };
+    var count = { proved: 0, refuted: 0, pending: 0, unknown: 0, claimed: 0, open: 0, retired: 0, disputed: 0, proposals: 0 };
     out.forEach(function (s) {
       count[s.status]++;
       if (s.disputed) count.disputed++;
     });
-    return { steps: out, count: count, people: people, openPulls: openPulls, openPullCount: openPulls.length, programs: [], proposals: [], mandates: [], barriers: [], generatedAt: "" };
+    return { steps: out, count: count, people: people, openPulls: openPulls, openPullCount: openPulls.length, programs: [], proposals: [], mandates: [], barriers: [],
+             verification: { available: false }, generatedAt: "" };
   }
 
   function chrome(active) {
@@ -269,13 +270,26 @@
     return generatedAt ? "Record as of " + ago(generatedAt) + "." : "Live from GitHub, read " + new Date().toLocaleTimeString() + ".";
   }
 
+  /* One line on what the verdicts rest on. */
+  function verificationLine(v) {
+    if (!v || !v.available) return "Verification status unavailable: no verdict is shown until the verification record can be read.";
+    var line = "Verdicts are from the verification of commit " + v.commit.slice(0, 7) + " (" + ago(v.verifiedAt) + ").";
+    if (!v.current) line += " Newer commits of main are not verified yet; their results show as pending.";
+    return line;
+  }
+
+  function stepUrl(id) { return "step.html?id=" + encodeURIComponent(id); }
+
   function fail(node) {
     if (node) node.textContent = "Could not load live data from GitHub right now. The repository's issues show the current state.";
   }
 
   window.QPCP = {
-    cfg: CFG, repoUrl: repoUrl, raw: raw, joinUrl: joinUrl, api: api,
-    el: el, link: link, getJson: getJson, getPaged: getPaged, ago: ago, stepOf: stepOf,
-    loadCore: loadCore, loadReports: loadReports, loadReleases: loadReleases, stamp: stamp, chrome: chrome, fail: fail
+    cfg: CFG, repoUrl: repoUrl, raw: raw, siteData: siteData, joinUrl: joinUrl, api: api,
+    el: el, link: link, getJson: getJson, getPaged: getPaged, ago: ago, stepOf: stepOf, stepUrl: stepUrl,
+    loadCore: loadCore, loadReports: loadReports, loadReleases: loadReleases, stamp: stamp, chrome: chrome, fail: fail,
+    verificationLine: verificationLine,
+    // For tests/test_site_fallback.py: the builder the pages use when the feed is unavailable.
+    _buildFromApi: build
   };
 })();

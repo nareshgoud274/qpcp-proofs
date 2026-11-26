@@ -12,6 +12,10 @@
   <h1>Updates</h1>
   <p class="lede">Milestones, written by the maintainer and published as releases of the repository.</p>
   <p class="small sans"><a id="atom" href="#">Subscribe to the feed</a></p>
+  <h2>Verified results</h2>
+  <p class="small sans muted" id="verified-note">Loading…</p>
+  <ul class="feed" id="verified"></ul>
+  <h2>Milestones</h2>
   <p class="muted small sans" id="load-note" aria-live="polite">Loading…</p>
   <div id="releases"></div>
 </main>
@@ -23,6 +27,24 @@
   var Q = window.QPCP, el = Q.el;
   Q.chrome("updates.html");
   document.getElementById("atom").href = Q.repoUrl + "/releases.atom";
+
+  // Each result with a page of its own: statement, proof, the verification run, review status.
+  Q.loadCore().then(function (d) {
+    var ul = document.getElementById("verified");
+    document.getElementById("verified-note").textContent = Q.verificationLine(d.verification);
+    var done = d.steps.filter(function (s) { return s.verified; })
+      .sort(function (a, b) { return (a.when || "") < (b.when || "") ? 1 : -1; });
+    if (!done.length) ul.appendChild(el("li", { class: "muted", text: "No verified results to show." }));
+    done.forEach(function (s) {
+      ul.appendChild(el("li", null, [
+        el("span", { class: "when", text: s.when ? Q.ago(s.when) : "" }),
+        el("span", { class: "what" }, [
+          el("span", { class: "mono", text: s.id + " " }), Q.link(Q.stepUrl(s.id), s.title),
+          el("span", { class: "muted", text: " · " + s.status + (s.reviewed ? "" : " · not reviewed by a human") })
+        ])
+      ]));
+    });
+  }).catch(function () { document.getElementById("verified-note").textContent = Q.verificationLine(null); });
 
   Q.loadReleases().then(function (rels) {
     var box = document.getElementById("releases");

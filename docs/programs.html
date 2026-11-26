@@ -88,7 +88,7 @@
     });
     d.programs.forEach(function (p) {
       var c = p.count || {}, settled = (c.proved || 0) + (c.refuted || 0);
-      var total = settled + (c.claimed || 0) + (c.open || 0);
+      var total = settled + (c.pending || 0) + (c.claimed || 0) + (c.open || 0);
       var card = el("div", { class: "program" + (p.open ? "" : " closed") }, [
         el("h2", null, [
           el("span", { text: p.title }),
@@ -107,6 +107,7 @@
         card.appendChild(bar);
         card.appendChild(el("p", { class: "small sans muted", text:
           (c.proved || 0) + " proved, " + (c.refuted || 0) + " refuted, " +
+          ((c.pending || 0) ? c.pending + " pending verification, " : "") +
           (c.claimed || 0) + " in progress, " + (c.open || 0) + " open" }));
       } else {
         card.appendChild(el("p", { class: "small sans muted", text: "No lemmas stated yet." }));

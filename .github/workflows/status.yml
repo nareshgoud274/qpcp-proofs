@@ -5,6 +5,12 @@ name: status
 #
 # This workflow always runs the version on main, checks out main only, and
 # never runs contributed code.
+#
+# Verdicts ("proved", "refuted") come only from the latest verification record
+# (records/<commit>.json on site-data, written by verify-main's publish job).
+# Until the first record exists, this workflow publishes nothing, so the site
+# never shows unverified verdicts. The site-data branch keeps its history: each
+# run adds a commit, without force, after the current tip.
 
 # Event-driven (pushes, issues, pull requests, releases, and a dispatch from
 # automerge after it merges). The hourly timer is only a backstop: scheduled
@@ -20,6 +26,10 @@ on:
     types: [opened, closed, reopened]
   release:
     types: [published, edited, deleted]
+  # A new verification record (pushes with the workflow token trigger nothing).
+  workflow_run:
+    workflows: [verify-main]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -44,20 +54,25 @@ jobs:
           # The publish step pushes with an explicit token URL, not stored credentials.
           persist-credentials: false
 
-      - name: Build status.json
+      - name: Fetch the latest verification record
+        id: latest
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/build_status.py "$RUNNER_TEMP/out/status.json"
-
-      - name: Publish to the site-data branch
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          cd "$RUNNER_TEMP/out"
-          git init -q -b site-data
-          git config user.name "qpcp-status"
-          git config user.email "qpcp-status@users.noreply.github.com"
-          git add status.json
-          git commit -q -m "status $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" site-data
+          python3 -I scripts/site_data.py fetch-latest "github:$REPO" "$RUNNER_TEMP/record.json"
+          if [ -f "$RUNNER_TEMP/record.json" ]; then echo "found=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Build status.json
+        if: steps.latest.outputs.found == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/build_status.py "$RUNNER_TEMP/out/status.json" "$RUNNER_TEMP/record.json"
+
+      - name: Publish status.json on site-data
+        if: steps.latest.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: python3 -I scripts/site_data.py publish-status "$RUNNER_TEMP/out/status.json" "github:$REPO"

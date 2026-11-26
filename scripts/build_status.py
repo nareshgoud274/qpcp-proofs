@@ -4,21 +4,28 @@
 Runs in GitHub Actions on a checkout of main, with GH_TOKEN and
 GITHUB_REPOSITORY set. It combines:
 
+  * the latest verification record (scripts/verification_record.py), the only
+    source of "proved" and "refuted": a result counts when the record lists it
+    as ACCEPTED with the same path and Git blob as the file on main. A proof or
+    refutation file on main that no successful record covers is "pending"
+    (pending verification) and is not counted as proved. The feed names the
+    verified commit and run for each result, and for the record as a whole;
   * the working tree: steps.json, programs.json, retired.json, and the files
-    under QPCP/Lemmas, QPCP/Proofs and QPCP/Refutations. Files on main are the
-    record: a step is proved or refuted exactly when its file exists;
+    under QPCP/Lemmas, QPCP/Proofs and QPCP/Refutations (with their Git blobs);
   * the GitHub API: issues (claims, reports, proposals), pull requests
-    (credit, work in the checker) and releases (updates).
+    (credit, work in the checker) and releases (updates). These update
+    immediately; only verdicts wait for verification.
 
 Visitors' browsers fetch only the resulting file, so the site keeps working
 however many people are watching and however large the record grows.
 
-Usage: build_status.py <output-path>
+Usage: build_status.py <output-path> <record.json>
 """
 
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -71,6 +78,18 @@ def login(obj):
     return (obj.get("user") or {}).get("login", "")
 
 
+def git_files(root, folder):
+    """{id: {"path", "blob"}} for the committed files of one contribution folder at HEAD."""
+    r = subprocess.run(["git", "-C", str(root), "ls-tree", "HEAD", "--", folder + "/"],
+                       capture_output=True, text=True, check=True)
+    out = {}
+    for line in r.stdout.splitlines():
+        meta, path = line.split("\t", 1)
+        if path.endswith(".lean"):
+            out[Path(path).stem] = {"path": path, "blob": meta.split()[2]}
+    return out
+
+
 def read_tree(root=ROOT):
     """Everything the status needs from the working tree."""
     def load(name, default):
@@ -93,13 +112,32 @@ def read_tree(root=ROOT):
         "retired": set(load("retired.json", [])),
         "barriers": load("barriers.json", []),
         "lemmas": lemmas,
-        "proofs": {p.stem for p in (root / "QPCP" / "Proofs").glob("*.lean")},
-        "refutations": {p.stem for p in (root / "QPCP" / "Refutations").glob("*.lean")},
+        "proofs": git_files(root, "QPCP/Proofs"),
+        "refutations": git_files(root, "QPCP/Refutations"),
+        "commit": subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True,
+                                 text=True, check=True).stdout.strip(),
     }
 
 
-def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None):
-    """Pure function: the tree and raw GitHub data in, the status document out."""
+def record_url(sha):
+    return f"records/{sha}.json"
+
+
+def verified_results(record):
+    """{(kind, id): item} for every ACCEPTED proof and refutation in the record."""
+    out = {}
+    for it in (record or {}).get("evidence", {}).get("items", []):
+        if it.get("verdict") == "ACCEPTED" and it.get("kind") in ("proof", "refutation"):
+            out[(it["kind"], it["id"])] = it
+    return out
+
+
+def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=None):
+    """Pure function: the tree, raw GitHub data and the latest verification record in,
+    the status document out."""
+    verified = verified_results(record)
+    rec_commit = (record or {}).get("evidence", {}).get("commit", "")
+    rec_run = (record or {}).get("run", {})
     step_issue, reports, proposals, mandates, by_number = {}, [], [], [], {}
     for i in issues:
         if "pull_request" in i:
@@ -136,7 +174,7 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None):
 
     program_title = {p["id"]: p["title"] for p in tree["programs"]}
     rows = [{
-        "id": s["id"], "title": s["title"], "section": s["section"], "program": "founding",
+        "id": s["id"], "title": s["title"], "section": s["section"], "program": s.get("program", ""),
         "retired": s.get("retired") is True, "replacedBy": s.get("replaced_by", ""),
         "exercise": s.get("exercise") is True,
     } for s in tree["steps"]]
@@ -152,28 +190,38 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None):
         if who:
             people.setdefault(who, {"proved": [], "refuted": [], "stated": []})[kind].append(sid)
 
-    count = {"proved": 0, "refuted": 0, "claimed": 0, "open": 0, "retired": 0, "disputed": 0,
+    count = {"proved": 0, "refuted": 0, "pending": 0, "claimed": 0, "open": 0, "retired": 0, "disputed": 0,
              "humanReviewed": 0}
     per_program, out_steps = {}, []
     for r in rows:
         sid = r["id"]
         issue = step_issue.get(sid) or (by_number.get(int(sid[1:])) if sid.startswith("L") else None)
         names = labels(issue) if issue else set()
-        status, who, when, pr = "open", "", "", None
+        status, who, when, pr, ver = "open", "", "", None, None
+        # A verdict comes only from the record, and only for the bytes on main.
+        for kind, done in (("proof", "proved"), ("refutation", "refuted")):
+            it = verified.get((kind, sid))
+            on_main = tree["proofs" if kind == "proof" else "refutations"].get(sid)
+            if it and (on_main is None or (on_main["path"], on_main["blob"]) == (it["path"], it["blob"])):
+                ver = (done, it)
+        on_main = tree["proofs"].get(sid) or tree["refutations"].get(sid)
         if r["retired"] or sid in tree["retired"] or "retired" in names:
             status = "retired"
             when = (issue or {}).get("closed_at") or ""
-        elif sid in tree["proofs"]:
-            status, pr = "proved", credit.get(("proved", sid))
-        elif sid in tree["refutations"]:
-            status, pr = "refuted", credit.get(("refuted", sid))
+        elif ver:
+            status = ver[0]
+            pr = credit.get((status, sid))
+        elif on_main:
+            status = "pending"
+            pr = credit.get(("proved" if sid in tree["proofs"] else "refuted", sid))
         elif "claimed" in names:
             status = "claimed"
             who = ", ".join(a["login"] for a in issue.get("assignees", []))
             when = issue.get("updated_at") or ""
-        if status in ("proved", "refuted"):
+        if status in ("proved", "refuted", "pending"):
             who = login(pr) if pr else ""
-            when = (pr or {}).get("merged_at") or (issue or {}).get("closed_at") or ""
+            when = (pr or {}).get("merged_at") or ""
+        if status in ("proved", "refuted"):
             give(who, status, sid)
         stated = credit.get(("stated", sid))
         if stated:
@@ -186,7 +234,7 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None):
         count[status] += 1
         if disputed:
             count["disputed"] += 1
-        tally = per_program.setdefault(r["program"], {"proved": 0, "refuted": 0, "claimed": 0, "open": 0, "retired": 0})
+        tally = per_program.setdefault(r["program"], {"proved": 0, "refuted": 0, "pending": 0, "claimed": 0, "open": 0, "retired": 0})
         tally[status] += 1
         out_steps.append({
             "id": sid, "title": r["title"], "section": r["section"], "program": r["program"],
@@ -195,12 +243,18 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None):
             "exercise": r["exercise"],
             "url": issue["html_url"] if issue else "",
             "prUrl": pr["html_url"] if pr else "",
+            "verified": None if not ver else {
+                "commit": rec_commit, "runUrl": rec_run.get("url", ""), "record": record_url(rec_commit),
+                "declaration": ver[1]["declaration"], "path": ver[1]["path"], "blob": ver[1]["blob"],
+                "statementPath": ver[1]["statementPath"], "statementLine": ver[1]["statementLine"],
+                "statementDigest": ver[1]["statementDigest"], "dependsOn": ver[1]["dependsOn"],
+            },
         })
 
     out_programs = [{
         "id": p["id"], "title": p["title"], "open": p.get("open") is True,
         "goal": p.get("goal", ""), "wanted": p.get("wanted", ""),
-        "count": per_program.get(p["id"], {"proved": 0, "refuted": 0, "claimed": 0, "open": 0, "retired": 0}),
+        "count": per_program.get(p["id"], {"proved": 0, "refuted": 0, "pending": 0, "claimed": 0, "open": 0, "retired": 0}),
     } for p in tree["programs"]]
 
     open_by_lemma = {}
@@ -286,6 +340,15 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None):
     return {
         "generated_at": (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "count": count,
+        # Verdicts are as of this verified commit; `current` says whether it is main's newest.
+        "verification": {
+            "available": bool(record), "commit": rec_commit, "verifiedAt": (record or {}).get("verifiedAt", ""),
+            "runUrl": rec_run.get("url", ""), "runAttempt": rec_run.get("attempt", 0),
+            "record": record_url(rec_commit) if record else "",
+            "toolchain": (record or {}).get("evidence", {}).get("toolchain", ""),
+            "mathlib": (record or {}).get("evidence", {}).get("mathlib", ""),
+            "mainCommit": tree.get("commit", ""), "current": bool(record) and rec_commit == tree.get("commit"),
+        },
         "openPullCount": len(open_pulls),
         "programs": out_programs,
         "steps": out_steps,
@@ -300,9 +363,10 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None):
 
 
 def main(argv):
-    if len(argv) != 2:
+    if len(argv) != 3:
         print(__doc__)
         return 2
+    record = json.loads(Path(argv[2]).read_text())
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     repo = os.environ.get("GITHUB_REPOSITORY")
     if not token or not repo:
@@ -314,6 +378,7 @@ def main(argv):
         api("/pulls?state=closed", token, repo),
         api("/pulls?state=open", token, repo),
         api("/releases", token, repo),
+        record=record,
     )
     out = Path(argv[1])
     out.parent.mkdir(parents=True, exist_ok=True)
