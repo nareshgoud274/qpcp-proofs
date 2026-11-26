@@ -30,7 +30,7 @@
   <div id="barriers"></div>
 
   <h2>Why some programs are closed</h2>
-  <p>Contributors can state lemmas about the definitions the project already has. They cannot yet add definitions. The closed programs need new ones, such as quantum verification and reductions, and a wrong definition would quietly spoil everything built on it. Those are waiting for a specialist in Hamiltonian complexity to write and review them.</p>
+  <p>Contributors can state lemmas about the definitions the project already has. They cannot yet add definitions. The closed programs need new ones, such as quantum verification and reductions, and a wrong definition would quietly spoil everything built on it. Those are waiting for a specialist in Hamiltonian complexity to write and review them. Closing a program stops new proposals only: its existing steps stay open to prove or refute, and its results stay in the record.</p>
   <p>That is also the honest limit of this project today: the open programs build and explore the ground the conjecture stands on. They do not yet reach the conjecture itself.</p>
 </main>
 <footer id="site-footer"></footer>
@@ -105,6 +105,11 @@
           bar.appendChild(i);
         });
         card.appendChild(bar);
+        var workable = (c.open || 0) + (c.claimed || 0);
+        if (!p.open && workable) {
+          card.appendChild(el("p", { class: "small sans", text: "Closed to new proposals only: its " + workable +
+            (workable === 1 ? " existing step" : " existing steps") + " can still be proved or refuted." }));
+        }
         card.appendChild(el("p", { class: "small sans muted", text:
           (c.proved || 0) + " proved, " + (c.refuted || 0) + " refuted, " +
           ((c.pending || 0) ? c.pending + " pending verification, " : "") +
