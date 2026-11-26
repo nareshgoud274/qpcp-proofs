@@ -77,7 +77,23 @@ structure EncodedTerm (q n k : ℕ) where
   /-- The local matrix `h`, indexed by `{0,…,q-1}^j`. -/
   entries : Matrix (Fin sites.length → Fin q) (Fin sites.length → Fin q) DyadicComplex
 
-/-! ## Encoded length and polynomial size bounds (§2, "Size") -/
+/-! ## Encoded length and polynomial size bounds (§2, "Size")
+
+The lengths below are counts of symbols in an abstract encoding, defined
+recursively here; they are not the length of any bit string. A family's two
+polynomials (`Family.pm`, `Family.pt`, both evaluated at `n + 1`) bound exactly:
+
+* `pm`: the number of terms `m`, `I.terms.length`;
+* `pt`: each term's `EncodedTerm.length`, that is its `sites.length + 1`, plus
+  `i + 1` for each listed site `i`, plus `DyadicComplex.length` of every one of
+  its `q^j · q^j` entries (`intLength` of each numerator, `e + 1` for each
+  exponent).
+
+`RawInstance.length` (`n + 1` plus the sum of the terms' lengths) is defined
+but not bounded directly. No claim is made about running time on bit strings
+until a self-delimiting serialization of raw inputs is specified and shown
+polynomially equivalent to these lengths; that serialization is not built here.
+-/
 
 -- §2 Size: "p is written in signed binary"
 /-- Length of an integer in signed binary: one sign symbol and its binary digits. -/
@@ -311,7 +327,8 @@ structure RawInstance (q k : ℕ) where
   terms : List (EncodedTerm q n k)
 
 -- §2 Size: "The number of sites n is also written in unary"
-/-- Length of a raw input: `n` in unary, then each term. -/
+/-- Length of a raw input: `n` in unary (`n + 1`), then each term's `EncodedTerm.length`.
+An abstract symbol count, not a bit-string length (see the section note above). -/
 def RawInstance.length {q k : ℕ} (I : RawInstance q k) : ℕ :=
   (I.n + 1) + (I.terms.map EncodedTerm.length).sum
 
@@ -325,25 +342,47 @@ def RawInstance.SizeBounded {q k : ℕ} (pm pt : Polynomial ℕ) (I : RawInstanc
 def RawInstance.Valid {q k : ℕ} (I : RawInstance q k) : Prop :=
   I.terms ≠ [] ∧ ∀ t ∈ I.terms, t.Valid
 
--- §4: "For a valid instance:"; §2 Validity: "Malformed or invalid inputs are in neither Yes nor No."
-/-- An instance of the promise problem: a valid raw input. -/
-def Instance (q k : ℕ) : Type := {I : RawInstance q k // I.Valid}
+-- §3: "The instance denotes H = Σ_{t=1}^m H_t"
+/-- The Hamiltonian of a valid raw input: its terms decoded, in order, repetitions kept. -/
+noncomputable def RawInstance.hamiltonian {q k : ℕ} (I : RawInstance q k) (hv : I.Valid) :
+    NormalizedHamiltonian q I.n k :=
+  ⟨I.terms.attach.map fun t => decode t.1 (hv.2 t.1 t.2)⟩
+
+-- §1 and §2 Size: "A problem family fixes q, k, a, b" and "fixes polynomials bounding m and each term's encoded length in n+1"
+/-- A problem family: its parameters and the two size polynomials. -/
+structure Family where
+  /-- `q`, `k`, `a`, `b`. -/
+  params : Params
+  /-- Bounds the number of terms `m`, at `n + 1`. -/
+  pm : Polynomial ℕ
+  /-- Bounds each term's `EncodedTerm.length`, at `n + 1`. -/
+  pt : Polynomial ℕ
+
+-- §4: "For a valid instance:"; §2: invalid inputs, and inputs outside the family's size bounds, are in neither Yes nor No
+/-- A raw input is an instance of the family: it is valid and within the family's size bounds. -/
+def Family.IsInstance (F : Family) (I : RawInstance F.params.q F.params.k) : Prop :=
+  I.Valid ∧ I.SizeBounded F.pm F.pt
+
+-- §4: the promise problem is defined on the family's instances only
+/-- An instance of a family's promise problem. -/
+def FamilyInstance (F : Family) : Type :=
+  {I : RawInstance F.params.q F.params.k // F.IsInstance I}
 
 -- §3: "The instance denotes H = Σ_{t=1}^m H_t"
-/-- The Hamiltonian of an instance: its terms decoded, in order, repetitions kept. -/
-noncomputable def Instance.hamiltonian {q k : ℕ} (I : Instance q k) :
-    NormalizedHamiltonian q I.1.n k :=
-  ⟨I.1.terms.attach.map fun t => decode t.1 (I.2.2 t.1 t.2)⟩
+/-- The Hamiltonian of a family instance. -/
+noncomputable def FamilyInstance.hamiltonian {F : Family} (I : FamilyInstance F) :
+    NormalizedHamiltonian F.params.q I.1.n F.params.k :=
+  I.1.hamiltonian I.2.1
 
 -- §4: "Yes if λ_min(H) ≤ a·m"
-/-- A yes-instance: ground energy at most `a · m`. -/
-def Yes (p : Params) (I : Instance p.q p.k) : Prop :=
-  RelYes I.hamiltonian (p.a : ℝ)
+/-- A yes-instance of the family: ground energy at most `a · m`. -/
+def Yes (F : Family) (I : FamilyInstance F) : Prop :=
+  RelYes I.hamiltonian (F.params.a : ℝ)
 
 -- §4: "No if λ_min(H) ≥ b·m"
-/-- A no-instance: ground energy at least `b · m`. -/
-def No (p : Params) (I : Instance p.q p.k) : Prop :=
-  RelNo I.hamiltonian (p.b : ℝ)
+/-- A no-instance of the family: ground energy at least `b · m`. -/
+def No (F : Family) (I : FamilyInstance F) : Prop :=
+  RelNo I.hamiltonian (F.params.b : ℝ)
 
 /-! ## Statements about the promise problem (closed propositions) -/
 
@@ -353,9 +392,9 @@ def ValidDecidable : Prop :=
   ∀ (q n k : ℕ) (t : EncodedTerm q n k), t.Valid ↔ t.ValidRat
 
 -- §4: "Because a<b and m≥1, no instance is both."
-/-- No instance is both a yes- and a no-instance. -/
+/-- No instance of any family is both a yes- and a no-instance. -/
 def YesNoDisjoint : Prop :=
-  ∀ (p : Params) (I : Instance p.q p.k), ¬ (Yes p I ∧ No p I)
+  ∀ (F : Family) (I : FamilyInstance F), ¬ (Yes F I ∧ No F I)
 
 /-! ## The classical milestone (§7, `q = 2`) -/
 
@@ -577,5 +616,48 @@ theorem testB_term :
     split_ifs with h
     · exact absurd (h.1.trans h.2.symm) hxy
     · rfl
+
+/-! ### The size bounds reach Yes and No (reviewer's counterexample) -/
+
+-- helper (§2, §4): the zero term on the empty support, q = 2, k = 1 (its 1×1 matrix is [0])
+/-- The zero term on no sites. -/
+def zeroTerm : EncodedTerm 2 0 1 :=
+  ⟨[], List.nodup_nil, Nat.zero_le _, fun _ _ => DyadicComplex.zero⟩
+
+-- helper (§2, §4): n = 0 with two zero terms on the empty support
+/-- The reviewer's input: `n = 0` and the list `zeroTerm, zeroTerm`. -/
+def twoZeroTerms : RawInstance 2 1 := ⟨0, [zeroTerm, zeroTerm]⟩
+
+-- helper (§1, §2): q = 2, k = 1, a = 0, b = 1, a term-count bound of the constant 1, and any pt
+/-- A family whose term-count polynomial is the constant `1`. -/
+noncomputable def oneTermFamily (pt : Polynomial ℕ) : Family :=
+  ⟨⟨2, 1, 0, 1, le_refl _, le_refl _, le_refl _, zero_lt_one, le_refl _⟩, Polynomial.C 1, pt⟩
+
+open scoped ComplexOrder in
+-- §2 Validity: the reviewer's input passes the physical validity check
+theorem twoZeroTerms_valid : twoZeroTerms.Valid := by
+  have h0 : zeroTerm.localMatrix = 0 := by
+    ext u v
+    show DyadicComplex.toComplex (zeroTerm.entries u v) = 0
+    simp [zeroTerm, DyadicComplex.toComplex, DyadicComplex.zero, Dyadic.toRat, Complex.ext_iff]
+  have hv : zeroTerm.Valid := by
+    refine ⟨?_, ?_, ?_⟩
+    · rw [h0]; exact Matrix.isHermitian_zero
+    · rw [h0]; exact Matrix.PosSemidef.zero
+    · rw [h0, sub_zero]; exact Matrix.PosSemidef.one
+  refine ⟨by simp [twoZeroTerms], fun t ht => ?_⟩
+  have : t = zeroTerm := by
+    rcases List.mem_cons.mp ht with h | h
+    · exact h
+    · rcases List.mem_cons.mp h with h | h
+      · exact h
+      · exact absurd h List.not_mem_nil
+  exact this ▸ hv
+
+-- §2 Size: "A problem family fixes polynomials bounding m"; the reviewer's input is not a family instance
+theorem twoZeroTerms_not_instance (pt : Polynomial ℕ) :
+    ¬ (oneTermFamily pt).IsInstance twoZeroTerms := by
+  rintro ⟨-, hm, -⟩
+  simp [twoZeroTerms, oneTermFamily] at hm
 
 end QPCP.Promise
