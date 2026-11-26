@@ -20,6 +20,8 @@ files, under a temporary directory; the real working tree is never written.
   4. A FIFO given to `scan-file` is rejected without blocking.
   5. A fixture id (S900000-S999999, L900000-L999999) is rejected by the gate,
      and no founding step in steps.json uses one.
+  5c. One spelling per id (#115): a lemma id with a leading zero (L0777, as a
+     statement or as a proof) is rejected by the gate; L777 passes it.
   6. A regular proof file still passes the gate and the scan.
 """
 
@@ -220,6 +222,28 @@ def main():
         real_ids = [st["id"] for st in __import__("json").loads((ROOT / "steps.json").read_text())]
         clash = [i for i in real_ids if chk_main.FIXTURE_ID.match(i)]
         check(f"5. no founding step in steps.json uses a fixture id ({len(real_ids)} steps)", not clash, clash)
+
+        # 5c. One spelling per id: L0777 must not name issue #777.
+        lemma = "import QPCP.Statements\n\n/-!\nPROGRAM: foundations\nPLAIN: True.\n-/\n\nnamespace QPCP.Lemma\n\ndef {i} : Prop := True\n\nend QPCP.Lemma\n"
+        for desc, path, text in (
+                ("a statement L0777", "QPCP/Lemmas/L0777.lean", lemma.format(i="L0777")),
+                ("a proof of L0777", "QPCP/Proofs/L0777.lean", honest.replace("S030", "L0777")),
+                ("a statement L00777", "QPCP/Lemmas/L00777.lean", lemma.format(i="L00777"))):
+            def add_odd(r, path=path, text=text):
+                (r / path).parent.mkdir(parents=True, exist_ok=True)
+                (r / path).write_text(text)
+                git(r, "add", path)
+            submit(repo, base_sha, "odd-" + Path(path).stem, add_odd)
+            code, out = gate(repo, base_sha)
+            check(f"5c. gate rejects {desc}, naming the canonical spelling",
+                  code == 1 and "leading zeros" in out and "(L777, not" in out, out)
+
+        def add_canonical(r):
+            (r / "QPCP/Lemmas/L777.lean").write_text(lemma.format(i="L777"))
+            git(r, "add", "QPCP/Lemmas/L777.lean")
+        submit(repo, base_sha, "canonical-L777", add_canonical)
+        code, out = gate(repo, base_sha)
+        check("5c. gate passes the canonical spelling L777", code == 0, out)
 
         # 6. A regular file still passes.
         def add_honest(r):

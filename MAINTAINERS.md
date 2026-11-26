@@ -415,6 +415,17 @@ A separate procedure, never part of reproducing the build. On a branch:
 
 The site is static and reads its data from GitHub in the visitor's browser.
 
+- **Credit (#115)** comes from the file, never from a title. For each proof,
+  refutation and statement, `build_status.py` finds the latest commit on main
+  that added the file, then the merged pull request into main that contains
+  that commit, and credits its author. If none contains it, it credits the
+  commit's author and says "no pull request found". A proposal's review link
+  is an open pull request that adds its lemma file. The status workflow needs
+  a full-history checkout. Credits already found are reused from the last
+  published feed, so each run looks up only new files.
+- **One spelling per id:** the gate rejects a lemma id with a leading zero
+  (`L0777`); only `L777` names issue #777.
+
 - **Updates page:** publish a GitHub release; its title and notes appear
   under Updates.
 - **Support page:** sponsorship is closed until `sponsorUrl` is set in

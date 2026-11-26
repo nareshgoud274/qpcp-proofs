@@ -44,6 +44,12 @@ case "$CMD" in
       echo "REJECTED: $ident is reserved for the test suite's fixtures"
       exit 1
     fi
+    # One spelling per id (#115): L<N> names issue #N, so L0777 would name #777
+    # too. The non-canonical spelling is refused, never renamed.
+    if printf '%s\n' "$ident" | grep -qE '^L0'; then
+      echo "REJECTED: $ident is not a lemma id: L<N> is written without leading zeros (L$(printf '%s' "${ident#L}" | sed 's/^0*//'), not $ident)"
+      exit 1
+    fi
     echo "gate: one new contribution file"
     ;;
   check)

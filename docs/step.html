@@ -91,7 +91,7 @@
       table.appendChild(row("Verification", [el("span", { text: "A file for this step is on main but no successful verification covers it yet." })]));
     }
     table.appendChild(row("Submitted by", s.who ? [Q.link("https://github.com/" + encodeURIComponent(s.who), s.who),
-      el("span", { text: " " }), s.prUrl ? Q.link(s.prUrl, "pull request") : el("span")] : [el("span", { class: "muted", text: s.status === "open" || s.status === "claimed" ? "not yet submitted" : "unknown" })]));
+      el("span", { text: " " }), s.prUrl ? Q.link(s.prUrl, "pull request") : el("span", { class: "muted", text: s.credit && s.credit.note ? "(" + s.credit.note + "; credited to the author of the commit that added the file)" : "" })] : [el("span", { class: "muted", text: s.status === "open" || s.status === "claimed" ? "not yet submitted" : "unknown" })]));
     table.appendChild(row("Human review", [el("span", { text: s.reviewed ? "Reviewed by a human specialist." : "Not reviewed by a human." })]));
     if (s.difficulty) table.appendChild(row("Difficulty", [el("span", { text: s.difficulty + " of 3" + (s.exercise ? " (a first-contribution exercise)" : "") })]));
     function depList(list) {
