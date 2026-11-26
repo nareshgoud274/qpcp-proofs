@@ -108,7 +108,7 @@
     table.appendChild(row("Uses", depList(s.deps)));
     if (s.background && s.background.length) table.appendChild(row("Worth reading first", depList(s.background)));
     if (s.claim) table.appendChild(row("Claimed by", [el("span", { text: s.claim.by.join(", ") +
-      (s.claim.lastActivity ? "; last activity " + Q.ago(s.claim.lastActivity) + " (a claim lapses after 24 hours without a comment)" : "") })]));
+      (s.claim.lastActivity ? "; their last comment " + Q.ago(s.claim.lastActivity) + " (a claim lapses 24 hours after the holder's own last comment; it is a courtesy, not a lock)" : "") })]));
     table.appendChild(row("Discussion", [Q.link(s.url, "issue")]));
     box.appendChild(table);
 

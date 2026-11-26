@@ -435,6 +435,35 @@ The site is static and reads its data from GitHub in the visitor's browser.
   List a supporter only with their agreement.
 - The site never handles payments or payment details itself.
 
+## Claims and duplicate pull requests
+
+`scripts/triage.py` handles claims (`claim.yml`, `expire-claims.yml`) and pull
+requests for settled steps (`triage.yml`), through `gh api` only.
+
+- A claim is a courtesy, not a lock: the checker never rejects a proof
+  because someone else holds the step. Exercises need no claim.
+- One holder per step and one claimed step per account. `claim.yml` has no
+  concurrency group, because GitHub keeps only one pending run per group. So
+  two runs can write at once, and each then re-reads and resolves the same
+  way: the earliest current `/claim` wins, and the loser is reverted with a
+  comment.
+- A claim lapses 24 hours after the holder's own last comment. `/renew`
+  renews it explicitly; other people's comments do not.
+- **Already-settled steps.** A proof of a step already proved on main fails
+  at the gate (`ci_contribution.sh`), before anything is built, and
+  `triage.yml` closes it with "already settled by #n".
+- **Duplicates on merge.** When a proof merges, other open pull requests
+  adding a proof of the same step are closed as confirmed duplicates, naming
+  it.
+- **Never closed automatically:** a refutation, or anything conflicting with
+  a settled result. These get the `needs-maintainer` label: decide them by
+  hand. A refutation of a proved step means a statement, a definition or the
+  checker is wrong.
+- `tests/test_claims.py` covers these cases against a stand-in `gh`
+  (`tests/fake_gh.py`).
+- The dormant automerger (`automerge.py`) still skips a proof of a step held
+  by someone else, leaving it to you. It is unchanged, and stays dry-run.
+
 ## Handling reports
 
 A report is an issue with the `report` label. The `report` workflow adds
