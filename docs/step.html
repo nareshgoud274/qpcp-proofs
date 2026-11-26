@@ -93,11 +93,13 @@
            el("div", { class: "muted", text: "Pinned to the site-data commit that published it, so these bytes can never change." })]
         : [el("span", { class: "muted", text: "The pinned link appears once the feed has been rebuilt with publication data." })]));
       var f = v.firstVerified;
-      table.appendChild(row("First verified", f
+      table.appendChild(row("First recorded verification", f
         ? [Q.link(Q.repoUrl + "/commit/" + f.commit, f.commit.slice(0, 12)),
            el("span", { class: "muted", text: " · " + new Date(f.verifiedAt).toUTCString() + " · this exact file (Git blob " + f.blob.slice(0, 12) + ") · " }),
            f.recordUrl ? Q.link(f.recordUrl, "that record") : el("span")]
         : [el("span", { class: "muted", text: "not known yet" })]));
+      if (f) table.appendChild(row("", [el("span", { class: "muted small", text:
+        "The earliest published record that accepted this exact file. Records exist only from the first one published (commit 49ca302); a file verified before that shows that commit." })]));
     } else if (s.status === "pending") {
       table.appendChild(row("Verification", [el("span", { text: "A file for this step is on main but no successful verification covers it yet." })]));
     }

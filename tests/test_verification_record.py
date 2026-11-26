@@ -390,6 +390,28 @@ def main():
                                        "expect": "ACCEPTED: proof S059", "commit": head}, v59.get("reproduce"))
         check("10. S059: the first verification of this exact file", (v59.get("firstVerified") or {}).get("blob") == s059_blob)
 
+        # 10. The definition finder on synthetic modules: namespaces, sections, and no partial source.
+        drepo = base / "defs"
+        (drepo / "QPCP").mkdir(parents=True)
+        (drepo / "QPCP" / "Statements.lean").write_text(
+            "namespace QPCP.Statement\n\n/-- A. -/\ndef S001 : Prop := QPCP.Foo.Whole\n\n"
+            "def S002 : Prop := QPCP.Foo.Gappy\n\ndef S003 : Prop := QPCP.Foo.Missing\n\nend QPCP.Statement\n")
+        (drepo / "QPCP" / "Foo.lean").write_text(
+            "namespace QPCP.Foo\n\nsection Inner\nend Inner\n\nnoncomputable section\n\n"
+            "-- note\n/-- Whole. -/\ndef Whole : Prop :=\n  True\n\n"
+            "def Gappy : Prop :=\n  True ∧\n\n  True\n\nend\n\nend QPCP.Foo\n")
+        git(drepo, "init", "-q", "-b", "main")
+        git(drepo, "add", "-A")
+        git(drepo, "commit", "-q", "-m", "d")
+        dsha = git(drepo, "rev-parse", "HEAD")
+        found = {i: vr.statement_definition(drepo, dsha, *vr.statement_location(drepo, dsha, "proof", i))
+                 for i in ("S001", "S002", "S003")}
+        check("10. a one-name statement resolves through namespaces and sections, with its notes and doc-comment",
+              found["S001"] and found["S001"]["name"] == "QPCP.Foo.Whole"
+              and found["S001"]["source"] == "-- note\n/-- Whole. -/\ndef Whole : Prop :=\n  True", found["S001"])
+        check("10. a definition with a blank line inside is not shown in part", found["S002"] is None, found["S002"])
+        check("10. a name no maintainer-written module defines gives nothing", found["S003"] is None, found["S003"])
+
         # 6. The builder refuses anything but a complete, accepted run at the commit.
         cases = [
             ("an --only run", [evidence_for(repo, c2, only=["QPCP.Proofs.S001"])], "partial"),

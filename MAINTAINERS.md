@@ -383,7 +383,10 @@ record:
   - a "Reproduce this check" block (`REPRODUCE.md`);
   - who submitted it, and its human-review status.
 
-  `site_data.py fetch-latest` reads the publishing commits and first
+  The `publish` job checks out the run's own commit, so a record is always
+  built by that commit's scripts: a re-run on an older commit reproduces its
+  evidence, and new record fields such as `statementDefinition` appear only
+  in records of commits that have them. `site_data.py fetch-latest` reads the publishing commits and first
   verifications from site-data's own history (`publication`), and
   `tests/test_reproduce_command.py` runs the printed command for a random
   step on your pull requests.

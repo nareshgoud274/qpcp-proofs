@@ -196,6 +196,10 @@ def statement_definition(repo, sha, spath, sline):
             d = DECL_RE.match(line)
             if d and ".".join([c for sc in scopes for c in sc] + [d.group(1)]) in wanted:
                 a, b = source_block(text, i)
+                # A blank line inside the definition would cut it short: show nothing rather than part of it.
+                nxt = next((l for l in text[b + 1:] if l.strip()), "")
+                if nxt[:1].isspace():
+                    return None
                 return {"name": ".".join([c for sc in scopes for c in sc] + [d.group(1)]), "path": path,
                         "line": a + 1, "endLine": b + 1, "source": "\n".join(text[a:b + 1])}
     return None

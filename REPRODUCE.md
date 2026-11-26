@@ -11,7 +11,7 @@ command needs. It is the same setup `verify-main` uses on GitHub's
   bubblewrap package and may not need the AppArmor profile below.
 - `git`, `curl`, `python3` (the system one, in `/usr/bin`), and `sudo` to
   install bubblewrap.
-- About 15 GB of disk.
+- At least 10 GB of disk. Mathlib's prebuilt cache is downloaded, not built.
 - **A disposable machine or VM.** The check builds files written by other
   contributors. It builds them inside bubblewrap sandboxes, but
   `scripts/install_sandbox.sh` also changes the system: it installs a package
