@@ -1,5 +1,6 @@
 import QPCP.Defs
 import QPCP.Qudit
+import QPCP.Promise
 
 /-!
 # QPCP pilot: frozen statements
@@ -297,5 +298,24 @@ def S055 : Prop :=
 def S056 : Prop :=
   ∀ (q n k : ℕ) (H : NormalizedHamiltonian q n k),
     H.numTerms = 0 → groundEnergyOn H.toOp = 0
+
+/-! ## The promise problem (`QPCP/Promise.lean`, `docs/spec/promise.tex`) -/
+
+/-- Physical validity of an encoded term is equivalent to the exact rational
+test `ValidRat`, which has a computable decision procedure (spec §2, Validity). -/
+def S057 : Prop := QPCP.Promise.ValidDecidable
+
+/-- No instance of any problem family is both a yes- and a no-instance (spec §4). -/
+def S058 : Prop := QPCP.Promise.YesNoDisjoint
+
+/-- For a nonempty list of Boolean constraints, the ground energy divided by the
+number of constraints is the minimum fraction of violated constraints (spec §7). -/
+def S059 : Prop := QPCP.Promise.BoolGroundEnergy
+
+/-- Test A of spec §7: for `n = 1` and the constraints `(x = 1), (x = 1), (x = 0)`,
+the ground energy divided by the number of terms is exactly `1/3`. -/
+def S060 : Prop :=
+  groundEnergyOn (QPCP.Promise.boolHamiltonian QPCP.Promise.testA).toOp /
+    (QPCP.Promise.boolHamiltonian QPCP.Promise.testA).numTerms = 1 / 3
 
 end QPCP.Statement

@@ -95,7 +95,15 @@ The ruleset itself: `gh api repos/nareshgoud274/qpcp-proofs/rules/branches/main`
   `.lake/packages` into it (so the copy must be on the same filesystem), and
   deletes it on exit, failure or interrupt. Outside CI it refuses to start
   while `QPCP/` has uncommitted changes. `tests/test_suite_safety.sh` checks
-  this with planted uncommitted `S030` and `S031` files.
+  this with planted uncommitted `QPCP/Proofs/S900030.lean` and `S900031.lean`
+  (reserved ids, the paths the suite itself writes in its copy), so it works
+  whichever real steps are proved.
+- The attack tests run twice, in parallel: on the tree as it is, and with
+  stand-in files committed at `QPCP/Proofs/S030.lean` and `S031.lean` in the
+  job's disposable checkout, so that proving any real step cannot break the
+  suite (#131). The stand-ins are not proofs and are never built. No test may
+  assume a real step is open; use a reserved id, or make the step open inside
+  a disposable copy (as `tests/test_contribution_files.py` does).
 - Fixture ids `S900000`-`S999999` and `L900000`-`L999999` are reserved for
   the tests. The gate and `check.py scan` refuse them, so no contribution can
   use one, and no founding step may. The suite's targets `S900030` and
@@ -313,6 +321,17 @@ pin stops agents rather than misleading them.
 
 Add the statement to `QPCP/Statements.lean` and an entry to `steps.json`, then
 run `python3 scripts/create_issues.py` to create the missing issues.
+
+Fields of a `steps.json` entry:
+
+- `id`, `title`, `section`, `difficulty` (1 to 3);
+- `deps`: steps a proof actually uses, and only those;
+- `background` (optional): steps worth reading first that a proof does not
+  need (`S032` lists `S030` and `S031` here; each of the three closes by
+  `intro …; rfl`);
+- `exercise` (optional, `true`): a first-contribution exercise rather than a
+  research obstacle. The published feed (`status.json`) carries this flag;
+- `retired` and `replaced_by` (optional): see "Handling reports" below.
 
 ## Updating Mathlib
 

@@ -138,11 +138,12 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None):
     rows = [{
         "id": s["id"], "title": s["title"], "section": s["section"], "program": "founding",
         "retired": s.get("retired") is True, "replacedBy": s.get("replaced_by", ""),
+        "exercise": s.get("exercise") is True,
     } for s in tree["steps"]]
     rows += [{
         "id": l["id"], "title": l["title"], "program": l["program"],
         "section": program_title.get(l["program"], l["program"] or "Other"),
-        "retired": False, "replacedBy": "",
+        "retired": False, "replacedBy": "", "exercise": False,
     } for l in tree["lemmas"]]
 
     people = {}
@@ -191,6 +192,7 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None):
             "id": sid, "title": r["title"], "section": r["section"], "program": r["program"],
             "status": status, "who": who, "when": when, "disputed": disputed, "reviewed": reviewed,
             "replacedBy": r["replacedBy"], "statedBy": login(stated) if stated else "",
+            "exercise": r["exercise"],
             "url": issue["html_url"] if issue else "",
             "prUrl": pr["html_url"] if pr else "",
         })

@@ -70,6 +70,10 @@ def make_repo(base):
         dest = repo / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
+    # The cases submit PROOF as a new file, so its step must be open in this
+    # copy even once main has proved or refuted it (#131).
+    for settled in (repo / PROOF, repo / PROOF.replace("Proofs", "Refutations")):
+        settled.unlink(missing_ok=True)
     git(repo, "init", "-q", "-b", "main")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "base")
@@ -98,7 +102,7 @@ def load_check(repo):
     return mod
 
 
-PROOF = "QPCP/Proofs/S030.lean"   # S030 is open on main; this repository is a disposable copy
+PROOF = "QPCP/Proofs/S030.lean"   # made open in the disposable copy (make_repo), whatever main has
 
 
 def main():

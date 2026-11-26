@@ -126,12 +126,37 @@ jobs:
 
   attack-tests:
     if: github.event.pull_request.user.login == github.repository_owner
+    name: attack-tests (${{ matrix.tree }})
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        # as-is: the tree of the pull request. S030-S031-tracked: the same
+        # tree with files committed at QPCP/Proofs/S030.lean and S031.lean, so
+        # that proving a real step cannot break the suite (#131).
+        tree: [as-is, S030-S031-tracked]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+
+      # Only in this job's disposable checkout, never pushed. The files stand
+      # in for merged proofs at those paths: they pass the source scanner but
+      # are not proofs, and no test builds them (S030-S033 are left open as
+      # first-contribution exercises, #135).
+      - name: Commit stand-ins at QPCP/Proofs/S030.lean and S031.lean
+        if: matrix.tree == 'S030-S031-tracked'
+        run: |
+          set -euo pipefail
+          for id in S030 S031; do
+            if [ -e "QPCP/Proofs/$id.lean" ]; then echo "$id is already proved in this tree"; continue; fi
+            printf 'import QPCP.Statements\n\n-- Stand-in at the path of a merged proof (attack-tests regression, #131).\n-- Not a proof, and never built.\ntheorem QPCP.Proof.%s : QPCP.Statement.%s := by\n  exact stand_in_for_a_merged_proof\n' "$id" "$id" > "QPCP/Proofs/$id.lean"
+          done
+          git add QPCP/Proofs
+          git -c user.name=qpcp-ci -c user.email=qpcp-ci@example.invalid -c commit.gpgsign=false \
+            commit -q --allow-empty -m "attack-tests: stand-ins at QPCP/Proofs/S030.lean and S031.lean"
+          git ls-files QPCP/Proofs/S030.lean QPCP/Proofs/S031.lean
 
       - name: Install elan (pinned release, checksum verified)
         run: scripts/install_elan.sh
@@ -181,14 +206,16 @@ jobs:
       - name: The test suite never touches uncommitted work (refused, failing, interrupted)
         run: tests/test_suite_safety.sh
 
-      - name: Plant uncommitted S030 and S031 for the full run
+      - name: Plant uncommitted S900030 and S900031 for the full run
+        id: plant
         run: tests/test_suite_safety.sh plant
 
       - name: Attack and honest-contribution tests
         run: tests/run_tests.sh
 
-      - name: The planted S030 and S031 are unchanged after the full run
-        if: always()
+      # Also after a failed or interrupted full run; not when nothing was planted (#128).
+      - name: The planted S900030 and S900031 are unchanged after the full run
+        if: always() && steps.plant.outcome != 'skipped'
         run: tests/test_suite_safety.sh verify
 
   # The status the ruleset on main requires. See the note at the top.

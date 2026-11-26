@@ -64,8 +64,9 @@ PATH_RES = {
 }
 
 ALLOWED_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
-BASE_IMPORTS = r"Mathlib(\.[A-Za-z0-9_]+)*|QPCP\.Defs|QPCP\.Qudit|QPCP\.Statements"
-# A statement may use Mathlib and the project's definitions, nothing else.
+BASE_IMPORTS = r"Mathlib(\.[A-Za-z0-9_]+)*|QPCP\.Defs|QPCP\.Qudit|QPCP\.Statements|QPCP\.Promise"
+# A statement may use Mathlib and the project's maintainer-written modules
+# (TRUSTED_MODULES in scripts/sandbox_verify.py), nothing else.
 LEMMA_IMPORT_RE = re.compile(rf"^({BASE_IMPORTS})$")
 # A proof or refutation may also use stated lemmas and settled results.
 PROOF_IMPORT_RE = re.compile(
