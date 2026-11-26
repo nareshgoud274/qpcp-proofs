@@ -154,6 +154,7 @@ for f in $ATTACKS; do
   case "$out" in REJECTED*) ok "scanner refuses $(basename "$f")" ;; *) bad "scanner accepts $(basename "$f"): $out" ;; esac
 done
 for spec in "proof S019 QPCP/Proofs/S019.lean" "lemma L900001 tests/honest/L900001.lean" \
+            "lemma L900004 tests/honest/L900004.lean" \
             "lemma L900002 tests/honest/L900002.lean" "refutation L900002 tests/honest/refute_L900002.lean"; do
   set -- $spec
   out=$(python3 scripts/check.py scan-file "$1" "$2" "$3")
@@ -214,6 +215,11 @@ newwork
 out=$(scripts/contribution_check.sh lemma L900001 tests/honest/L900001.lean $NS 2>/dev/null | tail -1)
 case "$out" in "ACCEPTED: lemma L900001") ok "pipeline accepts an honest lemma" ;; *) bad "honest lemma: $out" ;; esac
 keep lemma-L900001
+
+# A statement that imports QPCP.Promise, through the route a contributor uses (#132).
+newwork
+out=$(scripts/contribution_check.sh lemma L900004 tests/honest/L900004.lean $NS 2>/dev/null | tail -1)
+case "$out" in "ACCEPTED: lemma L900004") ok "pipeline accepts an honest lemma that imports QPCP.Promise" ;; *) bad "honest lemma importing QPCP.Promise: $out" ;; esac
 
 cp tests/honest/L900002.lean QPCP/Lemmas/L900002.lean
 newwork

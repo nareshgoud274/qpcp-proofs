@@ -5,9 +5,13 @@
 #   tests/test_suite_safety.sh plant      plant the two files, for a full run
 #   tests/test_suite_safety.sh verify     check them byte for byte, then remove them
 #
-# It creates uncommitted QPCP/Proofs/S030.lean and QPCP/Proofs/S031.lean in
-# this checkout, with random contents, and confirms they are byte-for-byte
-# unchanged after tests/run_tests.sh:
+# It creates uncommitted QPCP/Proofs/S900030.lean and QPCP/Proofs/S900031.lean
+# in this checkout, with random contents, and confirms they are byte-for-byte
+# unchanged after tests/run_tests.sh. The ids are reserved fixture ids (no step
+# and no contribution may use one), so this works whether or not any real step
+# is proved; they are also exactly the ids the suite itself writes in its
+# disposable copy (TARGET and MERGED in run_tests.sh), the paths a stray write
+# to this checkout would hit. The suite:
 #
 #   1. refuses to start (outside CI, QPCP/ has uncommitted changes);
 #   2. runs and fails (CI set, `lake env` made to fail, so every Lean check fails);
@@ -22,7 +26,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 REAL="$(pwd -P)"
 STATE="${RUNNER_TEMP:-${XDG_CACHE_HOME:-$HOME/.cache}}/qpcp-suite-safety"
-FILES="QPCP/Proofs/S030.lean QPCP/Proofs/S031.lean"
+FILES="QPCP/Proofs/S900030.lean QPCP/Proofs/S900031.lean"
 fails=0
 ok()  { echo "  ok    $*"; }
 bad() { fails=$((fails + 1)); echo "  FAIL  $*"; }

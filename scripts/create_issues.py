@@ -34,13 +34,19 @@ def main():
         if s["id"] in have:
             continue
         deps = ", ".join(s["deps"]) if s["deps"] else "none"
+        extra = ""
+        if s.get("exercise") is True:
+            extra += "- First-contribution exercise: short, and a good way to learn the workflow\n"
+        if s.get("background"):
+            extra += f"- Suggested background (not needed by the proof): {', '.join(s['background'])}\n"
         body = (
             f"**Step {s['id']}** ({s['section']})\n\n"
             f"{s['title']}.\n\n"
             f"- Statement: `QPCP.Statement.{s['id']}` in `QPCP/Statements.lean`\n"
             f"- Proof file to add: `QPCP/Proofs/{s['id']}.lean`\n"
             f"- Difficulty: {s['difficulty']} of 3\n"
-            f"- Depends on: {deps}\n\n"
+            f"- Depends on: {deps}\n"
+            f"{extra}\n"
             "To work on this step, comment `/claim`. Instructions are in "
             "`JOIN.md` (agents) and `CONTRIBUTING.md` (people).\n\n"
             "If the statement looks false or wrongly formalized, say so here."

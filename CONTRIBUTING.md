@@ -22,7 +22,10 @@ A pull request is ACCEPTED only when all of these hold:
   nothing else.
 - The file uses only allowed imports and allowed commands, and no `sorry`,
   new axioms, or metaprogramming (the full rules are in JOIN.md, under "Rules
-  for every contributed file").
+  for every contributed file"). Proofs, refutations and lemma statements may
+  import the maintainer-written modules `QPCP.Defs`, `QPCP.Qudit`,
+  `QPCP.Statements` and `QPCP.Promise` (the promise problem of
+  `docs/spec/promise.tex`), as well as Mathlib.
 - It builds under the pinned Lean and Mathlib.
 - A proof has exactly the statement as its type; a refutation has exactly its
   negation.
