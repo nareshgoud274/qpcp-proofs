@@ -24,7 +24,15 @@ proposal carries a statement card (statement_card).
 Visitors' browsers fetch only the resulting file, so the site keeps working
 however many people are watching and however large the record grows.
 
-Usage: build_status.py <output-path> <record.json>
+Credit for a proof, refutation or statement comes from its file (#115): the
+commit on main that added QPCP/Proofs/<ID>.lean (or Refutations, or
+Lemmas/L<N>.lean), then the merged pull request containing that commit, whose
+author is credited. Without one, the commit's author is credited, marked "no
+pull request found". Titles are never matched for credit, and a proposal's
+review link is only an open pull request that adds its lemma file. Needs a
+checkout with full history.
+
+Usage: build_status.py <output-path> <record.json> [<previous status.json>]
 """
 
 import json
@@ -40,10 +48,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ID = r"(?:S\d{3,6}|L\d{1,9})"
-ID_RE = re.compile(rf"\b({ID})\b")
-CANON_RE = re.compile(rf"^\s*(Prove|Refute|State)\s+({ID})\s*$", re.I)
 REPORT_RE = re.compile(rf"^\s*report\s+({ID})\s*:?\s*", re.I)
-VERB_KIND = {"prove": "proved", "refute": "refuted", "state": "stated"}
 MAX_FEED = 200
 
 
@@ -75,6 +80,22 @@ def api(path, token, repo):
     return out
 
 
+def api_one(path, token, repo):
+    """Fetch one GitHub REST object."""
+    req = urllib.request.Request(f"https://api.github.com/repos/{repo}{path}", headers={
+        "Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}",
+        "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "qpcp-status"})
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 429, 500, 502, 503) and attempt < 3:
+                time.sleep(5 * (attempt + 1))
+                continue
+            raise
+
+
 def labels(issue):
     return {l["name"] for l in issue.get("labels", [])}
 
@@ -92,6 +113,71 @@ def git_files(root, folder):
         meta, path = line.split("\t", 1)
         if path.endswith(".lean"):
             out[Path(path).stem] = {"path": path, "blob": meta.split()[2]}
+    return out
+
+
+CONTRIB_FILE = re.compile(r"^QPCP/(?:(Proofs|Refutations)/(S\d{3,6}|L[1-9]\d{0,8})|Lemmas/(L[1-9]\d{0,8}))\.lean$")
+
+
+def canonical_lemma(sid):
+    """L<N> with no leading zero: the only spelling that names issue #N (#115)."""
+    return re.fullmatch(r"L[1-9]\d{0,8}", sid) is not None
+
+
+def added_commits(root, paths):
+    """{path: the most recent commit on HEAD's history that added that path}.
+
+    Credit for a contribution comes from the commit that added its file, never
+    from a pull request's title (#115)."""
+    out = {}
+    for path in paths:
+        r = subprocess.run(["git", "-C", str(root), "log", "-1", "--diff-filter=A", "--format=%H", "HEAD", "--", path],
+                           capture_output=True, text=True, check=True)
+        if r.stdout.strip():
+            out[path] = r.stdout.strip()
+    return out
+
+
+def pick_pull(pulls):
+    """The merged pull request into main that contains a commit: the earliest merged."""
+    merged = [p for p in pulls or [] if p.get("merged_at") and (p.get("base") or {}).get("ref") == "main"]
+    return min(merged, key=lambda p: p["merged_at"]) if merged else None
+
+
+def resolve_credits(added, pulls_of, author_of, previous=None):
+    """{path: credit} for every contribution file, from the commit that added it.
+
+    pulls_of(sha) lists the pull requests that contain the commit (GitHub's
+    /commits/<sha>/pulls); author_of(sha) gives the commit's author (a GitHub
+    login when GitHub knows one, else the Git author name). If no merged pull
+    request contains the commit, the commit's author is credited and the
+    credit says "no pull request found". `previous` holds the credits of the
+    last published feed: an entry for the same path and commit that found a
+    pull request is reused (a merged commit's pull request does not change),
+    so each run asks the API only about new files.
+    """
+    old = {c["path"]: c for c in (previous or []) if c.get("path")}
+    out = {}
+    for path, sha in sorted(added.items()):
+        prev = old.get(path)
+        if prev and prev.get("commit") == sha and prev.get("pr"):
+            out[path] = prev
+            continue
+        pr = pick_pull(pulls_of(sha))
+        if pr:
+            out[path] = {"path": path, "commit": sha, "pr": pr["number"], "prUrl": pr["html_url"],
+                         "who": login(pr), "mergedAt": pr["merged_at"], "note": ""}
+        else:
+            out[path] = {"path": path, "commit": sha, "pr": None, "prUrl": "", "who": author_of(sha),
+                         "mergedAt": "", "note": "no pull request found"}
+    return out
+
+
+def previous_credits(status):
+    """The credits recorded in a previously published status.json."""
+    out = []
+    for s in (status or {}).get("steps", []):
+        out += [c for c in (s.get("credit"), s.get("statedCredit")) if isinstance(c, dict)]
     return out
 
 
@@ -120,6 +206,7 @@ def read_tree(root=ROOT):
         "lemmas": lemmas,
         "proofs": git_files(root, "QPCP/Proofs"),
         "refutations": git_files(root, "QPCP/Refutations"),
+        "lemmaFiles": git_files(root, "QPCP/Lemmas"),
         "commit": subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True,
                                  text=True, check=True).stdout.strip(),
     }
@@ -234,22 +321,17 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
             if m:
                 step_issue[m.group(1)] = i
 
-    # Credit comes from merged pull requests. The automerge workflow gives each
-    # one a canonical title: "Prove <ID>", "Refute <ID>" or "State <ID>".
-    credit = {}
-    for p in sorted(closed_pulls, key=lambda p: p.get("merged_at") or ""):
-        if not p.get("merged_at") or not login(p):
-            continue
-        title = p.get("title") or ""
-        m = CANON_RE.match(title)
-        if m:
-            key = (VERB_KIND[m.group(1).lower()], m.group(2).upper())
-        else:
-            loose = ID_RE.search(title)
-            if not loose:
-                continue
-            key = ("proved", loose.group(1))
-        credit.setdefault(key, p)
+    # Credit comes from the file (#115): tree["credits"] maps each contribution
+    # file to the merged pull request whose commit added it (resolve_credits).
+    # Pull request titles are never read for credit; closed_pulls is unused.
+    credits = tree.get("credits", {})
+
+    def credit_for(sid, kinds):
+        for folder in kinds:
+            c = credits.get(f"QPCP/{folder}/{sid}.lean")
+            if c:
+                return c
+        return None
 
     program_title = {p["id"]: p["title"] for p in tree["programs"]}
     rows = [{
@@ -277,7 +359,8 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
     per_program, out_steps = {}, []
     for r in rows:
         sid = r["id"]
-        issue = step_issue.get(sid) or (by_number.get(int(sid[1:])) if sid.startswith("L") else None)
+        # Only the canonical spelling L<N> names issue #N: L0777 is not L777 (#115).
+        issue = step_issue.get(sid) or (by_number.get(int(sid[1:])) if canonical_lemma(sid) else None)
         names = labels(issue) if issue else set()
         status, who, when, pr, ver, claim, former = "open", "", "", None, None, None, None
         # A verdict comes only from the record, and only for the bytes on main: the
@@ -298,10 +381,10 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
             when = (issue or {}).get("closed_at") or ""
         elif ver:
             status = ver[0]
-            pr = credit.get((status, sid))
+            pr = credit_for(sid, ("Proofs",) if status == "proved" else ("Refutations",))
         elif on_main:
             status = "pending"
-            pr = credit.get(("proved" if sid in tree["proofs"] else "refuted", sid))
+            pr = credit_for(sid, ("Proofs",) if sid in tree["proofs"] else ("Refutations",))
         elif "claimed" in names:
             status = "claimed"
             who = ", ".join(a["login"] for a in issue.get("assignees", []))
@@ -309,13 +392,13 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
             # A claim lapses 24 hours after the issue's last comment (claim.yml).
             claim = {"by": [a["login"] for a in issue.get("assignees", [])], "lastActivity": when}
         if status in ("proved", "refuted", "pending"):
-            who = login(pr) if pr else ""
-            when = (pr or {}).get("merged_at") or ""
+            who = (pr or {}).get("who", "")
+            when = (pr or {}).get("mergedAt", "")
         if status in ("proved", "refuted"):
             give(who, status, sid)
-        stated = credit.get(("stated", sid))
+        stated = credit_for(sid, ("Lemmas",)) if sid.startswith("L") else None
         if stated:
-            give(login(stated), "stated", sid)
+            give(stated["who"], "stated", sid)
         disputed = status != "retired" and "disputed" in names
         # Review by a human specialist is tracked separately from Lean's verdict.
         reviewed = "human-reviewed" in names
@@ -329,7 +412,7 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
         out_steps.append({
             "id": sid, "title": r["title"], "section": r["section"], "program": r["program"],
             "status": status, "who": who, "when": when, "disputed": disputed, "reviewed": reviewed,
-            "replacedBy": r["replacedBy"], "statedBy": login(stated) if stated else "",
+            "replacedBy": r["replacedBy"], "statedBy": stated["who"] if stated else "",
             "exercise": r["exercise"], "difficulty": r["difficulty"],
             # Filled in below, once every step's status is known.
             "deps": r["deps"], "background": r["background"],
@@ -338,7 +421,9 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
             "submission": submission_card(sid, issue["number"]) if issue and status in ("open", "claimed") else None,
             "issue": issue["number"] if issue else None,
             "url": issue["html_url"] if issue else "",
-            "prUrl": pr["html_url"] if pr else "",
+            "prUrl": (pr or {}).get("prUrl", ""),
+            # Where the credit comes from: the commit that added the file, and its pull request.
+            "credit": pr, "statedCredit": stated,
             "verified": None if not ver else {
                 "commit": rec_commit, "runUrl": rec_run.get("url", ""), "record": record_url(rec_commit),
                 "declaration": ver[1]["declaration"], "path": ver[1]["path"], "blob": ver[1]["blob"],
@@ -368,11 +453,14 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
         "count": per_program.get(p["id"], {"proved": 0, "refuted": 0, "pending": 0, "claimed": 0, "open": 0, "retired": 0}),
     } for p in tree["programs"]]
 
+    # A proposal's review link is an open pull request that ADDS its lemma file
+    # (each open pull's "files", attached by main()); never one whose title mentions it (#115).
     open_by_lemma = {}
     for p in open_pulls:
-        m = re.search(r"\bL(\d{1,9})\b", p.get("title") or "")
-        if m:
-            open_by_lemma.setdefault(int(m.group(1)), p)
+        for f in p.get("files", []):
+            m = CONTRIB_FILE.match(f.get("filename", ""))
+            if f.get("status") == "added" and m and m.group(3):
+                open_by_lemma.setdefault(int(m.group(3)[1:]), p)
     out_proposals = []
     for i in sorted(proposals, key=lambda i: i.get("created_at") or "", reverse=True):
         if i.get("state") != "open":
@@ -478,7 +566,7 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
 
 
 def main(argv):
-    if len(argv) != 3:
+    if len(argv) not in (3, 4):
         print(__doc__)
         return 2
     record = json.loads(Path(argv[2]).read_text())
@@ -487,11 +575,25 @@ def main(argv):
     if not token or not repo:
         print("GH_TOKEN and GITHUB_REPOSITORY must be set", file=sys.stderr)
         return 2
+    tree = read_tree()
+    # Credit from the commit that added each contribution file (#115).
+    added = added_commits(ROOT, [f["path"] for k in ("proofs", "refutations", "lemmaFiles") for f in tree[k].values()])
+    previous = json.loads(Path(argv[3]).read_text()) if len(argv) > 3 and Path(argv[3]).is_file() else None
+
+    def author_of(sha):
+        c = api_one(f"/commits/{sha}", token, repo)
+        name = (c.get("commit", {}).get("author") or {}).get("name", "")
+        return (c.get("author") or {}).get("login") or name
+    tree["credits"] = resolve_credits(added, lambda sha: api(f"/commits/{sha}/pulls", token, repo), author_of,
+                                      previous_credits(previous))
+    open_pulls = api("/pulls?state=open", token, repo)
+    for p in open_pulls[:MAX_FEED]:
+        p["files"] = api(f"/pulls/{p['number']}/files", token, repo)
     status = assemble(
-        read_tree(),
+        tree,
         api("/issues?state=all", token, repo),
-        api("/pulls?state=closed", token, repo),
-        api("/pulls?state=open", token, repo),
+        [],
+        open_pulls,
         api("/releases", token, repo),
         record=record, repo=repo,
     )
