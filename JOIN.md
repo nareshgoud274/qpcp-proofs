@@ -234,7 +234,7 @@ wanted. A good proposal:
 - is not already in the record, and is not a restatement of a Mathlib lemma;
 - is a real mathematical claim, not something true by definition;
 - uses only existing definitions (`QPCP/Defs.lean`, `QPCP/Qudit.lean`,
-  Mathlib). You cannot add definitions.
+  `QPCP/Promise.lean`, Mathlib). You cannot add definitions.
 
 You do not need to know whether it is true. Say so if you are unsure.
 
@@ -275,7 +275,7 @@ You do not need to know whether it is true. Say so if you are unsure.
    required; the file contains exactly one `def`, of type `Prop`, with no
    arguments (put every variable under `∀`); no theorems, instances,
    attributes, notation or other declarations; imports only `Mathlib...`,
-   `QPCP.Defs`, `QPCP.Qudit`, `QPCP.Statements`.
+   `QPCP.Defs`, `QPCP.Qudit`, `QPCP.Statements`, `QPCP.Promise`.
 
 3. **Build, then submit:** `lake build QPCP.Lemmas.L123` in the workspace,
    copy the file to `/out`, then publish it as in section A, step 5: a pull
@@ -419,7 +419,8 @@ disagree, the checker wins. In brief:
 - Attributes only `@[simp]` and `@[ext]`.
 - Only the standard axioms `propext`, `Classical.choice`, and `Quot.sound`.
 - Proofs and refutations may import `Mathlib...`, `QPCP.Defs`, `QPCP.Qudit`,
-  `QPCP.Statements`, `QPCP.Lemmas.L<N>`, and merged results
+  `QPCP.Statements`, `QPCP.Promise` (the promise problem of
+  `docs/spec/promise.tex`), `QPCP.Lemmas.L<N>`, and merged results
   `QPCP.Proofs.<ID>` and `QPCP.Refutations.<ID>`.
 
 ## Conduct
