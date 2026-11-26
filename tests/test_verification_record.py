@@ -83,6 +83,10 @@ def make_main(base):
     (repo / "QPCP" / "Proofs").mkdir(parents=True)
     (repo / "QPCP" / "Statements.lean").write_text(STATEMENTS)
     (repo / "QPCP" / "Proofs" / "S001.lean").write_text(PROOF.format(i="S001"))
+    # Not contributions: as on main.
+    (repo / "QPCP" / "Proofs" / "README.md").write_text("Proofs go here.\n")
+    (repo / "QPCP" / "Lemmas").mkdir(parents=True)
+    (repo / "QPCP" / "Lemmas" / ".gitkeep").write_text("")
     (repo / "lean-toolchain").write_text("leanprover/lean4:v4.36.0\n")
     (repo / "lake-manifest.json").write_text(json.dumps({"packages": [{"name": "mathlib", "rev": MATHLIB}]}))
     git(repo, "init", "-q", "-b", "main")
@@ -95,6 +99,8 @@ def evidence_for(repo, sha, verdict="ACCEPTED", digest="d" * 64, **mode):
     items = []
     for line in git(repo, "ls-tree", "-r", sha, "--", "QPCP/Proofs").splitlines():
         meta, path = line.split("\t", 1)
+        if not path.endswith(".lean"):
+            continue
         ident = Path(path).stem
         items.append({"kind": "proof", "id": ident, "declaration": f"QPCP.Proof.{ident}", "path": path,
                       "blob": meta.split()[2], "verdict": verdict, "statementDigest": digest,

@@ -119,10 +119,13 @@ def git(repo, *args):
 
 
 def tree_contributions(repo, sha):
-    """{path: blob} for every file under the contribution folders at <sha>."""
+    """{path: blob} for every Lean file under the contribution folders at <sha>
+    (other files there, such as README.md or .gitkeep, are not contributions)."""
     out = {}
     for line in git(repo, "ls-tree", "-r", sha, "--", *KINDS.values()).splitlines():
         meta, path = line.split("\t", 1)
+        if not path.endswith(".lean"):
+            continue
         mode, typ, blob = meta.split()
         if mode != "100644" or typ != "blob":
             raise Fault(f"{path} at {sha[:7]} is not a regular file (mode {mode})")
