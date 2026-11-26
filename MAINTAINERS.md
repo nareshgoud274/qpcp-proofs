@@ -1,37 +1,46 @@
 # Maintainer guide
 
-## First-time setup (once, on your own computer)
+## Reproducing the build (on your own computer)
 
-1. **Build.** Nothing in this repository has been compiled yet.
+The Lean version and every dependency are pinned by the committed
+`lean-toolchain` and `lake-manifest.json`; CI builds from exactly these. To
+reproduce it:
 
-   ```
-   bash scripts/bootstrap.sh
-   ```
+```
+git clone https://github.com/nareshgoud274/qpcp-proofs
+cd qpcp-proofs
+lake exe cache get
+lake build QPCP.Defs QPCP.Qudit QPCP.Statements QPCP.Promise
+```
 
-   This pins the Lean version to Mathlib's, downloads Mathlib, and builds
-   `QPCP/Defs.lean` and `QPCP/Statements.lean`. Fix any errors before going
-   further. Fixes must not change what a statement means.
+That builds the maintainer-written modules only. Do not run `lake update` or
+`scripts/bootstrap.sh` to reproduce: both change the pins (see "Upgrading Lean
+and Mathlib"). Building a contributed file (`QPCP.Proofs.*`, `QPCP.Lemmas.*`,
+`QPCP.Refutations.*`) runs code someone else wrote, so do that only in a
+disposable workspace without credentials, as `JOIN.md` ("Two places") tells
+volunteers; the record itself is checked in CI's sandbox.
 
-2. **Get the definitions reviewed.** Ask someone who works in quantum
-   Hamiltonian complexity to read `QPCP/Defs.lean`, `QPCP/Statements.lean`,
+## Repository settings
+
+These were set when the repository was created and should stay as they are.
+
+1. **Human review of the definitions.** Ask someone who works in quantum
+   Hamiltonian complexity to read `QPCP/Defs.lean`, `QPCP/Qudit.lean`,
+   `QPCP/Promise.lean` with `docs/spec/promise.pdf`, `QPCP/Statements.lean`,
    and the "Known gaps" section of `BLUEPRINT.md`. Until that happens, keep
-   the "definitions unreviewed" notice in `README.md`.
+   the "definitions unreviewed" notices in `README.md` and on the homepage,
+   and "Human specialist review pending" in the specification.
 
-3. **Publish.**
+2. **Publishing.** `scripts/publish.sh` created the public repository, pushed
+   the code, created one issue per step and turned on the site. It was run
+   once and is not run again.
 
-   ```
-   bash scripts/publish.sh
-   ```
-
-   This creates the public repository `qpcp-proofs` under your GitHub account,
-   pushes the code, creates one issue per step, and turns on the project site.
-
-4. **Protect `main`** in the repository's Settings, under Branches:
+3. **Protect `main`** in the repository's Settings, under Branches:
    - Require a pull request before merging.
    - Require the `check` status check to pass.
    - Do not allow bypassing these settings.
 
-5. **Workflow approval.** In Settings, under Actions, General, keep "Require
+4. **Workflow approval.** In Settings, under Actions, General, keep "Require
    approval for first-time contributors" turned on.
 
 ## How contributions are merged
@@ -313,9 +322,22 @@ pinned link is in `README.md` ("With an AI coding agent") and in
 3. merge with a merge commit, not a squash, so that the first commit's id
    still exists on `main`.
 
-Agents check, after cloning, that `JOIN.md` on `main` is unchanged since the
-pinned commit, and stop if it is not; so until the pins are bumped, a stale
-pin stops agents rather than misleading them.
+Agents' setup script checks, right after cloning and before anything else is
+downloaded, that `JOIN.md` on `main` is unchanged since the pinned commit,
+and exits if it is not; so until the pins are bumped, a stale pin stops
+agents rather than misleading them. `tests/test_onboarding.py` runs that
+script as written against synthetic repositories, and fails on your pull
+request if the two pins disagree or `JOIN.md` has changed since the pin.
+
+## When a volunteer reports a fault
+
+`JOIN.md` tells volunteers that a REJECTED verdict is about their file and a
+FAULT is about the checker: on a FAULT they keep their proof unchanged and
+send you the run link, the commit and the failing stage (the job and step
+shown in red). Re-run the job once; if it faults again, the cause is the
+checker, its sandbox or the runner. Fix that in a pull request of your own and
+re-run the contributor's check; never ask them to change the mathematics in
+answer to a fault.
 
 ## Verification records
 
@@ -365,13 +387,29 @@ Fields of a `steps.json` entry:
   need (`S032` lists `S030` and `S031` here; each of the three closes by
   `intro …; rfl`);
 - `exercise` (optional, `true`): a first-contribution exercise rather than a
-  research obstacle. The published feed (`status.json`) carries this flag;
+  research obstacle. The published feed (`status.json`) carries this flag,
+  `difficulty`, `deps` and `background` (each with the step's current
+  status), the active `claim`, and, for an open or claimed step, a
+  `submission` card built from the step's own issue number (#117);
 - `retired` and `replaced_by` (optional): see "Handling reports" below.
 
-## Updating Mathlib
+## Upgrading Lean and Mathlib
 
-Run `bash scripts/bootstrap.sh` again on a branch, rebuild everything with
-`python3 scripts/check.py all`, repair any proofs that broke, and merge.
+A separate procedure, never part of reproducing the build. On a branch:
+
+1. `bash scripts/bootstrap.sh`. It sets `lean-toolchain` to the one Mathlib's
+   stable branch uses and runs `lake update`, which rewrites
+   `lake-manifest.json`, then builds the maintainer-written modules.
+2. Regenerate `scripts/command_tokens.txt` from `tests/gen_command_tokens.lean`
+   (`tests/test_command_tokens.sh` fails until it matches).
+3. Commit `lean-toolchain`, `lake-manifest.json` and the table, and open a pull
+   request. On your own pull request the `check` workflow re-checks the whole
+   record in the sandbox; do not rebuild contributed files on your own machine
+   (`check.py all` builds them without a sandbox).
+4. If a merged proof no longer builds, repair it in the same pull request
+   without changing any statement, and say so in its description.
+5. Merge with a merge commit. The next `verify-main` run writes a record whose
+   toolchain and Mathlib revision are the new ones.
 
 ## The site
 

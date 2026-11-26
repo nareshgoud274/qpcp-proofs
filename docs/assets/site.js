@@ -16,7 +16,7 @@
   var raw = "https://raw.githubusercontent.com/" + CFG.owner + "/" + CFG.repo + "/main/";
   // Agents are told to fetch JOIN.md at this fixed commit, never from main
   // (MAINTAINERS.md, "Updating JOIN.md"). Keep it equal to the pin in README.md.
-  var JOIN_COMMIT = "eb83a4576197e4dcdb481cfe8b25081b35234c00";
+  var JOIN_COMMIT = "1a5869585645f5de2e73ba40b3ba9fc983404808";
   var joinUrl = "https://raw.githubusercontent.com/" + CFG.owner + "/" + CFG.repo + "/" + JOIN_COMMIT + "/JOIN.md";
   var api = "https://api.github.com/repos/" + CFG.owner + "/" + CFG.repo;
   // One prebuilt file with everything the site shows, rebuilt by the `status`
@@ -130,6 +130,7 @@
         programs: s.programs || [], proposals: s.proposals || [],
         mandates: s.mandates || [], barriers: s.barriers || [],
         verification: s.verification || { available: false },
+        accepting: s.accepting || null,
         generatedAt: s.generated_at
       };
     }).catch(function () { return loadCoreFromApi(maxAgeMs); });

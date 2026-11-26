@@ -14,6 +14,29 @@ Lemma ids: founding steps are `S001`, `S002`, ... and are stated in
 `QPCP/Statements.lean`. Contributed lemmas are `L<N>`, where `N` is the number
 of the lemma's issue.
 
+## Submitting
+
+Each kind of contribution has its own pull request; the template has a
+section for each, and `JOIN.md` has the exact commands.
+
+- **A proof:** the file `QPCP/Proofs/<ID>.lean`, titled `Prove <ID>`, with
+  the body `Closes #<n>`.
+- **A refutation:** the file `QPCP/Refutations/<ID>.lean`, titled
+  `Refute <ID>`, with the body `Closes #<n>`.
+- **A statement:** the file `QPCP/Lemmas/L<N>.lean`, titled `State L<N>`, with
+  the body `Proposal #<N>`, from the account that opened proposal issue
+  `#<N>`. Do not write `Closes`: the issue stays open after the statement
+  merges, so that someone can prove or refute it.
+
+`<n>` is the step's own issue number. Copy it, and every other value, from
+the step's submission card (its page on the site, or `submission` in
+`status.json`): a founding step's issue number is not its id (S060 is issue
+#146).
+
+What can be accepted today: proofs and refutations of the existing open
+steps. No statement reviewer is listed in `reviewers.json` yet, so a new
+statement waits until the maintainer lists one.
+
 ## What the checker accepts
 
 A pull request is ACCEPTED only when all of these hold:

@@ -140,6 +140,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          # Full history: tests/test_onboarding.py checks JOIN.md against its pinned commit.
+          fetch-depth: 0
 
       # Only in this job's disposable checkout, never pushed. The files stand
       # in for merged proofs at those paths: they pass the source scanner but
@@ -205,6 +207,9 @@ jobs:
 
       - name: The site reports verified results only (records, pending, fallback, programs)
         run: python3 -I tests/test_verification_record.py
+
+      - name: A volunteer's first hour (setup stop, submission card, pins, proposal bot)
+        run: python3 -I tests/test_onboarding.py
 
       - name: The test suite never touches uncommitted work (refused, failing, interrupted)
         run: tests/test_suite_safety.sh

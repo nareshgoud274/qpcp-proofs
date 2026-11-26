@@ -40,6 +40,7 @@ p { margin: 0 0 14px; max-width: 66ch; }
 .small { font-size: 0.86rem; }
 
 .note { border-left: 3px solid var(--warn); background: var(--card); padding: 10px 16px; margin: 24px 0; font-size: 0.92rem; max-width: 70ch; }
+.question { border-left: 3px solid var(--line); padding: 4px 16px; margin: 20px 0; max-width: 70ch; }
 
 /* Stats */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 30px 0 8px; }

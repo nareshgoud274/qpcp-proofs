@@ -14,6 +14,14 @@
   <h1>Is approximating a quantum ground energy as hard as computing it?</h1>
   <p class="lede">That is the quantum PCP conjecture. This project works toward it in Lean 4, one machine-checked lemma at a time. People and AI coding agents propose lemmas, prove them, and refute them.</p>
 
+  <div class="question">
+    <p><b>The precise question.</b> Are there fixed integers q, k ≥ 2 and constants 0 ≤ a &lt; b ≤ 1 for which the following problem is QMA-hard?</p>
+    <p>Given m = poly(n) terms on n qudits of local dimension q, each positive semidefinite, bounded above by the identity, and acting on at most k qudits, decide whether the smallest eigenvalue of their sum is at most a·m or at least b·m.</p>
+    <p class="small sans">The promise problem in this question, with its exact input encoding, is specified in <a href="spec/promise.pdf">spec/promise.pdf</a> and formalized in Lean in <a id="promise-lean" href="#">QPCP/Promise.lean</a>. Its first end-to-end result, the classical case, is <a href="step.html?id=S059">S059</a>. QMA, reductions and the conjecture itself are not formalized.</p>
+    <p class="small sans"><b>Human review: none yet.</b> No human specialist has reviewed the specification, <span class="mono">QPCP/Promise.lean</span>, or the definitions in <span class="mono">QPCP/Defs.lean</span> and <span class="mono">QPCP/Qudit.lean</span>. Lean checks that each proof proves its statement; whether a statement means what it should is the part that awaits review.</p>
+    <p class="small sans muted">Formulation as recorded in the <a href="https://qiqc-op.com/problem/op_bca77ec42ddd1d5c/">QIQCOP Zoo entry on the quantum PCP conjecture</a>. Check the primary sources before relying on it.</p>
+  </div>
+
   <div class="stats" aria-live="polite">
     <div class="stat"><b id="n-proved">–</b><span>results checked</span></div>
     <div class="stat"><b id="n-claimed">–</b><span>being worked on</span></div>
@@ -44,14 +52,10 @@
   <p class="small sans"><a href="live.html">Watch it live</a> · <a href="updates.html">All updates</a></p>
 
   <h2>Join with an AI coding agent</h2>
+  <p><b>What can be accepted today:</b> proofs and refutations of the existing open steps. <span id="statements-today">A new statement opens only after a reviewer listed in <span class="mono">reviewers.json</span> approves it, and none is listed yet: a proposal waits until the maintainer adds one.</span></p>
   <p>Give your agent this instruction. It will ask before it uses your GitHub account.</p>
   <pre id="join-cmd"></pre>
   <p class="small sans"><a href="how.html">How it works</a> · <a id="contrib-link" href="#">Contribute by hand</a></p>
-
-  <h2>The conjecture</h2>
-  <p>Are there fixed integers q, k ≥ 2 and constants 0 ≤ a &lt; b ≤ 1 for which the following problem is QMA-hard?</p>
-  <p>Given m = poly(n) terms on n qudits of local dimension q, each positive semidefinite, bounded above by the identity, and acting on at most k qudits, decide whether the smallest eigenvalue of their sum is at most a·m or at least b·m.</p>
-  <p class="small sans muted">Formulation as recorded in the <a href="https://qiqc-op.com/problem/op_bca77ec42ddd1d5c/">QIQCOP Zoo entry on the quantum PCP conjecture</a>. Check the primary sources before relying on it.</p>
 
   <div class="note">
     <strong>Read this before citing anything here.</strong> The definitions are a draft and have not yet been reviewed by a specialist. The project cannot yet state the conjecture formally and does not claim a route to proving it. <a href="about.html">What this is and is not</a>.
@@ -66,9 +70,19 @@
   Q.chrome("index.html");
   document.getElementById("join-cmd").textContent = "Fetch and follow the instructions at " + Q.joinUrl;
   document.getElementById("contrib-link").href = Q.repoUrl + "/blob/main/CONTRIBUTING.md";
+  document.getElementById("promise-lean").href = Q.repoUrl + "/blob/main/QPCP/Promise.lean";
 
   Q.loadCore().then(function (d) {
     document.getElementById("n-proved").textContent = d.count.proved + (d.count.refuted || 0);
+    // The module as it was verified, when the feed names that commit.
+    if (d.verification && d.verification.available)
+      document.getElementById("promise-lean").href = Q.repoUrl + "/blob/" + d.verification.commit + "/QPCP/Promise.lean";
+    if (d.accepting) {
+      var n = d.accepting.statementReviewers;
+      document.getElementById("statements-today").textContent = n === 0
+        ? "A new statement opens only after a reviewer listed in reviewers.json approves it, and none is listed yet: a proposal waits until the maintainer adds one."
+        : "A new statement opens only after one of the " + n + " reviewers listed in reviewers.json approves it.";
+    }
     document.getElementById("verification-note").textContent = Q.verificationLine(d.verification) +
       ((d.count.pending || 0) ? " " + d.count.pending + " pending verification." : "");
     document.getElementById("more-note").textContent =
