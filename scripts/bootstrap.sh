@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# First build. Pins the Lean toolchain to the one Mathlib's stable branch uses,
-# fetches Mathlib and its prebuilt cache, then builds definitions and statements.
+# Upgrade Lean and Mathlib (MAINTAINERS.md, "Upgrading Lean and Mathlib").
+# Not for reproducing the build: it REWRITES the pins. It sets lean-toolchain
+# to the one Mathlib's stable branch uses, runs `lake update` (rewriting
+# lake-manifest.json), fetches the cache and builds definitions and statements.
+# To reproduce the committed build instead, see "Reproducing the build".
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

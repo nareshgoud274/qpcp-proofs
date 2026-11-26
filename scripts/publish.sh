@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Publishes this folder as the public repository <you>/qpcp-proofs.
-# Run once, after scripts/bootstrap.sh has succeeded.
+# Run once, when the repository was first created; it is not run again
+# (MAINTAINERS.md, "Repository settings"). It needs the committed
+# lean-toolchain and lake-manifest.json.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 REPO_NAME="qpcp-proofs"
 
 if [ ! -f lake-manifest.json ] || [ ! -f lean-toolchain ]; then
-  echo "Run scripts/bootstrap.sh first: lean-toolchain or lake-manifest.json is missing." >&2
+  echo "lean-toolchain or lake-manifest.json is missing; both are committed (MAINTAINERS.md, \"Reproducing the build\")." >&2
   exit 1
 fi
 

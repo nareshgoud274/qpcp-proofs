@@ -3,7 +3,35 @@
 An open, machine-checked effort to formalize the foundations around the
 **quantum PCP conjecture** in Lean 4, built by people and AI coding agents.
 
-**Status: open for contribution.** 29 founding lemmas are proved. Anyone can now propose lemmas, prove them, or refute them; see the programs on the site. The definitions in `QPCP/Defs.lean` and `QPCP/Qudit.lean` are drafts that no specialist in Hamiltonian complexity has reviewed yet, and contributed statements are checked for meaning by a second contributor, not by an expert.
+**Status: open for contribution.** The current counts are on the
+[site](https://nareshgoud274.github.io/qpcp-proofs/). What can be accepted
+today: proofs and refutations of the existing open steps. A new statement
+opens only after a reviewer listed in `reviewers.json` approves it, and none
+is listed yet, so proposals wait.
+
+## The precise question
+
+Are there fixed integers q, k ≥ 2 and constants 0 ≤ a < b ≤ 1 for which the
+following problem is QMA-hard? Given m = poly(n) terms on n qudits of local
+dimension q, each positive semidefinite, bounded above by the identity, and
+acting on at most k qudits, decide whether the smallest eigenvalue of their
+sum is at most a·m or at least b·m.
+
+- The promise problem in this question, with its exact input encoding, is
+  specified in [`docs/spec/promise.pdf`](docs/spec/promise.pdf) (source
+  [`promise.tex`](docs/spec/promise.tex)) and formalized in
+  [`QPCP/Promise.lean`](QPCP/Promise.lean).
+- Its first end-to-end result, the classical case, is
+  [S059](https://nareshgoud274.github.io/qpcp-proofs/step.html?id=S059): the
+  page shows the statement and proof at the verified commit and how they were
+  checked.
+- QMA, reductions and the conjecture itself are not formalized.
+
+**Human review: none yet.** No human specialist has reviewed the
+specification, `QPCP/Promise.lean`, or the definitions in `QPCP/Defs.lean` and
+`QPCP/Qudit.lean`. Contributed statements are checked for meaning by a second
+contributor, not by an expert. Lean checks that each proof proves its
+statement; whether a statement means what it should is what awaits review.
 
 ## What this project is, and is not
 
@@ -20,11 +48,15 @@ An open, machine-checked effort to formalize the foundations around the
 
   ```
   Fetch and follow the instructions at
-  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/eb83a4576197e4dcdb481cfe8b25081b35234c00/JOIN.md
+  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/1a5869585645f5de2e73ba40b3ba9fc983404808/JOIN.md
   ```
 
   The link names a fixed commit, so every agent reads the same instructions;
   MAINTAINERS.md ("Updating JOIN.md") says how it is bumped.
+
+  The agent checks a practice result first, then works within a time or
+  spend limit you set, and asks before anything it publishes under your
+  account.
 
 - **By hand:** read `CONTRIBUTING.md`.
 
@@ -35,13 +67,14 @@ Progress and contributors: <https://nareshgoud274.github.io/qpcp-proofs/>
 | Path | Purpose |
 | --- | --- |
 | `QPCP/Defs.lean` | Core definitions (frozen for proof pull requests) |
+| `QPCP/Promise.lean` | The promise problem of `docs/spec/promise.pdf` |
 | `QPCP/Statements.lean` | The steps, as closed propositions `QPCP.Statement.Sxxx` |
 | `QPCP/Proofs/Sxxx.lean` | One accepted proof per step |
 | `QPCP/Lemmas/L<N>.lean` | Contributed statements |
 | `QPCP/Refutations/<ID>.lean` | Accepted refutations |
 | `programs.json` | The programs |
 | `scripts/automerge.py` | The merge rules |
-| `reviewers.json` | Statement reviewers whose approval opens a lemma (kept by the maintainer) |
+| `reviewers.json` | Statement reviewers whose approval opens a lemma (kept by the maintainer; empty for now) |
 | `scripts/sandbox_verify.py` | Sandboxed build and export check of contributions (new and merged) |
 | `scripts/contribution_check.sh` | One new contribution, through `sandbox_verify.py` |
 | `tests/` | Attack probes and honest fixtures the checker must reject or accept |

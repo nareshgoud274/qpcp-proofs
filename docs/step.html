@@ -93,8 +93,44 @@
     table.appendChild(row("Submitted by", s.who ? [Q.link("https://github.com/" + encodeURIComponent(s.who), s.who),
       el("span", { text: " " }), s.prUrl ? Q.link(s.prUrl, "pull request") : el("span")] : [el("span", { class: "muted", text: s.status === "open" || s.status === "claimed" ? "not yet submitted" : "unknown" })]));
     table.appendChild(row("Human review", [el("span", { text: s.reviewed ? "Reviewed by a human specialist." : "Not reviewed by a human." })]));
+    if (s.difficulty) table.appendChild(row("Difficulty", [el("span", { text: s.difficulty + " of 3" + (s.exercise ? " (a first-contribution exercise)" : "") })]));
+    function depList(list) {
+      if (!list || !list.length) return [el("span", { class: "muted", text: "none" })];
+      var kids = [];
+      list.forEach(function (d, i) {
+        var did = typeof d === "string" ? d : d.id;
+        if (i) kids.push(el("span", { text: ", " }));
+        kids.push(Q.link(Q.stepUrl(did), did));
+        if (typeof d !== "string") kids.push(el("span", { class: "muted", text: " (" + d.status + ")" }));
+      });
+      return kids;
+    }
+    table.appendChild(row("Uses", depList(s.deps)));
+    if (s.background && s.background.length) table.appendChild(row("Worth reading first", depList(s.background)));
+    if (s.claim) table.appendChild(row("Claimed by", [el("span", { text: s.claim.by.join(", ") +
+      (s.claim.lastActivity ? "; last activity " + Q.ago(s.claim.lastActivity) + " (a claim lapses after 24 hours without a comment)" : "") })]));
     table.appendChild(row("Discussion", [Q.link(s.url, "issue")]));
     box.appendChild(table);
+
+    // The submission card comes from the feed, built from the step's own issue (#117).
+    // Without the feed there is no card: the issue number of a founding step is not
+    // its id, and nobody should have to guess it.
+    if (s.status === "open" || s.status === "claimed") {
+      box.appendChild(el("h2", { text: "Submit a proof or a refutation" }));
+      if (s.submission) {
+        var card = code(s.submission.text);
+        var copy = el("button", { class: "sans small", type: "button", text: "Copy" });
+        copy.addEventListener("click", function () {
+          navigator.clipboard.writeText(s.submission.text).then(function () { copy.textContent = "Copied"; },
+            function () { copy.textContent = "Select the text to copy it"; });
+        });
+        box.appendChild(el("p", { class: "small sans muted", text: "Claim the issue first. Every value here is from the step's record; JOIN.md, section A, says how to use them." }));
+        box.appendChild(card);
+        box.appendChild(copy);
+      } else {
+        box.appendChild(el("p", { class: "small sans", text: "The submission card is unavailable while the feed cannot be read. Do not guess the issue number: open the step's issue and use its number." }));
+      }
+    }
 
     if (v) {
       box.appendChild(el("h2", { text: "Definitions it depends on" }));

@@ -16,6 +16,11 @@ GITHUB_REPOSITORY set. It combines:
     (credit, work in the checker) and releases (updates). These update
     immediately; only verdicts wait for verification.
 
+For agents (#117), each step also carries its difficulty, its prerequisites
+with their current states, its active claim, and, when it is open or claimed,
+a submission card made from its own issue number (submission_card); each open
+proposal carries a statement card (statement_card).
+
 Visitors' browsers fetch only the resulting file, so the site keeps working
 however many people are watching and however large the record grows.
 
@@ -110,6 +115,7 @@ def read_tree(root=ROOT):
         "steps": load("steps.json", []),
         "programs": load("programs.json", []),
         "retired": set(load("retired.json", [])),
+        "reviewers": load("reviewers.json", []),
         "barriers": load("barriers.json", []),
         "lemmas": lemmas,
         "proofs": git_files(root, "QPCP/Proofs"),
@@ -121,6 +127,57 @@ def read_tree(root=ROOT):
 
 def record_url(sha):
     return f"records/{sha}.json"
+
+
+def submission_card(sid, issue_number):
+    """What a volunteer copies to submit a proof or refutation of `sid`.
+
+    Built only from the step's id and the number of its own issue, never from a
+    guess: a founding step's issue number is unrelated to its id (S060 is #146).
+    """
+    if sid.startswith("S"):
+        statement, source, imp = f"QPCP.Statement.{sid}", "QPCP/Statements.lean", "QPCP.Statements"
+    else:
+        statement, source, imp = f"QPCP.Lemma.{sid}", f"QPCP/Lemmas/{sid}.lean", f"QPCP.Lemmas.{sid}"
+    closes = f"Closes #{issue_number}"
+    card = {"id": sid, "issue": issue_number, "statement": statement, "statementSource": source,
+            "import": imp, "closes": closes}
+    lines = [f"{sid}  (issue #{issue_number})",
+             f"statement   {statement}   in {source}",
+             f"import      import {imp}   (and any merged QPCP.Proofs.<ID> it uses)"]
+    for kind, folder, ns, verb, typ in (
+            ("proof", "QPCP/Proofs", "QPCP.Proof", "Prove", statement),
+            ("refutation", "QPCP/Refutations", "QPCP.Refutation", "Refute", f"¬ {statement}")):
+        k = {"path": f"{folder}/{sid}.lean", "declaration": f"{ns}.{sid}", "type": typ,
+             "build": f"lake build {folder.replace('/', '.')}.{sid}", "title": f"{verb} {sid}"}
+        card[kind] = k
+        lines += ["", f"{kind}:",
+                  f"  file      {k['path']}",
+                  f"  theorem   {k['declaration']} : {typ}",
+                  f"  build     {k['build']}",
+                  f"  PR title  {k['title']}",
+                  f"  PR body   {closes}"]
+    card["text"] = "\n".join(lines)
+    return card
+
+
+def statement_card(number):
+    """What a proposer copies to submit the statement for proposal issue #number.
+
+    The lemma id is the issue's number by definition, and the issue stays open
+    after the statement merges, for someone to prove or refute: no "Closes".
+    """
+    sid = f"L{number}"
+    card = {"id": sid, "issue": number, "path": f"QPCP/Lemmas/{sid}.lean", "declaration": f"QPCP.Lemma.{sid}",
+            "build": f"lake build QPCP.Lemmas.{sid}", "title": f"State {sid}", "body": f"Proposal #{number}"}
+    card["text"] = "\n".join([
+        f"{sid}  (proposal issue #{number}; it stays open: do not write Closes)",
+        f"  file      {card['path']}",
+        f"  def       {card['declaration']} : Prop",
+        f"  build     {card['build']}",
+        f"  PR title  {card['title']}",
+        f"  PR body   {card['body']}"])
+    return card
 
 
 def verified_results(record):
@@ -177,11 +234,14 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
         "id": s["id"], "title": s["title"], "section": s["section"], "program": s.get("program", ""),
         "retired": s.get("retired") is True, "replacedBy": s.get("replaced_by", ""),
         "exercise": s.get("exercise") is True,
+        "difficulty": s.get("difficulty"), "deps": list(s.get("deps", [])),
+        "background": list(s.get("background", [])),
     } for s in tree["steps"]]
     rows += [{
         "id": l["id"], "title": l["title"], "program": l["program"],
         "section": program_title.get(l["program"], l["program"] or "Other"),
         "retired": False, "replacedBy": "", "exercise": False,
+        "difficulty": None, "deps": [], "background": [],
     } for l in tree["lemmas"]]
 
     people = {}
@@ -197,7 +257,7 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
         sid = r["id"]
         issue = step_issue.get(sid) or (by_number.get(int(sid[1:])) if sid.startswith("L") else None)
         names = labels(issue) if issue else set()
-        status, who, when, pr, ver = "open", "", "", None, None
+        status, who, when, pr, ver, claim = "open", "", "", None, None, None
         # A verdict comes only from the record, and only for the bytes on main.
         for kind, done in (("proof", "proved"), ("refutation", "refuted")):
             it = verified.get((kind, sid))
@@ -218,6 +278,8 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
             status = "claimed"
             who = ", ".join(a["login"] for a in issue.get("assignees", []))
             when = issue.get("updated_at") or ""
+            # A claim lapses 24 hours after the issue's last comment (claim.yml).
+            claim = {"by": [a["login"] for a in issue.get("assignees", [])], "lastActivity": when}
         if status in ("proved", "refuted", "pending"):
             who = login(pr) if pr else ""
             when = (pr or {}).get("merged_at") or ""
@@ -240,7 +302,13 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
             "id": sid, "title": r["title"], "section": r["section"], "program": r["program"],
             "status": status, "who": who, "when": when, "disputed": disputed, "reviewed": reviewed,
             "replacedBy": r["replacedBy"], "statedBy": login(stated) if stated else "",
-            "exercise": r["exercise"],
+            "exercise": r["exercise"], "difficulty": r["difficulty"],
+            # Filled in below, once every step's status is known.
+            "deps": r["deps"], "background": r["background"],
+            "claim": claim,
+            # Only for work that can be submitted now, and only with the step's own issue.
+            "submission": submission_card(sid, issue["number"]) if issue and status in ("open", "claimed") else None,
+            "issue": issue["number"] if issue else None,
             "url": issue["html_url"] if issue else "",
             "prUrl": pr["html_url"] if pr else "",
             "verified": None if not ver else {
@@ -250,6 +318,13 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
                 "statementDigest": ver[1]["statementDigest"], "dependsOn": ver[1]["dependsOn"],
             },
         })
+
+    # Prerequisites with their current state (#117): `deps` are the steps a proof
+    # uses; `background` steps are worth reading first but a proof does not need them.
+    state_of = {s["id"]: s["status"] for s in out_steps}
+    for s in out_steps:
+        s["deps"] = [{"id": d, "status": state_of.get(d, "unknown")} for d in s["deps"]]
+        s["background"] = [{"id": d, "status": state_of.get(d, "unknown")} for d in s["background"]]
 
     out_programs = [{
         "id": p["id"], "title": p["title"], "open": p.get("open") is True,
@@ -272,6 +347,7 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
             "title": re.sub(r"^\s*proposal\s*:?\s*", "", i.get("title") or "", flags=re.I) or "(untitled)",
             "user": login(i), "created_at": i.get("created_at") or "", "url": i["html_url"],
             "prUrl": pr["html_url"] if pr else "",
+            "submission": statement_card(i["number"]),
         })
 
     # Mandates: lines of work held by an orchestrator. Outcome labels are set
@@ -349,6 +425,9 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
             "mathlib": (record or {}).get("evidence", {}).get("mathlib", ""),
             "mainCommit": tree.get("commit", ""), "current": bool(record) and rec_commit == tree.get("commit"),
         },
+        # What can be accepted today (#134): proofs and refutations of open steps
+        # always; a new statement only once a listed reviewer approves it.
+        "accepting": {"proofs": True, "refutations": True, "statementReviewers": len(tree.get("reviewers", []))},
         "openPullCount": len(open_pulls),
         "programs": out_programs,
         "steps": out_steps,

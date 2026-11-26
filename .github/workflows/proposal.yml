@@ -10,6 +10,8 @@ on:
 
 permissions:
   issues: write
+  # To read reviewers.json on main through the API (nothing is checked out).
+  contents: read
 
 jobs:
   label:
@@ -24,8 +26,17 @@ jobs:
         run: |
           set -euo pipefail
           gh issue edit "$NUMBER" --add-label proposal
+          # Say what can be accepted today (#134): reviewers.json on main,
+          # read through the API (nothing is checked out). Unreadable: say so.
+          n="$(gh api -H 'Accept: application/vnd.github.raw' "repos/$GH_REPO/contents/reviewers.json?ref=main" \
+                 | jq -r 'if type == "array" then length else "unknown" end')" || n=unknown
+          case "$n" in
+            0) today="No reviewer is listed in \`reviewers.json\` yet, so this statement cannot open today: it waits until the maintainer lists one. Approvals from other contributors are welcome but advisory." ;;
+            ''|unknown) today="The bot could not read \`reviewers.json\`; check it before relying on a quick review." ;;
+            *) today="$n reviewers are listed in \`reviewers.json\`; the statement opens once one of them, other than you, approves it. Other approvals are advisory." ;;
+          esac
           gh issue comment "$NUMBER" --body "This proposal's lemma id is **L${NUMBER}**.
 
-          Next, the proposer opens a pull request that adds exactly one file, \`QPCP/Lemmas/L${NUMBER}.lean\`, titled \`State L${NUMBER}\`. See \`JOIN.md\`, section \"Propose a lemma\".
+          **What can be accepted today.** Proofs and refutations of the existing open steps are accepted as soon as the checker accepts them and the maintainer merges them. A new statement also needs a statement reviewer: ${today} Weigh that before spending time or model budget on this statement.
 
-          Then a **different** contributor reviews that pull request: does the Lean statement say what the plain sentence says, and is it worth proving? Their approving review opens the lemma for proof or refutation."
+          **Submitting the statement.** The proposer opens a pull request that adds exactly one file, \`QPCP/Lemmas/L${NUMBER}.lean\`, titled \`State L${NUMBER}\`, with the body \`Proposal #${NUMBER}\`. Do not write \`Closes #${NUMBER}\`: this issue stays open after the statement merges, so that someone can prove or refute it. See \`JOIN.md\`, section \"Propose a lemma\"."
