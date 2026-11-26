@@ -75,7 +75,8 @@ A passing milestone therefore exercises the encoding, site ordering and decoder 
 $H=\mathrm{diag}(2,1)$ in basis order $(0,1)$ \emph{and} value exactly $1/3$. The value alone would not detect projecting onto
 satisfying assignments, which gives $\mathrm{diag}(1,2)$ and also $1/3$. It also catches deduplication and division in $\mathbb{N}$.\\
 \emph{Test B (which site each local coordinate names):} $n=2$, support tuple $(1,0)$, local projector onto the string $10$:
-the term must select exactly the global assignment $x_0=0,\ x_1=1$.
+the term must select exactly the global assignment $x_0=0,\ x_1=1$.\\
+\emph{Status:} the milestone is proved in Lean as \texttt{QPCP.Proof.S059}, merged at commit \href{https://github.com/nareshgoud274/qpcp-proofs/commit/b12baeae87e390bc4d4f5cd20d0b9936f9aeaf4b}{\texttt{b12baea}}, and Test A's value as \texttt{QPCP.Proof.S060}, merged at commit \href{https://github.com/nareshgoud274/qpcp-proofs/commit/2709da3ed86338be2cd0603255b021cff437b8bd}{\texttt{2709da3}}.
 
 \textbf{8. Status of open questions.}
 Settled in review 1: validity is a checked input condition; $0\le j\le k$ including the empty support (a $1\times1$
