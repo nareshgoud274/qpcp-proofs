@@ -17,7 +17,9 @@
         the verdicts, declarations, statement digests and dependencies. Refuses
         a partial run (--only, a missing shard, replay-only), a missing or extra
         contribution, a blob that differs from the tree, or any verdict other
-        than ACCEPTED.
+        than ACCEPTED. When a statement is one name (S057-S059), each item also
+        gets that definition's source and lines (`statementDefinition`), from
+        a maintainer-written module (QPCP/*.lean) at <commit>.
 
 A record is evidence about one commit. Its `evidence` part (everything except
 the run, the attempt and the time) must be identical on every run for that
@@ -148,6 +150,57 @@ def statement_location(repo, sha, kind, ident):
     raise Fault(f"no `def {ident}` in {path} at {sha[:7]}")
 
 
+ONE_NAME = re.compile(r"^def\s+[SL]\d+\s*:\s*Prop\s*:=\s*([A-Za-z_][\w.']*)\s*$")
+DECL_RE = re.compile(r"^\s*(?:@\[[^\]]*\]\s*)?(?:(?:noncomputable|private|protected)\s+)*"
+                     r"(?:def|abbrev|structure|inductive|class)\s+([A-Za-z_][\w.']*)")
+
+
+def source_block(lines, i):
+    """The declaration at line index i with its doc-comment and `--` notes: the
+    run of non-blank lines around it, not crossing a module doc `/-!`."""
+    start, end = i, i
+    while start > 0 and lines[start - 1].strip() and not lines[start - 1].lstrip().startswith("/-!"):
+        start -= 1
+    while end + 1 < len(lines) and lines[end + 1].strip():
+        end += 1
+    return start, end
+
+
+def statement_definition(repo, sha, spath, sline):
+    """When a statement is one name (`def S059 : Prop := QPCP.Promise.BoolGroundEnergy`),
+    that definition's source in a maintainer-written module (QPCP/*.lean), at <sha>.
+    None for any other statement, or a name no such module defines."""
+    lines = git(repo, "show", f"{sha}:{spath}").splitlines()
+    s, e = source_block(lines, sline - 1)
+    body = " ".join(l.strip() for l in lines[sline - 1:e + 1])
+    m = ONE_NAME.match(body)
+    if not m:
+        return None
+    name = m.group(1)
+    wanted = {name, f"QPCP.{name}", f"QPCP.Statement.{name}"}
+    files = [l.split("\t", 1)[1] for l in git(repo, "ls-tree", sha, "--", "QPCP/").splitlines()
+             if l.split()[1] == "blob" and l.endswith(".lean")]
+    for path in sorted(files):
+        text = git(repo, "show", f"{sha}:{path}").splitlines()
+        scopes = []  # namespace components per open scope; a section opens an empty one
+        for i, line in enumerate(text):
+            mm = re.match(r"^\s*(?:noncomputable\s+)?(namespace|section|end)\b\s*([\w.']*)", line)
+            if mm:
+                if mm.group(1) == "namespace":
+                    scopes.append(mm.group(2).split("."))
+                elif mm.group(1) == "section":
+                    scopes.append([])
+                elif scopes:
+                    scopes.pop()
+                continue
+            d = DECL_RE.match(line)
+            if d and ".".join([c for sc in scopes for c in sc] + [d.group(1)]) in wanted:
+                a, b = source_block(text, i)
+                return {"name": ".".join([c for sc in scopes for c in sc] + [d.group(1)]), "path": path,
+                        "line": a + 1, "endLine": b + 1, "source": "\n".join(text[a:b + 1])}
+    return None
+
+
 def validate_item(it):
     want = {"kind", "id", "declaration", "path", "blob", "verdict", "statementDigest", "dependsOn"}
     if not isinstance(it, dict) or set(it) != want:
@@ -205,7 +258,8 @@ def build_record(evidence_docs, repo, sha, run_url, attempt, now=None):
         if it["verdict"] != "ACCEPTED":
             raise Fault(f"{it['kind']} {it['id']} is {it['verdict']}; a record is made only of a run that accepted everything")
         spath, sline = statement_location(repo, sha, it["kind"], it["id"])
-        out.append({**it, "statementPath": spath, "statementLine": sline})
+        out.append({**it, "statementPath": spath, "statementLine": sline,
+                    "statementDefinition": statement_definition(repo, sha, spath, sline)})
     manifest = json.loads(git(repo, "show", f"{sha}:lake-manifest.json"))
     mathlib = next((p for p in manifest.get("packages", []) if p.get("name") == "mathlib"), None)
     if not mathlib or not HEX40.match(mathlib.get("rev", "")):

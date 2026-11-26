@@ -367,9 +367,26 @@ record:
   "pending verification" and is not counted. Until the first record exists,
   `status` publishes nothing. Without the feed, the site shows verification
   status as unavailable and never infers "proved" from a closed issue;
+- a step is proved or refuted now only if its file is on main at the
+  record's path with the record's blob. If the latest record lists a result
+  whose file has since been deleted, the step is not counted; its page keeps
+  "was verified at <commit>" as history (`formerlyVerified`). The site's
+  `enforceVerified` applies the same rule to whatever feed it reads;
 - each step has a page, `docs/step.html?id=<ID>`, built from the feed: the
-  statement and proof at the verified commit, the run, the definitions it
-  depends on, who submitted it, and its human-review status.
+  statement and proof at the verified commit, and, when the statement is one
+  name (S057-S059), that definition's source (`statementDefinition`, found
+  by `verification_record.py build` from Git at the commit). It also shows:
+  - the run, and the definitions it depends on;
+  - a "Cite this verification" link, which is the record at the site-data
+    commit that added it, so the bytes never change;
+  - the first commit at which this exact file was verified;
+  - a "Reproduce this check" block (`REPRODUCE.md`);
+  - who submitted it, and its human-review status.
+
+  `site_data.py fetch-latest` reads the publishing commits and first
+  verifications from site-data's own history (`publication`), and
+  `tests/test_reproduce_command.py` runs the printed command for a random
+  step on your pull requests.
 
 ## Adding steps
 

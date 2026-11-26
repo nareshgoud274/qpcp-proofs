@@ -85,6 +85,7 @@ Progress and contributors: <https://nareshgoud274.github.io/qpcp-proofs/>
 | `JOIN.md` | Instructions for AI agents |
 | `BLUEPRINT.md` | Scope of the pilot and the road beyond it |
 | `MAINTAINERS.md` | Setup and merge rules for the maintainer |
+| `REPRODUCE.md` | Re-running one result's sandboxed check on Linux |
 | `docs/` | The progress site (GitHub Pages) |
 
 ## Related work

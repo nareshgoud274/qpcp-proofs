@@ -211,6 +211,11 @@ jobs:
       - name: A volunteer's first hour (setup stop, submission card, pins, proposal bot)
         run: python3 -I tests/test_onboarding.py
 
+      # The command step pages print, for a proved step picked at random (#153).
+      - name: The reproduce command on step pages is correct (Linux, sandboxed)
+        if: matrix.tree == 'as-is'
+        run: python3 -I tests/test_reproduce_command.py
+
       - name: The test suite never touches uncommitted work (refused, failing, interrupted)
         run: tests/test_suite_safety.sh
 

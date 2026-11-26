@@ -85,14 +85,30 @@
       table.appendChild(row("Checks", [el("span", { text:
         "Compiled, replayed with leanchecker and exported in a sandbox; type-checked by an independent kernel (nanoda); " +
         "compared with the statement exported from the maintainer-written modules. Axioms allowed: propext, Classical.choice, Quot.sound." })]));
-      table.appendChild(row("Statement digest", [el("span", { class: "mono", text: v.statementDigest })]));
+      table.appendChild(row("Statement digest", [el("span", { class: "mono", text: v.statementDigest }),
+        el("div", { class: "muted", text: "It fingerprints the trusted reference exports this proof was compared against: one SHA-256 over their SHA-256 digests, in order. A different statement, or different definitions beneath it, gives a different digest." })]));
       table.appendChild(row("Record", [Q.link(Q.siteData + v.record, v.record)]));
+      table.appendChild(row("Cite this verification", v.citeUrl
+        ? [Q.link(v.citeUrl, "record " + v.commit.slice(0, 7) + " at site-data " + v.recordCommit.slice(0, 7)),
+           el("div", { class: "muted", text: "Pinned to the site-data commit that published it, so these bytes can never change." })]
+        : [el("span", { class: "muted", text: "The pinned link appears once the feed has been rebuilt with publication data." })]));
+      var f = v.firstVerified;
+      table.appendChild(row("First verified", f
+        ? [Q.link(Q.repoUrl + "/commit/" + f.commit, f.commit.slice(0, 12)),
+           el("span", { class: "muted", text: " · " + new Date(f.verifiedAt).toUTCString() + " · this exact file (Git blob " + f.blob.slice(0, 12) + ") · " }),
+           f.recordUrl ? Q.link(f.recordUrl, "that record") : el("span")]
+        : [el("span", { class: "muted", text: "not known yet" })]));
     } else if (s.status === "pending") {
       table.appendChild(row("Verification", [el("span", { text: "A file for this step is on main but no successful verification covers it yet." })]));
     }
     table.appendChild(row("Submitted by", s.who ? [Q.link("https://github.com/" + encodeURIComponent(s.who), s.who),
       el("span", { text: " " }), s.prUrl ? Q.link(s.prUrl, "pull request") : el("span")] : [el("span", { class: "muted", text: s.status === "open" || s.status === "claimed" ? "not yet submitted" : "unknown" })]));
     table.appendChild(row("Human review", [el("span", { text: s.reviewed ? "Reviewed by a human specialist." : "Not reviewed by a human." })]));
+    // Historical only: never a badge or a count.
+    var fv = s.formerlyVerified;
+    if (fv) table.appendChild(row("Earlier verification", [el("span", { text:
+      "Was verified at " + fv.commit.slice(0, 12) + " (" + fv.path + "), but that file is no longer on main, so the step is not " + fv.status + " now. " }),
+      Q.link(Q.siteData + fv.record, "record")]));
     if (s.difficulty) table.appendChild(row("Difficulty", [el("span", { text: s.difficulty + " of 3" + (s.exercise ? " (a first-contribution exercise)" : "") })]));
     function depList(list) {
       if (!list || !list.length) return [el("span", { class: "muted", text: "none" })];
@@ -133,15 +149,36 @@
     }
 
     if (v) {
-      box.appendChild(el("h2", { text: "Definitions it depends on" }));
-      box.appendChild(el("p", { class: "small sans muted", text: "The project's definitions in the statement's dependency closure, read from the reference it was judged against." }));
-      box.appendChild(code(v.dependsOn.join("\n") || "(none)"));
       var stmt = el("div", null, [el("p", { class: "muted small sans", text: "Loading…" })]);
       var proof = el("div", null, [el("p", { class: "muted small sans", text: "Loading…" })]);
       box.appendChild(el("h2", { text: "Statement" }));
       box.appendChild(stmt);
+      // A one-line statement names a definition: show the proposition itself.
+      var def = v.statementDefinition;
+      if (def) {
+        box.appendChild(el("p", { class: "small sans" }, [
+          el("span", { text: "The statement is the definition " }), el("span", { class: "mono", text: def.name }),
+          el("span", { text: ", at the verified commit: " }),
+          Q.link(blob(v.commit, def.path, def.line + "-L" + def.endLine), def.path + ", lines " + def.line + "–" + def.endLine)]));
+        box.appendChild(code(def.source));
+      }
+      box.appendChild(el("h2", { text: "Definitions it depends on" }));
+      box.appendChild(el("p", { class: "small sans muted", text: "The project's definitions in the statement's dependency closure, read from the reference it was judged against." }));
+      box.appendChild(code(v.dependsOn.join("\n") || "(none)"));
       box.appendChild(el("h2", { text: "Proof" }));
       box.appendChild(proof);
+      var rp = v.reproduce;
+      if (rp) {
+        box.appendChild(el("h2", { text: "Reproduce this check" }));
+        box.appendChild(el("p", { class: "small sans" }, [
+          el("span", { text: "On Linux, in a disposable machine set up as in " }),
+          Q.link(Q.repoUrl + "/blob/main/REPRODUCE.md", "REPRODUCE.md"),
+          el("span", { text: ", at the verified commit " }), el("span", { class: "mono", text: rp.commit.slice(0, 12) }),
+          el("span", { text: ":" })]));
+        box.appendChild(code("git checkout " + rp.commit + "\n" + rp.command));
+        box.appendChild(el("p", { class: "small sans" }, [el("span", { text: "Expected last line: " }),
+          el("span", { class: "mono", text: rp.expect })]));
+      }
       fetch(rawAt(v.commit, v.statementPath)).then(function (r) { return r.ok ? r.text() : Promise.reject(); })
         .then(function (t) { stmt.textContent = ""; stmt.appendChild(code(statementBlock(t, v.statementLine))); })
         .catch(function () { stmt.textContent = "Could not load the statement; follow the link above."; });

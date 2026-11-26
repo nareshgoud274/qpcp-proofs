@@ -9,7 +9,11 @@
         a fault (exit 2).
     site_data.py fetch-latest <remote> <out.json>
         Writes the record latest.json points at to <out.json>; if there is no
-        record yet, writes nothing and says so (exit 0).
+        record yet, writes nothing and says so (exit 0). It adds one key the
+        record file does not have, `publication`, read from the branch's own
+        history: the site-data commit that added each record (so a citation
+        can name bytes that never change), and for each result the earliest
+        record that accepted the same file (path and Git blob).
     site_data.py publish-status <status.json> <remote>
         Replaces status.json.
 
@@ -160,8 +164,36 @@ def cmd_fetch_latest(remote, out):
         record = json.loads(rec.read_text())
         if record["evidence"]["commit"] != pointer["commit"]:
             raise Fault("latest.json and its record name different commits")
-        Path(out).write_text(rec.read_text())
+        record["publication"] = publication(d, record)
+        Path(out).write_text(json.dumps(record, indent=1) + "\n")
         print(f"latest verified commit: {pointer['commit'][:7]} ({record['verifiedAt']})")
+
+
+def publication(d, latest_record):
+    """Where each record was published, and when each result's exact file was first verified."""
+    log = run("git", "log", "--reverse", "--diff-filter=A", "--format=%H", "--name-only", "--", "records/",
+              cwd=d).stdout.split("\n")
+    added, commit = [], None
+    for line in log:
+        if HEX40.match(line):
+            commit = line
+        elif re.fullmatch(r"records/[0-9a-f]{40}\.json", line) and commit:
+            added.append((line, commit))
+    record_commit = {path: c for path, c in added}
+    first = {}
+    for path, c in added:  # in publication order, oldest first
+        rec = json.loads((d / path).read_text())
+        for it in rec["evidence"]["items"]:
+            key = f"{it['kind']}:{it['id']}"
+            if it.get("verdict") == "ACCEPTED" and key not in first:
+                first[key] = []
+            if it.get("verdict") == "ACCEPTED" and not any(f["blob"] == it["blob"] and f["path"] == it["path"]
+                                                           for f in first[key]):
+                first[key].append({"path": it["path"], "blob": it["blob"], "commit": rec["evidence"]["commit"],
+                                   "verifiedAt": rec["verifiedAt"], "record": path, "recordCommit": c})
+    own = f"records/{latest_record['evidence']['commit']}.json"
+    return {"recordCommit": record_commit.get(own, ""),
+            "firstVerified": {k: v for k, v in sorted(first.items())}}
 
 
 def cmd_publish_status(status_path, remote):

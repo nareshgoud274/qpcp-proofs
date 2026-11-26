@@ -22,6 +22,16 @@ with neither it FAILS, it does not skip.
   6. The record builder refuses partial runs, missing shards, a missing or
      extra contribution, a blob that is not the file on main, and any verdict
      other than ACCEPTED.
+  8. A proof the record lists whose file has since been deleted from main is
+     not proved: the counts, overall and per program, drop by one, the step
+     keeps "was verified at <commit>" for its page only, and the browser's
+     guard takes any verdict without a verified file out of the counts.
+  9. Publication: fetch-latest names the site-data commit that added each
+     record and the first record that accepted each exact file; the feed's
+     citation link is pinned to that commit.
+ 10. S059's page data, built from the real tree: the definition its one-line
+     statement names (source and lines), the pinned citation, and the
+     reproduce command with its expected output.
   7. The workflows: the verify job is read-only; only the publish job can
      write, it needs the verify job, is limited to main and runs no Lean; the
      status workflow no longer re-creates or force-pushes site-data.
@@ -184,6 +194,31 @@ def main():
         check("1. a file whose bytes differ from the verified blob is pending, not proved",
               by_id(status(tampered, rec1))["S001"]["status"] == "pending")
 
+        # 8. The same record, after S001's file was deleted from main.
+        kept = status(tree_with({"S001": {"path": "QPCP/Proofs/S001.lean", "blob": b1}}), rec1)
+        gone = status(tree_with({}), rec1)
+        s1 = by_id(gone)["S001"]
+        check("8. a deleted proof is not proved, though the record lists it",
+              s1["status"] == "open" and s1["verified"] is None, s1)
+        check("8. the overall count drops by one when the file is deleted",
+              kept["count"]["proved"] == 1 and gone["count"]["proved"] == 0, (kept["count"], gone["count"]))
+        check("8. the program's count drops by one too",
+              kept["programs"][0]["count"]["proved"] == 1 and gone["programs"][0]["count"]["proved"] == 0,
+              (kept["programs"][0]["count"], gone["programs"][0]["count"]))
+        check("8. the step keeps 'was verified at <commit>' for its page, and nothing else",
+              s1["formerlyVerified"] == {"status": "proved", "commit": c1, "path": "QPCP/Proofs/S001.lean", "blob": b1,
+                                         "record": f"records/{c1}.json", "runUrl": rec1["run"]["url"]}
+              and by_id(kept)["S001"]["formerlyVerified"] is None, s1["formerlyVerified"])
+        check("8. no credit is given for the deleted proof", gone["people"] == {}, gone["people"])
+        ok = run_js("JSON.stringify(window.QPCP._enforceVerified(" + json.dumps(gone) + ").count)")
+        check("8. browser: the guard leaves a consistent feed's counts alone", ok == gone["count"], ok)
+        forged = json.loads(json.dumps(kept))
+        forged["steps"][0]["verified"] = None  # "proved", but no verified file named
+        js = run_js("JSON.stringify((function () { var d = window.QPCP._enforceVerified(" + json.dumps(forged) + ");"
+                    " return { s: d.steps[0].status, n: d.count.proved, p: d.programs[0].count.proved }; })())")
+        check("8. browser: a verdict without a verified file is shown as unknown and leaves both counts",
+              js == {"s": "unknown", "n": 0, "p": 0}, js)
+
         # Site-data stand-in: a bare repository, and main's history for ancestry.
         remote = base / "site-data.git"
         git(base, "init", "-q", "--bare", str(remote))
@@ -252,6 +287,31 @@ def main():
         log = subprocess.run(["git", "--git-dir", str(remote), "log", "--oneline", "site-data"],
                              capture_output=True, text=True).stdout.splitlines()
         check(f"4. site-data keeps its history ({len(log)} commits)", len(log) == 2, log)
+
+        # 9. Publication data, from site-data's own history.
+        def added_in(path):
+            return subprocess.run(["git", "--git-dir", str(remote), "log", "--diff-filter=A", "--format=%H",
+                                   "site-data", "--", path], capture_output=True, text=True).stdout.strip()
+        sd.cmd_fetch_latest(str(remote), str(out))
+        fetched = json.loads(out.read_text())
+        pub = fetched["publication"]
+        check("9. fetch-latest names the site-data commit that added the latest record",
+              pub["recordCommit"] == added_in(f"records/{c2}.json") != "", pub["recordCommit"])
+        check("9. S001's file is unchanged since c1: first verified at c1, in the commit that added c1's record",
+              [(f["commit"], f["recordCommit"]) for f in pub["firstVerified"]["proof:S001"]]
+              == [(c1, added_in(f"records/{c1}.json"))], pub["firstVerified"])
+        check("9. S002 first verified at c2", [f["commit"] for f in pub["firstVerified"]["proof:S002"]] == [c2])
+        check("9. the record's own bytes are unchanged by fetching", "publication" not in json.loads(remote_file(f"records/{c2}.json")))
+        b2 = blob_of(PROOF.format(i="S002").encode())
+        doc = bs.assemble(tree_with({"S001": {"path": "QPCP/Proofs/S001.lean", "blob": b1},
+                                     "S002": {"path": "QPCP/Proofs/S002.lean", "blob": b2}}, commit=c2),
+                          [], [], [], [], record=fetched, repo="o/r")
+        v1 = by_id(doc)["S001"]["verified"]
+        check("9. the citation link is pinned to the site-data commit that published the record",
+              v1["citeUrl"] == f"https://raw.githubusercontent.com/o/r/{pub['recordCommit']}/records/{c2}.json", v1["citeUrl"])
+        check("9. the page's first verification is c1, with its own pinned record",
+              v1["firstVerified"]["commit"] == c1 and v1["firstVerified"]["recordUrl"]
+              == f"https://raw.githubusercontent.com/o/r/{added_in(f'records/{c1}.json')}/records/{c1}.json", v1["firstVerified"])
         git(repo, "checkout", "-q", "-b", "side", c1)
         (repo / "x.txt").write_text("x")
         git(repo, "add", "-A")
@@ -298,6 +358,37 @@ def main():
             check(f"5. program counts sum to the total: {key} {total} = {doc['count'][key]}", total == doc["count"][key])
         check(f"5. with every proof on main verified, {doc['count']['proved']} proved and none pending",
               doc["count"]["proved"] == len(real["proofs"]) and doc["count"]["pending"] == 0)
+
+        # 10. S059's page data, from a record built from the real tree at HEAD.
+        head = git(ROOT, "rev-parse", "HEAD")
+        contribs = vr.tree_contributions(ROOT, head)
+        kinds = {v: k for k, v in vr.KINDS.items()}
+        items = [{"kind": kinds[str(Path(p).parent)], "id": Path(p).stem,
+                  "declaration": f"{vr.DECL_NS[kinds[str(Path(p).parent)]]}.{Path(p).stem}", "path": p, "blob": b,
+                  "verdict": "ACCEPTED", "statementDigest": "d" * 64, "dependsOn": []} for p, b in contribs.items()]
+        real_rec = vr.build_record([{"format": 1, "only": None, "shard": [1, 1], "replayOnly": False, "items": items}],
+                                   ROOT, head, "https://github.com/o/r/actions/runs/1/attempts/1", 1)
+        s059_blob = contribs["QPCP/Proofs/S059.lean"]
+        real_rec["publication"] = {"recordCommit": "b" * 40, "firstVerified": {"proof:S059": [
+            {"path": "QPCP/Proofs/S059.lean", "blob": s059_blob, "commit": head, "verifiedAt": "t",
+             "record": f"records/{head}.json", "recordCommit": "b" * 40}]}}
+        page = by_id(bs.assemble(bs.read_tree(ROOT), [], [], [], [], record=real_rec, repo="nareshgoud274/qpcp-proofs"))
+        v59 = page["S059"]["verified"] or {}
+        d59 = v59.get("statementDefinition") or {}
+        check("10. S059: the definition its statement names, with its source and lines",
+              d59.get("name") == "QPCP.Promise.BoolGroundEnergy" and d59.get("path") == "QPCP/Promise.lean"
+              and "def BoolGroundEnergy : Prop :=" in d59.get("source", "") and d59.get("line", 0) <= d59.get("endLine", -1), d59)
+        promise = (ROOT / "QPCP" / "Promise.lean").read_text().splitlines()
+        check("10. S059: those lines are the definition's source in QPCP/Promise.lean at the verified commit",
+              d59 and "\n".join(promise[d59["line"] - 1:d59["endLine"]]) == d59["source"])
+        check("10. S060, a statement written out in full, names no definition",
+              (page["S060"]["verified"] or {}).get("statementDefinition", "x") is None)
+        check("10. S059: the citation is pinned to the publishing site-data commit",
+              v59.get("citeUrl") == f"https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/{'b' * 40}/records/{head}.json", v59.get("citeUrl"))
+        check("10. S059: the reproduce command and its expected output",
+              v59.get("reproduce") == {"command": "python3 -I scripts/sandbox_verify.py record --only QPCP.Proofs.S059",
+                                       "expect": "ACCEPTED: proof S059", "commit": head}, v59.get("reproduce"))
+        check("10. S059: the first verification of this exact file", (v59.get("firstVerified") or {}).get("blob") == s059_blob)
 
         # 6. The builder refuses anything but a complete, accepted run at the commit.
         cases = [
