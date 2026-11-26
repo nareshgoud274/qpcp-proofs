@@ -179,7 +179,11 @@ def test_card():
           all(v in c["text"] for v in ("#146", "QPCP.Statement.S060", "QPCP/Proofs/S060.lean", "lake build QPCP.Proofs.S060",
                                        "Prove S060", "Closes #146", "Refute S060", "QPCP/Refutations/S060.lean")), c["text"])
     check("2. a claimed step still has a card, and its claim", s["S059"]["submission"]["issue"] == 145
-          and s["S059"]["claim"] == {"by": ["volunteer"], "lastActivity": "2026-11-26T00:00:00Z"}, s["S059"])
+          and s["S059"]["claim"] == {"by": ["volunteer"], "lastActivity": "2026-11-26T00:00:00Z", "lapsesAt": ""}, s["S059"])
+    issues[1]["holderLastComment"] = "2026-11-26T05:00:00Z"
+    held = {x["id"]: x for x in bs.assemble(tree, issues, [], [], [], record=None)["steps"]}["S059"]["claim"]
+    check("2. a claim's clock is the holder's own last comment, and it says when it lapses",
+          held == {"by": ["volunteer"], "lastActivity": "2026-11-26T05:00:00Z", "lapsesAt": "2026-11-27T05:00:00Z"}, held)
     l = s["L700"]["submission"]
     check("2. a lemma's card: its issue, QPCP.Lemma, the lemma's import",
           l and l["issue"] == 700 and l["statement"] == "QPCP.Lemma.L700" and l["import"] == "QPCP.Lemmas.L700"

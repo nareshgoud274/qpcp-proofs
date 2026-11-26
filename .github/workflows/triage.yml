@@ -1,0 +1,64 @@
+name: triage
+
+# Pull requests for steps that are already settled (scripts/triage.py).
+#
+#   - Opened (or updated): a proof of a step already proved on main is closed
+#     with "already settled by #n", naming the pull request whose commit added
+#     the file. The `check` workflow's gate also rejects it before any
+#     expensive step. A refutation, or a proof of a refuted step, is never
+#     closed: it is labelled needs-maintainer and flagged.
+#   - Merged: when a PROOF merges, other open pull requests that add a proof of
+#     the same step are closed as confirmed duplicates, naming the merged one.
+#     Refutations of that step are flagged, never closed. Nothing is closed
+#     merely because another pull request arrived first.
+#
+# pull_request_target runs main's version of this workflow with a write token;
+# it checks out only scripts/triage.py from main and never checks out, builds
+# or runs anything from the pull request. Pull request data reaches the script
+# only through the API, never through the shell.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, closed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Pull request number"
+        required: true
+      event:
+        description: "opened or merged"
+        required: true
+        default: opened
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  triage:
+    if: github.event_name == 'workflow_dispatch' || github.event.action != 'closed' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number || inputs.pr }}
+      WHAT: ${{ (github.event_name == 'workflow_dispatch' && inputs.event) || (github.event.action == 'closed' && 'merged') || 'opened' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          persist-credentials: false
+          sparse-checkout: scripts/triage.py
+          sparse-checkout-cone-mode: false
+
+      - name: Triage
+        run: |
+          set -euo pipefail
+          [[ "$PR" =~ ^[0-9]+$ ]] || { echo "bad pull request number"; exit 2; }
+          case "$WHAT" in
+            opened) python3 -I scripts/triage.py pr-opened "$PR" ;;
+            merged) python3 -I scripts/triage.py pr-merged "$PR" ;;
+            *) echo "bad event"; exit 2 ;;
+          esac

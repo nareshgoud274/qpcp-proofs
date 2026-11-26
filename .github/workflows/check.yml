@@ -175,8 +175,8 @@ jobs:
       - name: Credit and review links come from files, not titles (#115)
         run: python3 -I tests/test_credit.py
 
-      - name: Claim expiry
-        run: tests/test_expire_claims.sh
+      - name: Claims and settled-step pull requests (stand-in gh)
+        run: python3 -I tests/test_claims.py
 
       - name: Statement preview rules
         run: python3 -I tests/test_statement_preview.py

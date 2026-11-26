@@ -1,13 +1,20 @@
 name: claim
 
-# Handles `/claim` and `/release` comments on step issues. This workflow always
-# runs the version on main and never checks out or runs contributed code (it
-# checks out only scripts/expire_claims.sh from main).
+# Handles `/claim`, `/renew` and `/release` comments on step issues
+# (scripts/triage.py). This workflow always runs the version on main and never
+# checks out or runs contributed code: it checks out only scripts/triage.py and
+# steps.json from main.
 #
-# Claims lapse after 24 hours without activity. Lapsed claims are released
-# here, when someone tries to claim, rather than only by the hourly
-# expire-claims backstop: scheduled runs have been unreliable on this
-# repository.
+# A claim is a courtesy, not a lock (JOIN.md, "Claims"). Exercises need no
+# claim. One holder per step, one claimed step per account. There is no
+# concurrency group: GitHub keeps only one pending run per group, so a burst
+# of comments could drop a claim. Instead, two runs can write at the same time,
+# and each then re-reads and resolves conflicts the same way (the earliest
+# current /claim wins; the loser is reverted with a comment).
+#
+# A claim lapses 24 hours after the holder's own last comment on the issue;
+# lapsed claims are released here whenever someone comments a command, and by
+# the hourly expire-claims backstop (scheduled runs have been unreliable).
 
 on:
   issue_comment:
@@ -22,71 +29,26 @@ jobs:
     if: >-
       github.event.issue.pull_request == null &&
       github.event.issue.state == 'open' &&
-      contains(github.event.issue.labels.*.name, 'step')
+      contains(github.event.issue.labels.*.name, 'step') &&
+      (startsWith(github.event.comment.body, '/claim') ||
+       startsWith(github.event.comment.body, '/renew') ||
+       startsWith(github.event.comment.body, '/release'))
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       ISSUE: ${{ github.event.issue.number }}
-      ACTOR: ${{ github.event.comment.user.login }}
-      BODY: ${{ github.event.comment.body }}
       COMMENT_ID: ${{ github.event.comment.id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        if: startsWith(github.event.comment.body, '/claim')
         with:
+          ref: main
           persist-credentials: false
-          sparse-checkout: scripts/expire_claims.sh
+          sparse-checkout: |
+            scripts/triage.py
+            steps.json
           sparse-checkout-cone-mode: false
 
-      # Release lapsed claims first: anywhere (so a stale claim does not block
-      # the person claiming now), then on this issue, judged by its last comment
-      # before this one.
-      - name: Release lapsed claims
-        if: startsWith(github.event.comment.body, '/claim')
-        run: |
-          set -euo pipefail
-          bash scripts/expire_claims.sh sweep --except "$ISSUE"
-          bash scripts/expire_claims.sh target "$ISSUE" "$COMMENT_ID"
-
       - name: Handle the command
-        run: |
-          set -euo pipefail
-          cmd="$(printf '%s' "$BODY" | head -n 1 | tr -d '\r' | awk '{print $1}')"
-          # Read the claim state now, after any release above.
-          state="$(gh issue view "$ISSUE" --json labels,assignees \
-            --jq '[([.labels[].name] | index("claimed") != null), ([.assignees[].login] | join(" "))] | @tsv')"
-          IFS=$'\t' read -r IS_CLAIMED ASSIGNEES <<< "$state"
-
-          is_assignee=false
-          for a in $ASSIGNEES; do
-            if [ "$a" = "$ACTOR" ]; then is_assignee=true; fi
-          done
-
-          case "$cmd" in
-            /claim)
-              if [ "$IS_CLAIMED" = "true" ]; then
-                if [ "$is_assignee" = "true" ]; then
-                  gh issue comment "$ISSUE" --body "Claim renewed for @$ACTOR."
-                else
-                  gh issue comment "$ISSUE" --body "This step is already claimed. Pick another open step without the \`claimed\` label."
-                fi
-                exit 0
-              fi
-              held="$(gh issue list --state open --label claimed --assignee "$ACTOR" --json number --jq 'length')"
-              if [ "$held" != "0" ]; then
-                gh issue comment "$ISSUE" --body "@$ACTOR already holds a claimed step. Finish it or comment \`/release\` there first."
-                exit 0
-              fi
-              gh issue edit "$ISSUE" --add-label claimed --add-assignee "$ACTOR"
-              gh issue comment "$ISSUE" --body "Claimed by @$ACTOR. The claim lapses after 24 hours without a comment on this issue. Comment \`/release\` to give it up."
-              ;;
-            /release)
-              if [ "$is_assignee" = "true" ]; then
-                gh issue edit "$ISSUE" --remove-label claimed --remove-assignee "$ACTOR"
-                gh issue comment "$ISSUE" --body "Released by @$ACTOR. This step is open again."
-              fi
-              ;;
-            *)
-              ;;
-          esac
+        run: python3 -I scripts/triage.py claim-comment "$ISSUE" "$COMMENT_ID"
