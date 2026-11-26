@@ -211,6 +211,9 @@ jobs:
       - name: The site reports verified results only (records, pending, fallback, programs)
         run: python3 -I tests/test_verification_record.py
 
+      - name: The verification index (history, backfill, retries, order, one commit)
+        run: python3 -I tests/test_verification_index.py
+
       - name: A volunteer's first hour (setup stop, submission card, pins, proposal bot)
         run: python3 -I tests/test_onboarding.py
 

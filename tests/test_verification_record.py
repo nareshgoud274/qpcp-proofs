@@ -207,7 +207,7 @@ def main():
               (kept["programs"][0]["count"], gone["programs"][0]["count"]))
         check("8. the step keeps 'was verified at <commit>' for its page, and nothing else",
               s1["formerlyVerified"] == {"status": "proved", "commit": c1, "path": "QPCP/Proofs/S001.lean", "blob": b1,
-                                         "record": f"records/{c1}.json", "runUrl": rec1["run"]["url"]}
+                                         "record": f"records/{c1}.json", "recordUrl": ""}
               and by_id(kept)["S001"]["formerlyVerified"] is None, s1["formerlyVerified"])
         check("8. no credit is given for the deleted proof", gone["people"] == {}, gone["people"])
         ok = run_js("JSON.stringify(window.QPCP._enforceVerified(" + json.dumps(gone) + ").count)")
@@ -219,6 +219,29 @@ def main():
         check("8. browser: a verdict without a verified file is shown as unknown and leaves both counts",
               js == {"s": "unknown", "n": 0, "p": 0}, js)
 
+        # 1c (#155 review): the overall count, the program counts and each person's lists always agree.
+        agree = ("(function (d) { var proved = d.steps.filter(function (x) { return x.status === 'proved'; }).map(function (x) { return x.id; }).sort();"
+                 " var refuted = d.steps.filter(function (x) { return x.status === 'refuted'; }).map(function (x) { return x.id; }).sort();"
+                 " var people = { proved: [], refuted: [] }; Object.keys(d.people).forEach(function (w) {"
+                 "   people.proved = people.proved.concat(d.people[w].proved); people.refuted = people.refuted.concat(d.people[w].refuted); });"
+                 " var prog = { proved: 0, refuted: 0 }; d.programs.forEach(function (p) { prog.proved += p.count.proved || 0; prog.refuted += p.count.refuted || 0; });"
+                 " return { proved: proved, refuted: refuted, peopleProved: people.proved.sort(), peopleRefuted: people.refuted.sort(),"
+                 "   count: [d.count.proved, d.count.refuted], prog: [prog.proved, prog.refuted] }; })")
+        two = status(tree_with({"S001": {"path": "QPCP/Proofs/S001.lean", "blob": b1}}), rec1)
+        two["steps"][0]["who"] = "alice"
+        two["people"] = {"alice": {"proved": ["S001"], "refuted": [], "stated": []}}
+        cases = {"a consistent feed": kept, "the deletion's feed": gone, "a forged verdict": forged, "a forged credited verdict": two}
+        two_forged = json.loads(json.dumps(two))
+        two_forged["steps"][0]["verified"] = None
+        cases["a forged credited verdict, unverified"] = two_forged
+        for desc, feed in cases.items():
+            r = run_js("JSON.stringify(" + agree + "(window.QPCP._enforceVerified(" + json.dumps(feed) + ")))")
+            credited = [x["id"] for x in feed["steps"] if x.get("who")]
+            check(f"1c. browser, {desc}: counts, program counts and people's lists agree",
+                  r["count"] == [len(r["proved"]), len(r["refuted"])] == r["prog"]
+                  and r["peopleProved"] == [i for i in r["proved"] if i in credited]
+                  and r["peopleRefuted"] == [i for i in r["refuted"] if i in credited], r)
+
         # Site-data stand-in: a bare repository, and main's history for ancestry.
         remote = base / "site-data.git"
         git(base, "init", "-q", "--bare", str(remote))
@@ -226,7 +249,7 @@ def main():
         is_anc = sd.ancestry(repo)
 
         def publish(record):
-            return sd.write_with_retry(str(remote), lambda d: sd.apply_record(d, record, is_anc), "test")
+            return sd.write_with_retry(str(remote), lambda d: sd.apply_record(d, record, is_anc, sd.positions(repo)), "test")
 
         def remote_file(path):
             r = subprocess.run(["git", "--git-dir", str(remote), "show", f"site-data:{path}"],
@@ -297,10 +320,13 @@ def main():
         pub = fetched["publication"]
         check("9. fetch-latest names the site-data commit that added the latest record",
               pub["recordCommit"] == added_in(f"records/{c2}.json") != "", pub["recordCommit"])
-        check("9. S001's file is unchanged since c1: first verified at c1, in the commit that added c1's record",
-              [(f["commit"], f["recordCommit"]) for f in pub["firstVerified"]["proof:S001"]]
-              == [(c1, added_in(f"records/{c1}.json"))], pub["firstVerified"])
-        check("9. S002 first verified at c2", [f["commit"] for f in pub["firstVerified"]["proof:S002"]] == [c2])
+        e1 = pub["index"]["entries"][f"proof:S001:{b1}"]
+        check("9. S001's file is unchanged since c1: verified at c1 and c2, first c1, last c2",
+              [v["commit"] for v in e1["verified"]] == [c1, c2] and e1["first"]["commit"] == c1 and e1["last"]["commit"] == c2, e1)
+        check("9. fetch-latest names the site-data commit that added each record",
+              pub["recordCommits"][f"records/{c1}.json"] == added_in(f"records/{c1}.json"), pub["recordCommits"])
+        check("9. S002 first verified at c2",
+              pub["index"]["entries"][f"proof:S002:{blob_of(PROOF.format(i='S002').encode())}"]["first"]["commit"] == c2)
         check("9. the record's own bytes are unchanged by fetching", "publication" not in json.loads(remote_file(f"records/{c2}.json")))
         b2 = blob_of(PROOF.format(i="S002").encode())
         doc = bs.assemble(tree_with({"S001": {"path": "QPCP/Proofs/S001.lean", "blob": b1},
@@ -369,9 +395,11 @@ def main():
         real_rec = vr.build_record([{"format": 1, "only": None, "shard": [1, 1], "replayOnly": False, "items": items}],
                                    ROOT, head, "https://github.com/o/r/actions/runs/1/attempts/1", 1)
         s059_blob = contribs["QPCP/Proofs/S059.lean"]
-        real_rec["publication"] = {"recordCommit": "b" * 40, "firstVerified": {"proof:S059": [
-            {"path": "QPCP/Proofs/S059.lean", "blob": s059_blob, "commit": head, "verifiedAt": "t",
-             "record": f"records/{head}.json", "recordCommit": "b" * 40}]}}
+        first59 = {"commit": head, "position": 1, "record": f"records/{head}.json", "verifiedAt": "t"}
+        real_rec["publication"] = {"recordCommit": "b" * 40, "recordCommits": {f"records/{head}.json": "b" * 40},
+                                   "index": {"format": 1, "entries": {f"proof:S059:{s059_blob}": {
+                                       "kind": "proof", "id": "S059", "path": "QPCP/Proofs/S059.lean", "blob": s059_blob,
+                                       "verified": [first59], "first": first59, "last": first59}}}}
         page = by_id(bs.assemble(bs.read_tree(ROOT), [], [], [], [], record=real_rec, repo="nareshgoud274/qpcp-proofs"))
         v59 = page["S059"]["verified"] or {}
         d59 = v59.get("statementDefinition") or {}
@@ -390,27 +418,66 @@ def main():
                                        "expect": "ACCEPTED: proof S059", "commit": head}, v59.get("reproduce"))
         check("10. S059: the first verification of this exact file", (v59.get("firstVerified") or {}).get("blob") == s059_blob)
 
-        # 10. The definition finder on synthetic modules: namespaces, sections, and no partial source.
+        # 10. The definition finder on synthetic modules (#155 review): comments are never code,
+        # names are matched in full, and zero or several matches show no source.
         drepo = base / "defs"
         (drepo / "QPCP").mkdir(parents=True)
+        stmts = {"S001": "QPCP.Foo.Whole", "S002": "QPCP.Foo.Gappy", "S003": "QPCP.Foo.Missing",
+                 "S004": "QPCP.Foo.Shared", "S005": "QPCP.Bar.Shared", "S006": "QPCP.Foo.Twice",
+                 "S007": "QPCP.Foo.Nested"}
         (drepo / "QPCP" / "Statements.lean").write_text(
-            "namespace QPCP.Statement\n\n/-- A. -/\ndef S001 : Prop := QPCP.Foo.Whole\n\n"
-            "def S002 : Prop := QPCP.Foo.Gappy\n\ndef S003 : Prop := QPCP.Foo.Missing\n\nend QPCP.Statement\n")
+            "namespace QPCP.Statement\n\n/-\ndef S001 : Prop := QPCP.Foo.Decoy\n-/\n\n"
+            + "".join(f"def {i} : Prop := {n}\n\n" for i, n in stmts.items()) + "end QPCP.Statement\n")
         (drepo / "QPCP" / "Foo.lean").write_text(
             "namespace QPCP.Foo\n\nsection Inner\nend Inner\n\nnoncomputable section\n\n"
-            "-- note\n/-- Whole. -/\ndef Whole : Prop :=\n  True\n\n"
-            "def Gappy : Prop :=\n  True ∧\n\n  True\n\nend\n\nend QPCP.Foo\n")
+            # A commented-out def directly above the real one, then the real one with its doc-comment.
+            "-- note\n-- def Whole : Prop := False\n/-\nAn old example:\ndef Whole : Prop := False\n-/\n"
+            "/-- Whole. -/\ndef Whole : Prop :=\n  True\n\n"
+            "def Gappy : Prop :=\n  True ∧\n\n  True\n\n"
+            # A nested block comment whose inner close must not end the outer one.
+            "/- outer /- inner -/\ndef Nested : Prop := False\n-/\ndef Nested : Prop :=\n  True\n\n"
+            "def Shared : Prop := True\n\n"
+            "def Twice : Prop := True\n\nend\n\nend QPCP.Foo\n")
+        (drepo / "QPCP" / "Bar.lean").write_text(
+            "namespace QPCP.Bar\n\n/-- The other Shared. -/\ndef Shared : Prop := False\n\nend QPCP.Bar\n\n"
+            "namespace QPCP.Foo\n\ndef Twice : Prop := False\n\nend QPCP.Foo\n")
         git(drepo, "init", "-q", "-b", "main")
         git(drepo, "add", "-A")
         git(drepo, "commit", "-q", "-m", "d")
         dsha = git(drepo, "rev-parse", "HEAD")
-        found = {i: vr.statement_definition(drepo, dsha, *vr.statement_location(drepo, dsha, "proof", i))
-                 for i in ("S001", "S002", "S003")}
-        check("10. a one-name statement resolves through namespaces and sections, with its notes and doc-comment",
-              found["S001"] and found["S001"]["name"] == "QPCP.Foo.Whole"
-              and found["S001"]["source"] == "-- note\n/-- Whole. -/\ndef Whole : Prop :=\n  True", found["S001"])
-        check("10. a definition with a blank line inside is not shown in part", found["S002"] is None, found["S002"])
-        check("10. a name no maintainer-written module defines gives nothing", found["S003"] is None, found["S003"])
+        found = {i: vr.statement_definition(drepo, dsha, *vr.statement_location(drepo, dsha, "proof", i)) for i in stmts}
+        check("10. the statement's own line is the real `def S001`, not the commented-out one",
+              vr.statement_location(drepo, dsha, "proof", "S001")[1] == 7, vr.statement_location(drepo, dsha, "proof", "S001"))
+        check("10. a commented-out def above the real one is never shown: the real one, with its doc-comment",
+              found["S001"]["source"] == "/-- Whole. -/\ndef Whole : Prop :=\n  True" and "False" not in found["S001"]["source"]
+              and found["S001"]["located"] == "text", found["S001"])
+        check("10. a definition with a blank line inside is shown whole",
+              found["S002"]["source"] == "def Gappy : Prop :=\n  True ∧\n\n  True", found["S002"])
+        check("10. a nested block comment hides the def inside it", found["S007"]["source"] == "def Nested : Prop :=\n  True",
+              found["S007"])
+        check("10. the same short name in two namespaces: each statement gets its own",
+              found["S004"]["source"] == "def Shared : Prop := True" and found["S004"]["path"] == "QPCP/Foo.lean"
+              and found["S005"]["source"] == "/-- The other Shared. -/\ndef Shared : Prop := False"
+              and found["S005"]["path"] == "QPCP/Bar.lean", (found["S004"], found["S005"]))
+        check("10. the same full name declared twice is ambiguous: no source, both files to look at",
+              found["S006"]["source"] is None and found["S006"]["located"] == "ambiguous"
+              and found["S006"]["files"] == ["QPCP/Bar.lean", "QPCP/Foo.lean"], found["S006"])
+        check("10. a name no maintainer-written module defines: not found, no source",
+              found["S003"]["source"] is None and found["S003"]["located"] == "not found", found["S003"])
+        loc = {"name": "QPCP.Foo.Whole", "module": "QPCP.Foo", "line": 14, "endLine": 16}
+        sp, sl = vr.statement_location(drepo, dsha, "proof", "S001")
+        lean = vr.statement_definition(drepo, dsha, sp, sl, loc, True)
+        check("10. a location Lean reported is preferred and shown exactly",
+              lean["located"] == "lean" and lean["source"] == "/-- Whole. -/\ndef Whole : Prop :=\n  True", lean)
+        bad = vr.statement_definition(drepo, dsha, sp, sl, dict(loc, line=9, endLine=12), True)
+        check("10. a Lean location that does not hold a declaration of that name shows nothing, not a guess",
+              bad["source"] is None and bad["located"] == "not found", bad)
+        check("10. when Lean ran and reported no location, the statement is not one name",
+              vr.statement_definition(drepo, dsha, sp, sl, None, True) is None)
+        for desc, odd in (("a module outside QPCP/*.lean", dict(loc, module="Mathlib")),
+                          ("a line past the end", dict(loc, endLine=999))):
+            got = vr.statement_definition(drepo, dsha, sp, sl, odd, True)
+            check(f"10. a Lean location naming {desc} shows nothing", got["source"] is None, got)
 
         # 6. The builder refuses anything but a complete, accepted run at the commit.
         cases = [

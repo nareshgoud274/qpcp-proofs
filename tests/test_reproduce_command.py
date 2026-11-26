@@ -63,6 +63,26 @@ def main(argv):
     print("\n".join("  | " + l for l in lines[-5:]))
     check(f"the command exits 0 for {sid}", r.returncode == 0, (r.returncode, r.stdout[-800:], r.stderr[-800:]))
     check(f"its last line is exactly {rp['expect']!r}", last == rp["expect"], last)
+    # The evidence carries the location Lean reports for a one-name statement (#155 review, 1a).
+    import json
+    ev = json.loads((work / "result" / "record-items.json").read_text())
+    loc = next((i.get("statementDefinition") for i in ev["items"] if i["id"] == sid), None)
+    check("the run's Lean location query ran", ev.get("locatedByLean") is True, ev.get("locatedByLean"))
+    vspec = importlib.util.spec_from_file_location("verification_record", ROOT / "scripts" / "verification_record.py")
+    vr = importlib.util.module_from_spec(vspec)
+    vspec.loader.exec_module(vr)
+    head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    spath, sline = vr.statement_location(ROOT, head, "proof", sid)
+    shown = vr.statement_definition(ROOT, head, spath, sline, loc, True)
+    one_name = vr.ONE_NAME.match(" ".join(l.strip() for l in vr.strip_comments(
+        subprocess.run(["git", "-C", str(ROOT), "show", f"{head}:{spath}"], capture_output=True, text=True).stdout
+    ).split("\n")[sline - 1:sline]))
+    if one_name:
+        check(f"{sid} is one name: Lean located {one_name.group(1)} and its source is shown from those lines",
+              loc and loc["name"] == one_name.group(1) and shown and shown["located"] == "lean"
+              and f"def {one_name.group(1).rsplit('.', 1)[-1]}" in shown["source"], (loc, shown))
+    else:
+        check(f"{sid} is not one name: no location and nothing shown", loc is None and shown is None, (loc, shown))
     shutil.rmtree(work.parent, ignore_errors=True)
     print(f"{'FAILED' if fails else 'passed'}: {fails} failure(s)")
     return 1 if fails else 0

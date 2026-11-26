@@ -757,6 +757,53 @@ class Verifier:
 
 # ------------------------------------------------------------------ commands
 
+# Asked of the maintainer-written modules only, after their trusted build, like
+# the reference exports: no contributed module is imported, so no contributed
+# code runs. For each founding statement whose value is a single constant (S057:
+# `def S057 : Prop := QPCP.Promise.ValidDecidable`), Lean reports that constant,
+# its module and its declaration range (doc-comment included).
+LOCATE_LEAN = """import QPCP.Statements
+open Lean
+
+#eval show CoreM Unit from do
+  let env ← getEnv
+  for (n, ci) in env.constants.toList do
+    if (`QPCP.Statement).isPrefixOf n then
+      if let some (.const c _) := ci.value? then
+        if let some i := env.getModuleIdxFor? c then
+          if let some r ← findDeclarationRanges? c then
+            IO.println s!"LOC\t{n}\t{c}\t{env.header.moduleNames[i.toNat]!}\t{r.range.pos.line}\t{r.range.endPos.line}"
+"""
+LOC_LINE = re.compile(r"^LOC\t(QPCP\.Statement\.S\d{3,6})\t(QPCP(?:\.[A-Za-z_][\w']*)+)\t(QPCP\.[A-Za-z_]\w*)\t(\d+)\t(\d+)$")
+
+
+def statement_locations(env):
+    """{statement constant: {name, module, line, endLine}} as Lean reports them.
+
+    Best effort: if the query fails, it says so on stderr and returns None, and
+    scripts/verification_record.py falls back to its strict text search (which
+    shows nothing rather than a guess)."""
+    d = env.work / "query"
+    d.mkdir(exist_ok=True)
+    (d / "locate.lean").write_text(LOCATE_LEAN)
+    try:
+        r = env.lake("env", "lean", str(d / "locate.lean"), timeout=1800)
+    except subprocess.TimeoutExpired:
+        print("statement locations: the query timed out", file=sys.stderr)
+        return None
+    if r.returncode != 0:
+        print("statement locations: the query failed: " + log_safe((r.stdout + r.stderr)[-300:]), file=sys.stderr)
+        return None
+    out = {}
+    for line in r.stdout.splitlines():
+        m = LOC_LINE.match(line.strip())
+        if m and int(m.group(4)) <= int(m.group(5)):
+            out[m.group(1)] = {"name": m.group(2), "module": m.group(3),
+                               "line": int(m.group(4)), "endLine": int(m.group(5))}
+    print(f"statement locations: {len(out)} one-name statements located by Lean", file=sys.stderr)
+    return out
+
+
 def replay_trusted(env):
     for m in TRUSTED_MODULES:
         r = env.lake("env", "leanchecker", m, timeout=1800)
@@ -816,11 +863,11 @@ def cmd_record(env, opts):
     v = Verifier(env, mods, opts["jobs"])
     v.compile_all(needed)
     v.verify_all(needed, opts["replay_only"])
-    write_evidence(env, opts, selected, mods)
+    write_evidence(env, opts, selected, mods, statement_locations(env))
     return report(selected, mods, opts["replay_only"])
 
 
-def write_evidence(env, opts, selected, mods):
+def write_evidence(env, opts, selected, mods, locations=None):
     """result/record-items.json: what this run judged, for scripts/verification_record.py.
 
     Host-held state only: the bytes each module was built from (its Git blob id
@@ -843,11 +890,15 @@ def write_evidence(env, opts, selected, mods):
             "blob": hashlib.sha1(b"blob %d\0" % len(m.data) + m.data).hexdigest(),
             "verdict": m.verdict or "NOT CHECKED", "reason": m.reason,
             "references": [{"path": str(r), "sha256": sha256(r)} for r in m.references],
+            # Where Lean says the definition a one-name statement refers to is (founding steps only).
+            "statementDefinition": (locations or {}).get(f"QPCP.Statement.{m.ident}") if m.ident.startswith("S") else None,
         })
     (env.work / "result" / "record-items.json").write_text(json.dumps({
         "only": sorted(opts["only"]) if opts["only"] else None,
         "shard": list(opts["shard"]) if opts["shard"] else None,
         "replayOnly": bool(opts["replay_only"]),
+        # True only if Lean's location query ran; then a missing location means "not one name".
+        "locatedByLean": locations is not None,
         "items": items,
     }, indent=1))
 

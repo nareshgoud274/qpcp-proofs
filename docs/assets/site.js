@@ -120,7 +120,8 @@
   /* The same rule as build_status.py, applied again to whatever feed arrives: a
      step is proved or refuted now only if the feed names the verified file on
      main (`verified`). Anything else is shown as "unknown" and taken out of the
-     counts, overall and per program, so no page can show a verdict without it. */
+     counts, overall and per program, and out of that person's proved and refuted
+     lists, so no page can show a verdict without it. */
   function enforceVerified(s) {
     var byProgram = {};
     (s.programs || []).forEach(function (p) { byProgram[p.id] = p; });
@@ -135,6 +136,11 @@
           p.count[was] = Math.max(0, (p.count[was] || 0) - 1);
           p.count.unknown = (p.count.unknown || 0) + 1;
         }
+        // ...and from every person's list, so the contributors page agrees with the counts.
+        Object.keys(s.people || {}).forEach(function (who) {
+          var lists = s.people[who];
+          if (lists && Array.isArray(lists[was])) lists[was] = lists[was].filter(function (id) { return id !== st.id; });
+        });
       }
     });
     return s;

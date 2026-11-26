@@ -63,7 +63,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          python3 -I scripts/site_data.py fetch-latest "github:$REPO" "$RUNNER_TEMP/record.json"
+          python3 -I scripts/site_data.py fetch-latest "github:$REPO" "$RUNNER_TEMP/record.json" .
           if [ -f "$RUNNER_TEMP/record.json" ]; then echo "found=true" >> "$GITHUB_OUTPUT"; fi
           # The last published feed, only so that credits already found are not looked up again.
           curl -sSf "https://raw.githubusercontent.com/$REPO/site-data/status.json" -o "$RUNNER_TEMP/previous.json" \

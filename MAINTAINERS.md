@@ -367,6 +367,17 @@ record:
   "pending verification" and is not counted. Until the first record exists,
   `status` publishes nothing. Without the feed, the site shows verification
   status as unavailable and never infers "proved" from a closed issue;
+- `index.json` on site-data lists, for each exact file (kind, id, Git blob),
+  every commit at which a record accepted it, ordered by position on main
+  (`git rev-list --count`), with the first and the last, and every record it
+  covers. `publish-record` writes it in the same commit as the record and
+  `latest.json`; a rejected push redoes the whole update from the new tip.
+  Publishing a record twice changes nothing, and publishing an older commit's
+  record later still orders it by position. The first publication after this
+  was added built the index from every record already there.
+  `site_data.py check-index github:<owner>/<repo> .` checks that it equals the
+  index rebuilt from the records. "First verified" and "formerly verified"
+  are read from it, so a deleted proof keeps its history after later records;
 - a step is proved or refuted now only if its file is on main at the
   record's path with the record's blob. If the latest record lists a result
   whose file has since been deleted, the step is not counted; its page keeps
@@ -374,8 +385,14 @@ record:
   `enforceVerified` applies the same rule to whatever feed it reads;
 - each step has a page, `docs/step.html?id=<ID>`, built from the feed: the
   statement and proof at the verified commit, and, when the statement is one
-  name (S057-S059), that definition's source (`statementDefinition`, found
-  by `verification_record.py build` from Git at the commit). It also shows:
+  name (S057-S059), that definition's source (`statementDefinition`). Lean
+  reports where the definition is: after the trusted build, `sandbox_verify.py
+  record` asks the maintainer-written modules (no contributed code) for each
+  one-name statement's constant and declaration range, and the evidence
+  carries it. The publish job takes the source text from Git at the commit
+  and checks it against that location. Without Lean's answer it falls back to a
+  text search with comments removed, which accepts exactly one match. Zero or
+  several matches show links to the files, never a guess. It also shows:
   - the run, and the definitions it depends on;
   - a "Cite this verification" link, which is the record at the site-data
     commit that added it, so the bytes never change;

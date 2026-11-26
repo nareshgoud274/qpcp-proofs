@@ -109,8 +109,8 @@
     // Historical only: never a badge or a count.
     var fv = s.formerlyVerified;
     if (fv) table.appendChild(row("Earlier verification", [el("span", { text:
-      "Was verified at " + fv.commit.slice(0, 12) + " (" + fv.path + "), but that file is no longer on main, so the step is not " + fv.status + " now. " }),
-      Q.link(Q.siteData + fv.record, "record")]));
+      "Was verified at " + fv.commit.slice(0, 12) + " (" + fv.path + ", Git blob " + fv.blob.slice(0, 12) + "), but that exact file is no longer on main, so the step is not " + fv.status + " now. " }),
+      fv.recordUrl ? Q.link(fv.recordUrl, "pinned record") : Q.link(Q.siteData + fv.record, "record")]));
     if (s.difficulty) table.appendChild(row("Difficulty", [el("span", { text: s.difficulty + " of 3" + (s.exercise ? " (a first-contribution exercise)" : "") })]));
     function depList(list) {
       if (!list || !list.length) return [el("span", { class: "muted", text: "none" })];
@@ -157,7 +157,14 @@
       box.appendChild(stmt);
       // A one-line statement names a definition: show the proposition itself.
       var def = v.statementDefinition;
-      if (def) {
+      if (def && !def.source) {
+        // Not located exactly (none, or several, declarations of that name): links, never a guess.
+        var where = (def.files && def.files.length ? def.files : ["QPCP"]).map(function (f) { return Q.link(blob(v.commit, f), f); });
+        var kids = [el("span", { text: "The statement is the definition " }), el("span", { class: "mono", text: def.name }),
+          el("span", { text: ". Its source could not be located exactly at the verified commit (" + def.located + "); see " })];
+        where.forEach(function (w, i) { if (i) kids.push(el("span", { text: ", " })); kids.push(w); });
+        box.appendChild(el("p", { class: "small sans" }, kids));
+      } else if (def) {
         box.appendChild(el("p", { class: "small sans" }, [
           el("span", { text: "The statement is the definition " }), el("span", { class: "mono", text: def.name }),
           el("span", { text: ", at the verified commit: " }),

@@ -299,11 +299,27 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
     def raw_at(commit, path):
         return f"https://raw.githubusercontent.com/{repo}/{commit}/{path}" if repo and commit else ""
 
+    # index.json on site-data (site_data.py): for each exact file (kind, id, Git blob),
+    # every commit at which it was verified, ordered by position on main.
+    index = (pub.get("index") or {}).get("entries", {})
+    rec_commits = pub.get("recordCommits", {})
+
+    def pinned(v):
+        c = rec_commits.get(v["record"], "")
+        return {"commit": v["commit"], "verifiedAt": v["verifiedAt"], "record": v["record"],
+                "recordCommit": c, "recordUrl": raw_at(c, v["record"])}
+
     def first_verified(kind, it):
-        for f in pub.get("firstVerified", {}).get(f"{kind}:{it['id']}", []):
-            if (f["path"], f["blob"]) == (it["path"], it["blob"]):
-                return dict(f, recordUrl=raw_at(f["recordCommit"], f["record"]))
-        return None
+        e = index.get(f"{kind}:{it['id']}:{it['blob']}")
+        return dict(pinned(e["first"]), path=e["path"], blob=e["blob"]) if e else None
+
+    def history(kind, sid):
+        """The latest verification, by position on main, of any file for (kind, sid)."""
+        found = [e for e in index.values() if e["kind"] == kind and e["id"] == sid]
+        if not found:
+            return None
+        e = max(found, key=lambda e: e["last"]["position"])
+        return dict(pinned(e["last"]), path=e["path"], blob=e["blob"], first=pinned(e["first"]))
     step_issue, reports, proposals, mandates, by_number = {}, [], [], [], {}
     for i in issues:
         if "pull_request" in i:
@@ -372,9 +388,18 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
             on_main = tree["proofs" if kind == "proof" else "refutations"].get(sid)
             if it and on_main is not None and (on_main["path"], on_main["blob"]) == (it["path"], it["blob"]):
                 ver = (done, it, kind)
-            elif it and on_main is None:
+            elif it and on_main is None and not index:
+                # No index yet: only the latest record can say it was verified.
                 former = {"status": done, "commit": rec_commit, "path": it["path"], "blob": it["blob"],
-                          "record": record_url(rec_commit), "runUrl": rec_run.get("url", "")}
+                          "record": record_url(rec_commit), "recordUrl": raw_at(rec_pub, record_url(rec_commit))}
+        if not ver and index:
+            # From the index, so it survives later records that no longer list the file (#155 review).
+            for kind, done in (("proof", "proved"), ("refutation", "refuted")):
+                h = history(kind, sid)
+                if h and not (former and former["status"] != done):
+                    former = {"status": done, "commit": h["commit"], "path": h["path"], "blob": h["blob"],
+                              "record": h["record"], "recordUrl": h["recordUrl"], "verifiedAt": h["verifiedAt"],
+                              "first": h["first"]}
         on_main = tree["proofs"].get(sid) or tree["refutations"].get(sid)
         if r["retired"] or sid in tree["retired"] or "retired" in names:
             status = "retired"
