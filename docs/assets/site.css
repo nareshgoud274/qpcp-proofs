@@ -61,6 +61,8 @@ p { margin: 0 0 14px; max-width: 66ch; }
 .cell.refuted { background: var(--bad); border-color: var(--bad); color: var(--bg); }
 .cell.disputed { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--bad); }
 .cell.retired { border-style: dotted; color: var(--muted); text-decoration: line-through; opacity: 0.7; }
+.cell.pending { border-color: var(--ok); color: var(--ok); border-style: dashed; background: repeating-linear-gradient(45deg, transparent 0 4px, color-mix(in srgb, var(--ok) 18%, transparent) 4px 8px); }
+.cell.unknown { border-style: dotted; color: var(--muted); }
 .cell:hover, .cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.78rem; color: var(--muted); margin: 12px 0 0; }
 .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; border: 1px solid var(--idle); }
@@ -69,6 +71,8 @@ p { margin: 0 0 14px; max-width: 66ch; }
 .legend i.refuted { background: var(--bad); border-color: var(--bad); }
 .legend i.disputed { box-shadow: 0 0 0 2px var(--bad); border-color: transparent; }
 .legend i.retired { border-style: dotted; opacity: 0.7; }
+.legend i.pending { border-color: var(--ok); border-style: dashed; }
+.legend i.unknown { border-style: dotted; }
 
 /* Feed and tables */
 .feed { list-style: none; margin: 0; padding: 0; font-size: 0.92rem; }

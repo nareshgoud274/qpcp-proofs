@@ -317,6 +317,38 @@ Agents check, after cloning, that `JOIN.md` on `main` is unchanged since the
 pinned commit, and stop if it is not; so until the pins are bumped, a stale
 pin stops agents rather than misleading them.
 
+## Verification records
+
+`verify-main` turns every successful verification of a commit of `main` into a
+record (#113), and the site takes "proved" and "refuted" only from the latest
+record:
+
+- the `verify` job (read-only token) runs `sandbox_verify.py record`, then
+  `scripts/verification_record.py evidence`, and uploads the evidence. That
+  covers, for each contribution, the Git blob of the bytes it built, the
+  verdict, a SHA-256 over the trusted reference exports it was judged
+  against, and the project definitions in that reference's closure;
+- the `publish` job, the only one with `contents: write`, runs on `main` only
+  after every verify job succeeded. It checks out main's scripts, runs no Lean
+  and no contributed code, and runs `verification_record.py build`. That
+  re-derives the commit, toolchain, Mathlib revision, paths and blobs from Git,
+  and refuses a partial or replay-only run, a missing shard or contribution, a
+  blob that is not the file on main, or any verdict but ACCEPTED. Then
+  `scripts/site_data.py publish-record` writes `records/<commit>.json` and moves
+  `latest.json`;
+- a record is never overwritten. A second run on the same commit with the same
+  evidence is a no-op, and one with a different verdict or digest is a fault.
+  `latest.json` only moves to a descendant of the commit it names. The
+  `site-data` branch keeps its history: no workflow force-pushes it;
+- `status` rebuilds when `verify-main` completes. A proof or refutation on
+  main that the latest record does not cover, with the same blob, shows as
+  "pending verification" and is not counted. Until the first record exists,
+  `status` publishes nothing. Without the feed, the site shows verification
+  status as unavailable and never infers "proved" from a closed issue;
+- each step has a page, `docs/step.html?id=<ID>`, built from the feed: the
+  statement and proof at the verified commit, the run, the definitions it
+  depends on, who submitted it, and its human-review status.
+
 ## Adding steps
 
 Add the statement to `QPCP/Statements.lean` and an entry to `steps.json`, then
@@ -325,6 +357,9 @@ run `python3 scripts/create_issues.py` to create the missing issues.
 Fields of a `steps.json` entry:
 
 - `id`, `title`, `section`, `difficulty` (1 to 3);
+- `program`: one of the ids in `programs.json` (a closed program is still
+  displayed, with its results; `tests/test_verification_record.py` checks
+  every step names one and that the counts reconcile);
 - `deps`: steps a proof actually uses, and only those;
 - `background` (optional): steps worth reading first that a proof does not
   need (`S032` lists `S030` and `S031` here; each of the three closes by

@@ -21,14 +21,17 @@
     <div class="stat"><b id="n-people">–</b><span id="l-people">contributors</span></div>
   </div>
   <p class="muted small sans" id="more-note"></p>
+  <p class="muted small sans" id="verification-note"></p>
   <p class="muted small sans" id="load-note">Loading live status from GitHub…</p>
 
   <h2 id="map">The map</h2>
-  <p>Every square is one lemma. Select one to read its statement and discussion. Lemmas are grouped by <a href="programs.html">program</a>.</p>
+  <p>Every square is one lemma. Select one to see its statement, its proof and how it was checked. Lemmas are grouped by <a href="programs.html">program</a>.</p>
   <div id="map-body"></div>
   <div class="legend">
     <span><i class="proved"></i>Proved, checked by Lean</span>
     <span><i class="refuted"></i>Refuted, checked by Lean</span>
+    <span><i class="pending"></i>Merged, pending verification</span>
+    <span><i class="unknown"></i>Verification status unavailable</span>
     <span><i class="claimed"></i>Someone is working on it</span>
     <span><i></i>Open</span>
     <span><i class="disputed"></i>Reported, under review</span>
@@ -66,6 +69,8 @@
 
   Q.loadCore().then(function (d) {
     document.getElementById("n-proved").textContent = d.count.proved + (d.count.refuted || 0);
+    document.getElementById("verification-note").textContent = Q.verificationLine(d.verification) +
+      ((d.count.pending || 0) ? " " + d.count.pending + " pending verification." : "");
     document.getElementById("more-note").textContent =
       d.count.proved + " proved, " + (d.count.refuted || 0) + " refuted, " +
       (d.count.proposals || 0) + " proposed and awaiting statement review, " +
@@ -90,9 +95,11 @@
         (s.status === "refuted" ? "Refuted" + (s.who ? " by " + s.who : "") :
          s.status === "retired" ? "Retired after a report" + (s.replacedBy ? ", replaced by " + s.replacedBy : "") :
          s.status === "proved" ? "Checked" + (s.who ? ", proved by " + s.who : "") :
+         s.status === "pending" ? "Merged, pending verification" + (s.who ? "; submitted by " + s.who : "") :
+         s.status === "unknown" ? "Verification status unavailable" :
          s.status === "claimed" ? "Being worked on" + (s.who ? " by " + s.who : "") : "Open") +
         (s.disputed ? ". Reported and under review" : "");
-      grid.appendChild(el("a", { class: "cell " + s.status + (s.disputed ? " disputed" : ""), href: s.url, title: label, "aria-label": label, text: s.id.charAt(0) === "S" ? s.id.slice(1) : s.id }));
+      grid.appendChild(el("a", { class: "cell " + s.status + (s.disputed ? " disputed" : ""), href: Q.stepUrl(s.id), title: label, "aria-label": label, text: s.id.charAt(0) === "S" ? s.id.slice(1) : s.id }));
     });
 
     var latest = document.getElementById("latest");
@@ -105,7 +112,7 @@
         el("span", { class: "when", text: Q.ago(s.when) }),
         el("span", { class: "what" }, [
           el("span", { class: "mono", text: s.id + " " }),
-          Q.link(s.prUrl || s.url, s.title),
+          Q.link(Q.stepUrl(s.id), s.title),
           el("span", { class: "muted", text: " · " + s.status + (s.who ? " by " + s.who : "") })
         ])
       ]));

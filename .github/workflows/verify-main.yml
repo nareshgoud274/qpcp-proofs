@@ -6,6 +6,16 @@ name: verify-main
 # with leanchecker and exported in its own sandbox, and judged outside it from
 # its text export (scripts/sandbox_verify.py). If this goes red after a merge,
 # the merged pull request should be reverted.
+#
+# Verification record (#113). When every shard succeeds on a commit of main,
+# the `publish` job writes records/<commit>.json and latest.json on the
+# site-data branch (scripts/verification_record.py, scripts/site_data.py); the
+# site takes "proved" and "refuted" only from that record. The verify job keeps
+# a read-only token and hands its evidence over as an artifact. Only `publish`
+# can write; it needs every verify job to have succeeded, runs on main only,
+# checks out main's own scripts and runs no contributed code and no Lean. A
+# record is never overwritten, and a second run on the same commit that reaches
+# a different result is a fault.
 
 on:
   push:
@@ -54,4 +64,62 @@ jobs:
       - name: Verify every contribution, sandboxed
         env:
           SHARD: ${{ matrix.shard }}
+          QPCP_WORK: ${{ runner.temp }}/qpcp-verify-main
         run: python3 -I scripts/sandbox_verify.py record --shard "$SHARD"
+
+      # From host-held state and the trusted reference exports only.
+      - name: Evidence for the verification record
+        env:
+          QPCP_WORK: ${{ runner.temp }}/qpcp-verify-main
+        run: python3 -I scripts/verification_record.py evidence "$QPCP_WORK" "$RUNNER_TEMP/evidence/evidence.json"
+
+      - name: Upload the evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: evidence-${{ github.run_attempt }}-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/evidence/evidence.json
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    needs: verify
+    # Only for main, and only when every shard of `verify` succeeded (the default).
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          # Full history: the record's commit must be on main, and latest.json
+          # only moves to a descendant of the commit it names.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download the evidence of this attempt
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: evidence-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/evidence
+          merge-multiple: false
+
+      - name: Build the record
+        env:
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/evidence-all"
+          n=0
+          for f in "$RUNNER_TEMP"/evidence/*/evidence.json; do n=$((n + 1)); cp "$f" "$RUNNER_TEMP/evidence-all/$n.json"; done
+          python3 -I scripts/verification_record.py build --evidence-dir "$RUNNER_TEMP/evidence-all" \
+            --sha "$SHA" --repo . --run-url "$RUN_URL" --attempt "$ATTEMPT" --out "$RUNNER_TEMP/record.json"
+
+      - name: Publish the record on site-data
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: python3 -I scripts/site_data.py publish-record "$RUNNER_TEMP/record.json" "github:$REPO" .

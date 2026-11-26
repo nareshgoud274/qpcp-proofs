@@ -91,8 +91,9 @@
         }), "No lemmas checked yet.");
 
       document.getElementById("load-note").textContent =
-        d.count.proved + " proved, " + (d.count.refuted || 0) + " refuted, " + d.count.claimed + " in progress, " + d.count.open +
-        " open. " + Q.stamp(d.generatedAt);
+        d.count.proved + " proved, " + (d.count.refuted || 0) + " refuted, " +
+        ((d.count.pending || 0) ? d.count.pending + " pending verification, " : "") + d.count.claimed + " in progress, " + d.count.open +
+        " open. " + Q.verificationLine(d.verification) + " " + Q.stamp(d.generatedAt);
     }).catch(function () { Q.fail(document.getElementById("load-note")); });
   }
 

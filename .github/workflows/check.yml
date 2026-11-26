@@ -203,6 +203,9 @@ jobs:
       - name: Verifier runs do not share state; replay-only accepts nothing
         run: python3 -I tests/test_verifier_runs.py
 
+      - name: The site reports verified results only (records, pending, fallback, programs)
+        run: python3 -I tests/test_verification_record.py
+
       - name: The test suite never touches uncommitted work (refused, failing, interrupted)
         run: tests/test_suite_safety.sh
 
