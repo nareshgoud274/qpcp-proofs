@@ -22,6 +22,7 @@
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -39,9 +40,18 @@ def check(desc, okay, detail=""):
     print(f"  {'ok  ' if okay else 'FAIL'}  {desc}" + ("" if okay else f": {str(detail)[:700]}"))
 
 
+# The only real programs the scripts may find: a machine's own docker, limactl, curl and the
+# like must never leak into a test (a CI runner has Docker installed).
+BASIC = ["sh", "bash", "awk", "grep", "tr", "tail", "head", "cat", "mkdir", "rm", "mktemp", "tar", "sleep"]
+
+
 def stubs(t, tools):
     b = t / "bin"
     b.mkdir(exist_ok=True)
+    for name in BASIC:
+        real = shutil.which(name)
+        if real and name not in tools:
+            (b / name).symlink_to(real)
     for name, body in tools.items():
         (b / name).write_text("#!/bin/sh\n" + body)
         (b / name).chmod(0o755)
@@ -72,9 +82,9 @@ def run_check(system="Darwin", machine="arm64", free_gb=100, net=True, docker=No
                                 'case "$1" in create) ' + ("exit 1" if lima == "nostart" else "exit 0") + ';; '
                                 'start|delete) exit 0;; shell) ' + (lima if lima != "nostart" else "exit 1") + ';; esac\n')
         b = stubs(t, tools)
-        env = {"PATH": f"{b}:/usr/bin:/bin", "HOME": str(t / "home")}
+        env = {"PATH": str(b), "HOME": str(t / "home")}
         (t / "home").mkdir()
-        r = subprocess.run(["bash", str(ROOT / "scripts" / "workspace_check.sh")], env=env,
+        r = subprocess.run([shutil.which("bash"), str(ROOT / "scripts" / "workspace_check.sh")], env=env,
                            capture_output=True, text=True, timeout=60)
         return r, log.read_text() if log.exists() else ""
 
@@ -128,8 +138,8 @@ def run_get_lima(system, machine):
                     'while [ $# -gt 0 ]; do [ "$1" = -o ] && { shift; echo x > "$1"; }; shift; done\n',
             "shasum": f'cat >> "{t}/checked"; exit 1\n',
         })
-        env = {"PATH": f"{b}:/usr/bin:/bin", "HOME": str(t / "home")}
-        r = subprocess.run(["bash", str(ROOT / "scripts" / "get_lima.sh")], env=env, capture_output=True,
+        env = {"PATH": str(b), "HOME": str(t / "home")}
+        r = subprocess.run([shutil.which("bash"), str(ROOT / "scripts" / "get_lima.sh")], env=env, capture_output=True,
                            text=True, timeout=60)
         read = lambda n: (t / n).read_text() if (t / n).exists() else ""
         return r, read("urls"), read("checked"), (t / "home" / "qpcp-setup" / "lima" / "bin").exists()
