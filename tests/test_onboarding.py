@@ -69,6 +69,11 @@ def setup_block(join):
     return blocks[0]
 
 
+def update_block(join):
+    body = section(join, "## Set up (once)")
+    return next(b for b in re.findall(r"(?ms)^```\n(.*?)^```$", body) if "<<'UPDATE'" in b)
+
+
 def stub(bindir, name, script):
     path = bindir / name
     path.write_text("#!/bin/sh\n" + script)
@@ -77,24 +82,33 @@ def stub(bindir, name, script):
 
 # ------------------------------------------------------------------ 1. the stop
 
-def run_setup(block, work, join_sha, url, out_state="ready"):
+def run_setup(block, work, join_sha, url, out_state="ready", keep=False):
     out = work / "out"
-    if out_state != "missing":
+    if out_state != "missing" and not out.exists():
         out.mkdir()
     if out_state == "read-only":
         out.chmod(0o555)
     bindir = work / "bin"
-    bindir.mkdir()
+    bindir.mkdir(exist_ok=True)
     calls = work / "lake-calls"
+    if not keep:
+        for f in (calls, work / "elan-calls"):
+            f.unlink(missing_ok=True)
     # Reads its stdin, as a real program may: the setup block must not lose its
     # remaining lines to it (the block itself arrives on bash's stdin).
     stub(bindir, "lake", f'cat > /dev/null\necho "$*" >> "{calls}"\n')
     text = block.replace("<the pinned commit id>", join_sha).replace(UPSTREAM, url).replace("/out/", f"{out}/")
-    env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", GIT_CONFIG_GLOBAL=os.devnull)
+    # HOME is the workspace's home folder: the block clones into ~ (here work/ws).
+    env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", GIT_CONFIG_GLOBAL=os.devnull,
+               HOME=str(work / "ws"), QPCP_TEST_ELAN_LOG=str(work / "elan-calls"))
     r = subprocess.run(["bash", "-c", text], cwd=work / "ws", capture_output=True, text=True, env=env, timeout=60)
     lake = calls.read_text().splitlines() if calls.exists() else []
     base = (out / "base-commit").read_text().strip() if (out / "base-commit").exists() else None
     return r, lake, base
+
+
+def elan_ran(work):
+    return (work / "elan-calls").exists()
 
 
 def test_stop(tmp):
@@ -106,13 +120,23 @@ def test_stop(tmp):
           0 <= check_at < first_download, block)
     check("1. the comparison exits non-zero on a difference", re.search(r'JOIN\.md \|\| \{[^}]*exit 1; \}', block), block)
     check("1. the checkout's commit is recorded separately", "git rev-parse HEAD > /out/base-commit" in block, block)
+    elan_at = block.find("bash scripts/install_elan.sh")
+    check("1. elan is installed by the pinned installer, inside the setup block, after the JOIN.md check "
+          "and before any lake", 0 <= check_at < elan_at < block.find("lake "), block)
+    check("1. JOIN.md never fetches the elan installer from a branch or runs elan-init.sh itself",
+          "elan-init" not in join and not re.search(r"https?://\S*/(?:master|main)/\S*elan", join), "")
+    check("1. the setup block clones into the home folder, so later steps can find ~/qpcp-proofs",
+          block.find("cd ~") >= 0 and block.find("cd ~") < block.find("git clone"), block)
 
     # A synthetic upstream: commit A (the pin), then an unrelated commit B.
     up = tmp / "upstream" / "qpcp-proofs"  # cloned into ./qpcp-proofs, as from GitHub
     up.mkdir(parents=True)
     git(up, "init", "-q", "-b", "main")
     (up / "JOIN.md").write_text("instructions v1\n")
-    git(up, "add", "JOIN.md")
+    # A stand-in for the pinned installer: it records that it ran, and installs nothing.
+    (up / "scripts").mkdir()
+    (up / "scripts" / "install_elan.sh").write_text('echo ran >> "$QPCP_TEST_ELAN_LOG"\n')
+    git(up, "add", "JOIN.md", "scripts/install_elan.sh")
     git(up, "commit", "-q", "-m", "JOIN")
     pin = git(up, "rev-parse", "HEAD")
     (up / "README.md").write_text("pin bump\n")
@@ -126,8 +150,9 @@ def test_stop(tmp):
         return w
 
     r, lake, base = run_setup(block, fresh("same"), pin, str(up))
-    check("1. unchanged JOIN.md: setup succeeds and goes on to lake",
-          r.returncode == 0 and lake == ["exe cache get", "build QPCP.Statements"], (r.returncode, lake, r.stderr))
+    check("1. unchanged JOIN.md: setup succeeds, installs elan, and goes on to lake",
+          r.returncode == 0 and lake == ["exe cache get", "build QPCP.Statements"] and elan_ran(tmp / "same"),
+          (r.returncode, lake, r.stderr))
     check("1. unchanged JOIN.md: /out/base-commit is the checkout's commit, not the pin",
           base == head and base != pin, (base, head, pin))
 
@@ -135,7 +160,8 @@ def test_stop(tmp):
     git(up, "commit", "-q", "-am", "JOIN changed")
     r, lake, base = run_setup(block, fresh("changed"), pin, str(up))
     check("1. changed JOIN.md: setup exits non-zero", r.returncode != 0, (r.returncode, r.stdout))
-    check("1. changed JOIN.md: nothing is downloaded (lake never runs)", lake == [], lake)
+    check("1. changed JOIN.md: nothing is downloaded (neither elan nor lake runs)",
+          lake == [] and not elan_ran(tmp / "changed"), lake)
     check("1. changed JOIN.md: no base commit is recorded", base is None, base)
     check("1. changed JOIN.md: it says STOP", "STOP" in r.stdout, r.stdout)
 
@@ -155,6 +181,127 @@ def test_stop(tmp):
               and not (w / "ws" / "qpcp-proofs").exists(), (r.returncode, r.stdout, r.stderr, lake))
         if state == "read-only":
             (w / "out").chmod(0o755)
+
+    # A run that failed partway leaves the clone: a second run says STOP, and runs nothing.
+    w = fresh("rerun")
+    run_setup(block, w, now_pin, str(up))
+    r, lake, base = run_setup(block, w, now_pin, str(up))
+    check("1. setup run again over an existing clone: says STOP (delete it and rerun), runs neither elan nor lake",
+          r.returncode != 0 and "STOP: ~/qpcp-proofs already exists" in r.stdout and lake == [],
+          (r.returncode, r.stdout, lake))
+    check("1. JOIN.md says how to recover from a partial setup",
+          "rm -rf ~/qpcp-proofs" in join, "")
+
+    # The update block, from a fresh shell: it sets join_sha itself.
+    upd = update_block(join)
+    check("1. the update block sets join_sha itself (a new shell has no variables)",
+          "join_sha=<the pinned commit id>" in upd and upd.index("join_sha=") < upd.index('"$join_sha"'), upd)
+
+    def run_update(work, sha):
+        text = upd.replace("<the pinned commit id>", sha).replace("/out/", f"{work / 'out'}/")
+        env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, HOME=str(work / "ws"))
+        return subprocess.run(["bash", "-c", text], cwd="/", capture_output=True, text=True, env=env, timeout=60)
+
+    (up / "README.md").write_text("another unrelated change\n")
+    git(up, "commit", "-q", "-am", "unrelated")
+    r = run_update(w, now_pin)
+    check("1. update after an unrelated commit: records the new base commit",
+          r.returncode == 0 and (w / "out" / "base-commit").read_text().strip() == git(up, "rev-parse", "HEAD"),
+          (r.returncode, r.stdout, r.stderr))
+    (up / "JOIN.md").write_text("instructions v3\n")
+    git(up, "commit", "-q", "-am", "JOIN changed again")
+    r = run_update(w, now_pin)
+    check("1. update after JOIN.md changed: says STOP and exits non-zero",
+          r.returncode != 0 and "STOP: JOIN.md has changed" in r.stdout, (r.returncode, r.stdout))
+
+    # Every later block starts from a fresh shell's state.
+    practice = re.findall(r"(?ms)^```\n(.*?)^```$", section(join, "## Practice run"))[0]
+    check("1. the practice run starts with the new-shell line (folder and PATH)",
+          practice.startswith('cd ~/qpcp-proofs && export PATH="$HOME/.elan/bin:$PATH"'), practice)
+    check("1. JOIN.md gives the new-shell line once for every new shell",
+          'cd ~/qpcp-proofs && export PATH="$HOME/.elan/bin:$PATH"' in section(join, "## Set up (once)"), "")
+
+
+# ------------------------------------------------------- 1b. the workspace checks
+
+def test_workspace(tmp):
+    join = (ROOT / "JOIN.md").read_text()
+    two = section(join, "## Two places")
+    blocks = re.findall(r"(?ms)^   ```\n(.*?)^   ```$", two)
+    checks = next(b for b in blocks if "SSH_AUTH_SOCK" in b)
+    mount_cmd = next(l.strip() for l in checks.splitlines() if l.strip().startswith("mount "))
+    mount_cmd = mount_cmd.split("   #")[0]
+
+    def mount_check(lines):
+        fake = tmp / "mount-bin"
+        fake.mkdir(exist_ok=True)
+        (fake / "mount").write_text("#!/bin/sh\ncat <<'EOF'\n" + "\n".join(lines) + "\nEOF\n")
+        (fake / "mount").chmod(0o755)
+        r = subprocess.run(["bash", "-c", mount_cmd], capture_output=True, text=True,
+                           env=dict(os.environ, PATH=f"{fake}:{os.environ['PATH']}"), timeout=30)
+        return r.stdout.strip()
+
+    clean_vm = ["/dev/vda1 on / type ext4 (rw,relatime)",
+                "fusectl on /sys/fs/fuse/connections type fusectl (rw,nosuid,nodev,noexec,relatime)",
+                "/dev/sr0 on /mnt/lima-cidata type iso9660 (ro,relatime)"]
+    check("1b. mount check on a clean Lima VM (fusectl is present): prints nothing", mount_check(clean_vm) == "",
+          mount_check(clean_vm))
+    docker = ["overlay on / type overlay (rw)", "/run/host_mark/Users on /out type fakeowner (rw)",
+              "/dev/vda1 on /out type ext4 (rw)"]
+    check("1b. mount check in a container: the /out mount itself is not flagged", mount_check(docker) == "",
+          mount_check(docker))
+    for bad in ("mount0 on /Users type virtiofs (rw)", "host on /mnt/host type 9p (rw)",
+                "me@host:/ on /mnt/x type fuse.sshfs (rw)", "/dev/fuse on /mnt/y type fuse (rw)"):
+        check(f"1b. mount check flags a host share: {bad.split(' type ')[1].split()[0]}",
+              mount_check(clean_vm + [bad]) != "", bad)
+    tools = [b for b in blocks if "apt-get install" in b]
+    vm = next((b for b in tools if "sudo" in b), "")
+    check("1b. the VM's tools line puts sudo in front of each apt-get",
+          vm.count("apt-get ") == 2 and vm.count("sudo apt-get ") == 2, vm)
+    check("1b. every apt-get line keeps its input from the next commands (</dev/null)",
+          all(b.count("</dev/null") >= 2 for b in tools) and len(tools) == 2, tools)
+    check("1b. the VM is stopped before it is deleted",
+          "limactl stop qpcp\n   limactl delete qpcp" in two or "limactl stop qpcp\nlimactl delete qpcp" in "\n".join(blocks), "")
+    check("1b. Lima's current template syntax (template:, not template://)",
+          "template:ubuntu-24.04" in two and "template://" not in two, "")
+    check("1b. limactl create runs without an interactive prompt (--yes)",
+          re.search(r"limactl create --yes ", two) is not None, "")
+    check("1b. Docker: a host-side check that the container shares exactly one host folder",
+          "docker inspect qpcp-work" in two and "qpcp-out -> /out" in two, "")
+    check("1b. Docker: the root-owned output is taken (chown) before it is deleted",
+          0 <= two.find('sudo chown -R "$USER" ~/qpcp-work/qpcp-out') < two.find("rm -rf ~/qpcp-work"), "")
+
+    # Every lake build in a block an agent runs keeps its input (</dev/null).
+    runnable = re.findall(r"(?ms)^\s*```\n(.*?)^\s*```$", join)
+    builds = [l.strip() for b in runnable for l in b.splitlines() if l.strip().startswith("lake build")]
+    check("1b. every `lake build` line in a command block has </dev/null",
+          builds and all("</dev/null" in l for l in builds), [l for l in builds if "</dev/null" not in l])
+    check("1b. the task folder /out/<ID> is created before it is used (section A and Budget)",
+          section(join, "## A. Prove").count("mkdir -p /out/<ID>") >= 1
+          and section(join, "## Budget and stopping").count("mkdir -p /out/<ID>") >= 1, "")
+
+    # The card and claim commands, run against a sample status file instead of the network.
+    status = tmp / "status.json"
+    status.write_text(json.dumps({"steps": [
+        {"id": "S060", "status": "proved", "exercise": False, "claim": None, "submission": None},
+        {"id": "S031", "status": "open", "exercise": True, "claim": None,
+         "submission": {"text": "S031  (issue #62)\nproof:\n  file      QPCP/Proofs/S031.lean"}}]}))
+    a_sec = section(join, "## A. Prove")
+    cmds = [b for b in re.findall(r"(?ms)^```\n(.*?)^```$", a_sec) if "site-data/status.json" in b]
+
+    def run_cmd(block, sid):
+        text = re.sub(r"curl -s \S+status\.json", f"cat {status}", block).replace(" S060\n", f" {sid}\n")
+        r = subprocess.run(["bash", "-c", text if text.endswith("\n") else text + "\n"], capture_output=True,
+                           text=True, timeout=30)
+        return r.stdout.strip()
+
+    check("1b. section A gives the card command and the claim command", len(cmds) == 2, len(cmds))
+    if len(cmds) == 2:
+        check("1b. the card command prints the card, or 'no card' for a proved step",
+              run_cmd(cmds[0], "S031").startswith("S031  (issue #62)")
+              and run_cmd(cmds[0], "S060") == "no card: the step is proved", (run_cmd(cmds[0], "S031"),))
+        check("1b. the claim command prints status, exercise and claim",
+              run_cmd(cmds[1], "S031") == "status: open | exercise: True | claim: None", run_cmd(cmds[1], "S031"))
 
 
 # ----------------------------------------------------------- 2. the card and feed
@@ -306,6 +453,7 @@ def main():
         with tempfile.TemporaryDirectory() as t:
             tmp = Path(t)
             test_stop(tmp)
+            test_workspace(tmp)
             test_card()
             test_example()
             test_pins()
