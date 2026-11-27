@@ -468,8 +468,8 @@ requests for settled steps (`triage.yml`), through `gh api` only.
     comes with a reopening counts.
 
   After the replay, each issue's replayed state (open or closed) must equal
-  its observed state; a mismatch is a fault naming the issue, and nothing is
-  written. So delayed,
+  its observed state; a mismatch is a fault naming the issue, and the run stops
+  before writing anything from that replay. So delayed,
   duplicated, simultaneous and out-of-order runs agree, and the earliest
   `/claim` wins.
 - The account rule spans issues, so the replay is global, not per issue: at
