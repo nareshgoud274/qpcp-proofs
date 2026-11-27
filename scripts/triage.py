@@ -19,9 +19,10 @@
 Rules (JOIN.md, "Claims"):
   - A claim is a courtesy, not a lock. Exercises need no claim.
   - One holder per step and one claimed step per account. The comments are the
-    state: each run replays the comments of ALL step issues in one pass (a
-    closed one up to its closure, which ends its claim), in the order of their
-    own timestamps, and makes every open issue's assignee match, so
+    state: each run replays the comments of ALL step issues in one pass, with
+    their closings and reopenings, in the order of their own timestamps, and
+    makes every open issue's assignee match. A closing ends a claim for good;
+    a reopening allows only a fresh claim. So
     delayed, duplicated, simultaneous and out-of-order runs agree. The earliest
     /claim wins; a /claim by an account already holding a step is not taken.
   - A claim lapses 24 hours after the HOLDER's last comment, judged by the
@@ -155,12 +156,15 @@ def is_exercise(sid):
 #     renews it (/renew and /claim say so explicitly);
 #   - a /claim by someone else is taken if the step is held, refused if the
 #     account already holds another step, and granted otherwise.
-# Claims still held are then lapsed as of now. Closed step issues take part up to
-# their `closed_at`: closing ends a claim at that moment (the holder is then free
-# to claim another step), and later comments there count for nothing. So closing
-# a step never re-decides a refusal made while its holder held it. (Reopening an
-# issue forgets its earlier closure; that is a maintainer's action.) Exercises
-# take no part.
+# Claims still held are then lapsed as of now. Exercises take no part.
+#
+# Closing and reopening are events too, read from each issue's own event history
+# and replayed in the same time order (in one second: a reopening first, then
+# comments, then a closing). A closing ends the step's claim permanently: the
+# holder is free from that moment. While an issue is closed its comments count
+# for nothing. A reopening only makes the step available for a FRESH /claim; it
+# never revives a claim that a closing ended. So closing or reopening an issue
+# never changes what was decided, before it, on any issue.
 #
 # After writing, a run reads everything again and repeats until a read needs no
 # write, so a run that read before a later comment existed does not leave its
@@ -171,18 +175,24 @@ BOT = "github-actions[bot]"
 RE = "<!-- qpcp:re {} -->"
 
 
-def compute(comments_by_issue, at=None, closed=None):
-    """Claim state from the comments alone (and `closed`: {issue: closed_at time} for closed issues).
-    Returns (holder by issue, {comment id: effect}, {issue: [accounts whose claim lapsed]},
-    {issue: holder's last comment time})."""
+OPENING, COMMENT, CLOSING = 0, 1, 2  # the order of events within one second
+
+
+def compute(comments_by_issue, at=None, transitions=None):
+    """Claim state from the comments and the issues' close/reopen history.
+
+    `transitions`: {issue: [(time, "closed" | "reopened"), ...]}. Returns (holder by issue,
+    {comment id: effect}, {issue: [accounts whose claim lapsed]}, {comment id: the claim it
+    made or renewed}, {issue: the claim holding it now})."""
     at = now() if at is None else at
-    closed = closed or {}
-    events = [(ts(c["created_at"]), 0, c["id"], n, c) for n, cs in comments_by_issue.items()
-              for c in cs if c["user"]["login"] != BOT
-              and not (n in closed and ts(c["created_at"]) > closed[n])]
-    events += [(t, 1, 0, n, None) for n, t in closed.items()]  # a closure comes after comments of its second
+    transitions = transitions or {}
+    events = [(ts(c["created_at"]), COMMENT, c["id"], n, c) for n, cs in comments_by_issue.items()
+              for c in cs if c["user"]["login"] != BOT]
+    events += [(t, CLOSING if kind == "closed" else OPENING, k, n, None)
+               for n, ts_ in transitions.items() for k, (t, kind) in enumerate(ts_)]
     events.sort(key=lambda e: e[:3])
-    holder, last, claim_id, owns, effects = {}, {}, {}, {}, {}
+    closed_now = set()
+    holder, last, claim_id, owns, effects, of_claim = {}, {}, {}, {}, {}, {}
     lapsed = {n: [] for n in comments_by_issue}
 
     def expire(t):
@@ -191,12 +201,18 @@ def compute(comments_by_issue, at=None, closed=None):
                 lapsed[n].append(holder[n])
                 del owns[holder[n]], holder[n], last[n], claim_id[n]
 
-    for t, is_close, cid, n, c in events:
+    for t, kind, cid, n, c in events:
         expire(t)
-        if is_close:
-            if n in holder:  # the step is closed: its claim ends, and the account is free
+        if kind == CLOSING:
+            closed_now.add(n)
+            if n in holder:  # the step is closed: its claim ends for good, and the account is free
                 del owns[holder[n]], holder[n], last[n], claim_id[n]
             continue
+        if kind == OPENING:
+            closed_now.discard(n)  # open for a fresh claim; nothing is revived
+            continue
+        if n in closed_now:
+            continue  # a comment on a closed issue counts for nothing
         who, cmd = c["user"]["login"], command(c)
         if holder.get(n) == who:
             if cmd == "/release":
@@ -205,6 +221,7 @@ def compute(comments_by_issue, at=None, closed=None):
             else:
                 last[n] = t
                 effects[cid] = "renewed" if cmd in ("/renew", "/claim") else "activity"
+                of_claim[cid] = claim_id[n]
         elif cmd == "/claim":
             if n in holder:
                 effects[cid] = ("taken", holder[n], claim_id[n])
@@ -213,10 +230,11 @@ def compute(comments_by_issue, at=None, closed=None):
             else:
                 holder[n], last[n], claim_id[n], owns[who] = who, t, cid, n
                 effects[cid] = "claimed"
+                of_claim[cid] = cid
         elif cmd in ("/renew", "/release"):
             effects[cid] = "not-holder"
     expire(at)
-    return holder, effects, lapsed, last
+    return holder, effects, lapsed, of_claim, claim_id
 
 
 def step_issues():
@@ -231,20 +249,37 @@ def step_issues():
     return out
 
 
+def transitions_of(issue):
+    """The issue's closings and reopenings, in time order, from its own event history. If the
+    history has not caught up with the issue's state yet, the state is taken as starting now."""
+    n = issue["number"]
+    out = sorted((ts(e["created_at"]), e["event"])
+                 for e in api("GET", f"issues/{n}/events?per_page=100", paginate=True) or []
+                 if e.get("event") in ("closed", "reopened"))
+    shown = out[-1][1] if out else "reopened"
+    if issue.get("state") == "closed" and shown != "closed":
+        at = ts(issue["closed_at"]) if issue.get("closed_at") else now()
+        out.append((max([at] + [t for t, _ in out]), "closed"))
+    elif issue.get("state") == "open" and shown == "closed":
+        out.append((now(), "reopened"))
+    return out
+
+
 def read_all():
-    """(open issues, comments by issue, {closed issue: closed_at}). An issue listed with no comments
-    is not fetched."""
-    issues, cs, closed = {}, {}, {}
+    """(open issues, comments by issue, {issue: closings and reopenings}). An issue listed with no
+    comments is not fetched: with no comments it holds no claim, whatever its history."""
+    issues, cs, tr = {}, {}, {}
     for i in step_issues():
         n = i["number"]
         if i.get("state") == "open":
             issues[n] = i
-        elif i.get("closed_at"):
-            closed[n] = ts(i["closed_at"])
-        else:
+        if i.get("comments") == 0:
             continue
-        cs[n] = [] if i.get("comments") == 0 else comments_of(n)
-    return issues, cs, closed
+        cs[n] = comments_of(n)
+        tr[n] = transitions_of(i)
+    for n in issues:
+        cs.setdefault(n, [])
+    return issues, cs, tr
 
 
 def apply(issue, want, lapsed):
@@ -273,11 +308,12 @@ def apply(issue, want, lapsed):
 
 def settle(rounds=5):
     """Compute the global claim state and write it, re-reading until a read needs no write.
-    Returns (holder by issue, effects, comments by issue, issues as last read, released)."""
+    Returns (holder by issue, effects, comments by issue, issues as last read, released,
+    {comment id: the claim it made or renewed}, {issue: the claim holding it now})."""
     released = []
     for _ in range(rounds):
-        issues, cs, closed = read_all()
-        holder, effects, lapsed, _ = compute(cs, closed=closed)
+        issues, cs, tr = read_all()
+        holder, effects, lapsed, of_claim, current = compute(cs, transitions=tr)
         wrote = False
         for n in sorted(issues):
             before = holders(issues[n])
@@ -285,7 +321,7 @@ def settle(rounds=5):
                 wrote = True
                 released += [f"{n}:{h}" for h in before if h != holder.get(n)]
         if not wrote:
-            return holder, effects, cs, issues, released
+            return holder, effects, cs, issues, released, of_claim, current
     raise Fault(f"claim state did not settle in {rounds} rounds")
 
 
@@ -320,18 +356,21 @@ def claim_comment(n, comment_id):
         apply(issue, None, [])
         settle()
         return "exercise"
-    holder, effects, all_cs, _, _ = settle()
+    holder, effects, all_cs, _, _, of_claim, current = settle()
     cs = all_cs.get(n, cs)
     want, effect = holder.get(n), effects.get(comment_id)
+    # Still in force only if the claim it made or renewed is the one holding the step now
+    # (not an earlier claim of the same account, ended by a closing or a release).
+    live = comment_id in of_claim and current.get(n) == of_claim[comment_id]
     if effect == "claimed":
-        if want == who:
+        if live:
             reply(n, cs, comment_id, f"Claimed by @{who}. The claim lapses 24 hours after your last comment "
                   "here; comment `/renew` to restart the clock and `/release` to give it up. Other people's "
                   "comments do not renew it.")
             return "claimed"
         return "superseded"  # a later comment decided otherwise (a /release, or the claim lapsed)
     if effect == "renewed":
-        if want == who:
+        if live:
             reply(n, cs, comment_id, f"Claim renewed for @{who}: the 24-hour clock restarts from this "
                   "comment's own time.")
             return "renewed"

@@ -447,8 +447,13 @@ requests for settled steps (`triage.yml`), through `gh api` only.
   Instead, **the comments are the state**: each run replays the comments of
   every step issue in one pass, in the order of their own timestamps,
   works out who holds each step, and makes every open issue's assignee match.
-  A closed step's issue takes part up to its `closed_at`: closing ends its
-  claim then, so it never re-decides a refusal made while its holder held it. So delayed,
+  Closings and reopenings are replayed too, from each issue's own event
+  history, in the same time order. A closing ends the step's claim for good;
+  comments on a closed issue count for nothing; a reopening only lets a fresh
+  `/claim` in and never revives an old one. So closing or reopening an issue
+  never changes a decision made before it, on any issue. If the event history
+  lags the issue's state, the state is taken as starting at that run's time
+  until the event appears. So delayed,
   duplicated, simultaneous and out-of-order runs agree, and the earliest
   `/claim` wins.
 - The account rule spans issues, so the replay is global, not per issue: at
@@ -461,9 +466,11 @@ requests for settled steps (`triage.yml`), through `gh api` only.
 - `tests/test_claims_random.py` checks this as a class: random histories,
   each processed in many random schedules (late, duplicated, dropped, with
   sweeps), asserting one holder per step, one step per account, no claim
-  older than 24 hours from its holder's last comment, the same final state
-  in every schedule, and, after every run, the state an independent
-  reference model of the rules gives. A failure prints a `--replay` line.
+  older than 24 hours from its holder's last comment, the same state in
+  every schedule at a checkpoint while claims are live and after a final
+  sweep, and, after every run, the state an independent reference model of
+  the rules gives. Histories include closings and reopenings. A failure
+  prints a `--replay` line.
 - A claim lapses 24 hours after the holder's own last comment, judged by the
   comments' own times, so a `/renew` written in time counts even if its
   workflow runs late. A lapsed claim is never revived. `/renew` renews it

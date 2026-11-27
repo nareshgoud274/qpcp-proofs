@@ -80,6 +80,8 @@ def handle(st, method, path, q, body):
             return {k: v for k, v in i.items() if k != "comments"}, 200
         if seg[2] == "comments" and method == "GET":
             return i["comments"], 200
+        if seg[2] == "events" and method == "GET":
+            return i.get("events", []), 200
         if seg[2] == "comments" and method == "POST":
             st["next_id"] = st.get("next_id", 1000) + 1
             i["comments"].append({"id": st["next_id"], "user": {"login": "github-actions[bot]"},

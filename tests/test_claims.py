@@ -49,6 +49,13 @@
      now-closed step stays refused (the step granted to someone else after
      it stays theirs), and the author may claim another step after the
      closure.
+ 16. (#158 review 4) Reopening never revives a claim or changes a decision
+     on another issue: the reviewer's sequence (A closes, Alice validly
+     claims B, Bob is refused, A reopens) leaves B with Alice. After a
+     reopening, a fresh /claim by the former holder or by someone else is
+     granted; a /claim made while the issue was closed counts for nothing;
+     several close/reopen cycles each end the claim of their period; and a
+     reopening processed late, or before its event appears, decides the same.
 """
 
 import json
@@ -84,6 +91,10 @@ def issue(n, title, labels=("step",), assignees=(), comments=()):
 
 class Env:
     def __init__(self, base, state):
+        # As on GitHub, an issue that is closed has a "closed" event in its history.
+        for i in state.get("issues", {}).values():
+            if i.get("state") == "closed" and i.get("closed_at") and "events" not in i:
+                i["events"] = [{"event": "closed", "created_at": i["closed_at"]}]
         self.base = base
         base.mkdir(parents=True, exist_ok=True)
         self.state = base / "state.json"
@@ -412,6 +423,50 @@ def main():
               holders(st, 93) == ["bob"] and not any("lapsed" in b for b in bot_says(st, 93)), (out, holders(st, 93), bot_says(st, 93)))
         check("15. after her step's issue closes, alice may claim another step",
               r92 == "claimed" and holders(st, 92) == ["alice"], (r92, holders(st, 92)))
+
+        # 16. Reopening.
+        def ev(*pairs):
+            return [{"event": k, "created_at": iso(t)} for k, t in pairs]
+        a91 = dict(issue(91, "S900091: x", ("step", "claimed"), ["alice"], [(10, "alice", "/claim", NOW - 10 * H)]),
+                   events=ev(("closed", NOW - 2 * H), ("reopened", NOW - 5 * 60)))
+        e = Env(base / "reopen", {"issues": {
+            "91": a91,
+            "92": issue(92, "S900092: x", comments=[(11, "alice", "/claim", NOW - H), (12, "bob", "/claim", NOW - 1800)])}})
+        r = [e.call("claim-comment", 92, c)[0] for c in (11, 12)]
+        out, _ = e.call("sweep")
+        st = e.get()
+        check("16. the reviewer's sequence: after A reopens, B stays with Alice and A's old claim is not revived",
+              holders(st, 91) == [] and holders(st, 92) == ["alice"] and r == ["claimed", "taken"], (r, out, holders(st, 91), holders(st, 92)))
+
+        cyc = dict(issue(95, "S900095: x", comments=[
+            (20, "cy", "/claim", NOW - 20 * H),     # held until the first closing
+            (21, "cy", "/renew", NOW - 15 * H),     # closed: counts for nothing
+            (22, "dee", "/claim", NOW - 14 * H),    # closed: counts for nothing
+            (23, "dee", "/claim", NOW - 11 * H),    # reopened: a fresh claim, granted
+            (24, "cy", "/claim", NOW - 3 * H),      # second reopening: the former holder claims afresh
+        ]), events=ev(("closed", NOW - 16 * H), ("reopened", NOW - 12 * H), ("closed", NOW - 6 * H), ("reopened", NOW - 4 * H)))
+        e = Env(base / "cycles", {"issues": {"95": cyc}})
+        late = [e.call("claim-comment", 95, c)[0] for c in (24, 23, 22, 21, 20)]  # processed late and in reverse
+        st = e.get()
+        check("16. several close/reopen cycles: each closing ends its period's claim; comments while closed count for nothing",
+              late[1:] == ["superseded", "ignored", "ignored", "superseded"], late)
+        check("16. after the last reopening, the former holder's fresh /claim is granted (processed late and out of order)",
+              late[0] == "claimed" and holders(st, 95) == ["cy"], (late, holders(st, 95)))
+
+        # Someone else claims after a reopening, and the reopening's event has not reached the history yet.
+        lag = dict(issue(96, "S900096: x", comments=[(30, "eve", "/claim", NOW - 10 * H), (31, "fox", "/claim", NOW - 60)]),
+                   events=ev(("closed", NOW - 5 * H)))
+        e = Env(base / "lag", {"issues": {"96": lag}})
+        first, _ = e.call("claim-comment", 96, 31)
+        st = e.get()
+        check("16. a reopening not yet in the event history: the earlier claim is not revived, and nobody is granted early",
+              holders(st, 96) == [] and first == "ignored", (first, holders(st, 96)))
+        st["issues"]["96"]["events"] = ev(("closed", NOW - 5 * H), ("reopened", NOW - 120))
+        e.state.write_text(json.dumps(st))
+        again, _ = e.call("claim-comment", 96, 31)
+        st = e.get()
+        check("16. once the reopening is in the history, the other account's fresh /claim is granted; the old claim stays ended",
+              again == "claimed" and holders(st, 96) == ["fox"], (again, holders(st, 96)))
     except Exception as e:  # a crash is a failure, never a skip
         import traceback
         traceback.print_exc()
