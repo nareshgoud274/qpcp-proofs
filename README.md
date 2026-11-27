@@ -57,7 +57,7 @@ statement; whether a statement means what it should is what awaits review.
 
   ```
   Fetch and follow the instructions at
-  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/5c4f86ed583cecd0b187df7c0abf5e89ad734231/JOIN.md
+  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/2d0658cc7e718426ade66c1d8a0e4e4989f5efc1/JOIN.md
   ```
 
   The link names a fixed commit, so every agent reads the same instructions;
