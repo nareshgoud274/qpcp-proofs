@@ -12,8 +12,12 @@ name: triage
 #     Refutations of that step are flagged, never closed. Nothing is closed
 #     merely because another pull request arrived first.
 #
+# Only pull requests into main are acted on, and only while the proof is on main.
+# A pull request labelled disputed or needs-maintainer, or whose step's issue is
+# labelled disputed, is never closed automatically (scripts/triage.py, HOLD).
+#
 # pull_request_target runs main's version of this workflow with a write token;
-# it checks out only scripts/triage.py from main and never checks out, builds
+# it checks out only scripts/triage.py and scripts/build_status.py from main and never checks out, builds
 # or runs anything from the pull request. Pull request data reaches the script
 # only through the API, never through the shell.
 
@@ -50,7 +54,12 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-          sparse-checkout: scripts/triage.py
+          # Full history: "settled by #n" comes from the latest commit on main that
+          # added the file (build_status.py's provenance, shared with the site's credit).
+          fetch-depth: 0
+          sparse-checkout: |
+            scripts/triage.py
+            scripts/build_status.py
           sparse-checkout-cone-mode: false
 
       - name: Triage

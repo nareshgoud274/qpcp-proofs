@@ -19,6 +19,20 @@
   7. When a proof merges, a late duplicate proof is closed naming it, and an
      open refutation of that step is flagged, not closed. Two open proofs of
      an unsettled step are both left open (never closed for arriving second).
+  8. (#158 review) A merge into another branch (staging) closes nothing; a
+     merge whose proof is no longer on main closes nothing; a pull request
+     into another branch is not acted on when opened.
+  9. (#158 review) The dispute state holds in both closing paths: a pull
+     request labelled disputed or needs-maintainer, or one whose step's issue
+     is disputed, is never closed automatically.
+ 10. (#158 review) A proof deleted and added again ([new add, deletion, old
+     add] on main) is "settled by" the pull request that added the current
+     file, from the same provenance code as the site's credit.
+ 11. (#158 review) Timeliness comes from a comment's own time: a /renew
+     written five minutes before expiry and processed five minutes after it
+     renews; two comments processed in reverse order end as if processed in
+     order (a /claim then /release leaves no holder; of two /claims, the
+     earlier wins).
 """
 
 import json
@@ -128,7 +142,7 @@ def main():
             "64": issue(64, "S900064: x", ("step", "claimed"), ["alice"],
                         [(30, "alice", "/claim", NOW - 30 * H), (31, "carol", "Nice step, any hints?", NOW - 1 * H)]),
             "65": issue(65, "S900065: x", ("step", "claimed"), ["dave"],
-                        [(40, "dave", "/claim", NOW - 30 * H), (41, "dave", "Working on the n = 0 case.", NOW - 2 * H)])}})
+                        [(40, "dave", "/claim", NOW - 30 * H), (41, "dave", "Working on the n = 0 case.", NOW - 10 * H)])}})
         out, _ = e.call("sweep")
         st = e.get()
         check("3. an unrelated comment by someone else does not renew: alice's claim lapses",
@@ -157,33 +171,75 @@ def main():
         check(f"4. /claim on the exercise {exercise} assigns nobody and says no claim is needed",
               r == "exercise" and holders(st, 61) == [] and any("needs no claim" in b for b in bot_says(st, 61)), (r, bot_says(st, 61)))
 
-        # 5-7. Pull requests.
-        def pr(n, path, state="open", merged_at=None, user="x"):
+        # 5-10. Pull requests. Main's history is a real Git repository (QPCP_REPO), as in triage.yml's checkout.
+        main_repo = base / "main-repo"
+        main_repo.mkdir()
+        def git(*a):
+            return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@e.invalid", "-c", "commit.gpgsign=false",
+                                   "-C", str(main_repo), *a], capture_output=True, text=True, check=True).stdout.strip()
+        git("init", "-q", "-b", "main")
+        (main_repo / "QPCP" / "Proofs").mkdir(parents=True)
+        f30 = main_repo / "QPCP" / "Proofs" / "S900030.lean"
+        f30.write_text("old proof\n")
+        git("add", "-A"); git("commit", "-q", "-m", "old add")
+        old_add = git("rev-parse", "HEAD")
+        git("rm", "-q", str(f30.relative_to(main_repo))); git("commit", "-q", "-m", "deletion")
+        f30.parent.mkdir(parents=True, exist_ok=True)  # git rm took the empty folder
+        f30.write_text("new proof\n")
+        (main_repo / "QPCP" / "Proofs" / "S900031.lean").write_text("x\n")
+        git("add", "-A"); git("commit", "-q", "-m", "new add")
+        new_add = git("rev-parse", "HEAD")
+
+        def pr(n, path, state="open", merged_at=None, user="x", base_ref="main", labels=()):
             return {"number": n, "state": state, "merged_at": merged_at, "user": {"login": user},
-                    "labels": [], "files": [{"filename": path, "status": "added"}]}
+                    "base": {"ref": base_ref}, "labels": [{"name": l} for l in labels],
+                    "files": [{"filename": path, "status": "added"}]}
+        pulls = {
+            "200": pr(200, "QPCP/Proofs/S900031.lean", "closed", "2026-11-27T00:00:00Z"),
+            "201": pr(201, "QPCP/Proofs/S900031.lean"),
+            "202": pr(202, "QPCP/Refutations/S900031.lean"),
+            "203": pr(203, "QPCP/Proofs/S900030.lean"),
+            "204": pr(204, "QPCP/Refutations/S900030.lean"),
+            "205": pr(205, "QPCP/Proofs/S900032.lean"),
+            "206": pr(206, "QPCP/Proofs/S900032.lean"),
+            # 8. other branches, and a proof no longer on main
+            "210": pr(210, "QPCP/Proofs/S900033.lean", "closed", "2026-11-27T00:00:00Z", base_ref="staging"),
+            "211": pr(211, "QPCP/Proofs/S900033.lean"),
+            "212": pr(212, "QPCP/Proofs/S900030.lean", base_ref="staging"),
+            "213": pr(213, "QPCP/Proofs/S900034.lean", "closed", "2026-11-27T00:00:00Z"),
+            "214": pr(214, "QPCP/Proofs/S900034.lean"),
+            # 9. held: labelled, or its step's issue disputed
+            "220": pr(220, "QPCP/Proofs/S900030.lean", labels=("disputed",)),
+            "221": pr(221, "QPCP/Proofs/S900031.lean", labels=("needs-maintainer",)),
+            "222": pr(222, "QPCP/Proofs/S900035.lean"),
+            "223": pr(223, "QPCP/Proofs/S900035.lean", "closed", "2026-11-27T00:00:00Z"),
+            "224": pr(224, "QPCP/Proofs/S900030.lean", labels=("needs-maintainer",)),
+            # 8. a merge into staging of a proof that IS on main; candidates into other branches
+            "215": pr(215, "QPCP/Proofs/S900036.lean", "closed", "2026-11-27T00:00:00Z", base_ref="staging"),
+            "216": pr(216, "QPCP/Proofs/S900036.lean"),
+            "217": pr(217, "QPCP/Proofs/S900031.lean", base_ref="staging"),
+        }
         state = {
-            "issues": {str(n): issue(n, f"PR {n}", labels=()) for n in (200, 201, 202, 203, 204, 205, 206)},
-            "pulls": {
-                "200": pr(200, "QPCP/Proofs/S900031.lean", "closed", "2026-11-27T00:00:00Z"),
-                "201": pr(201, "QPCP/Proofs/S900031.lean"),
-                "202": pr(202, "QPCP/Refutations/S900031.lean"),
-                "203": pr(203, "QPCP/Proofs/S900030.lean"),
-                "204": pr(204, "QPCP/Refutations/S900030.lean"),
-                "205": pr(205, "QPCP/Proofs/S900032.lean"),
-                "206": pr(206, "QPCP/Proofs/S900032.lean")},
-            "main_files": ["QPCP/Proofs/S900030.lean", "QPCP/Proofs/S900031.lean"],
-            "commits_by_path": {"QPCP/Proofs/S900030.lean": [{"sha": "b" * 40}, {"sha": "a" * 40}]},
-            "commit_pulls": {"a" * 40: [{"number": 156, "merged_at": "2026-11-26T17:16:50Z", "base": {"ref": "main"}}]},
+            "issues": dict({str(n): issue(n, f"PR {n}", labels=tuple(l["name"] for l in pulls[str(n)]["labels"]))
+                            for n in map(int, pulls)},
+                           **{"300": issue(300, "S900035: x", labels=("step", "disputed"))}),
+            "pulls": pulls,
+            "main_files": ["QPCP/Proofs/S900030.lean", "QPCP/Proofs/S900031.lean", "QPCP/Proofs/S900035.lean",
+                           "QPCP/Proofs/S900036.lean"],
+            "commit_pulls": {old_add: [{"number": 60, "merged_at": "2026-11-24T00:00:00Z", "base": {"ref": "main"}}],
+                             new_add: [{"number": 156, "merged_at": "2026-11-26T17:16:50Z", "base": {"ref": "main"}}]},
         }
         e = Env(base / "p", state)
+        e.env["QPCP_REPO"] = str(main_repo)
         r203, _ = e.call("pr-opened", 203)
         r204, _ = e.call("pr-opened", 204)
         r206, _ = e.call("pr-opened", 206)
         st = e.get()
         check("5. a proof of a step already proved on main is closed",
               r203 == "closed" and st["pulls"]["203"]["state"] == "closed", (r203, st["pulls"]["203"]["state"]))
-        check("5. ...naming the pull request whose commit added the file: 'already settled by #156'",
-              any("already settled by #156" in b for b in bot_says(st, 203)), bot_says(st, 203))
+        check("10. deleted and added again: 'already settled by #156' (the current file's addition), not #60",
+              any("already settled by #156" in b for b in bot_says(st, 203)) and not any("#60" in b for b in bot_says(st, 203)),
+              bot_says(st, 203))
         check("6. a refutation of a proved step is kept open and flagged for the maintainer",
               r204 == "flagged" and st["pulls"]["204"]["state"] == "open"
               and "needs-maintainer" in [l["name"] for l in st["issues"]["204"]["labels"]], (r204, st["issues"]["204"]))
@@ -197,8 +253,68 @@ def main():
         check("7. an open refutation of that step is flagged, never closed",
               st["pulls"]["202"]["state"] == "open" and "needs-maintainer" in [l["name"] for l in st["issues"]["202"]["labels"]],
               st["issues"]["202"])
+        check("8. a candidate into another branch is never closed as a duplicate of a merge into main",
+              st["pulls"]["217"]["state"] == "open", st["pulls"]["217"])
         check("7. pull requests for other steps are untouched by the merge",
               st["pulls"]["205"]["state"] == "open" and st["pulls"]["206"]["state"] == "open")
+        check("9. a pull request flagged needs-maintainer is not closed when a proof of its step merges",
+              st["pulls"]["221"]["state"] == "open", st["pulls"]["221"])
+        out215, _ = e.call("pr-merged", 215)
+        st = e.get()
+        check("8. a merge into staging closes nothing, even when the proof is also on main",
+              st["pulls"]["216"]["state"] == "open" and out215 == "nothing to close", out215)
+        out, _ = e.call("pr-merged", 210)
+        r212, _ = e.call("pr-opened", 212)
+        out213, _ = e.call("pr-merged", 213)
+        st = e.get()
+        check("8. a merge into staging closes no pull request into main", st["pulls"]["211"]["state"] == "open" and out == "nothing to close", out)
+        check("8. a pull request into staging is not acted on when opened", r212 == "ignored" and st["pulls"]["212"]["state"] == "open", r212)
+        check("8. a manual replay of an old merge whose proof was since deleted from main closes nothing",
+              st["pulls"]["214"]["state"] == "open" and out213 == "nothing to close", out213)
+        r220, _ = e.call("pr-opened", 220)
+        # A maintainer hold survives every event: opened, reopened and synchronize all run pr-opened
+        # (checked below in triage.yml), and the merged path is checked after.
+        holds = [e.call("pr-opened", 224)[0] for _ in ("opened", "reopened", "synchronize")]
+        st = e.get()
+        check("9. a needs-maintainer hold survives opened, reopened and synchronize: never closed",
+              holds == ["held"] * 3 and st["pulls"]["224"]["state"] == "open", holds)
+        wf = (ROOT / ".github" / "workflows" / "triage.yml").read_text()
+        check("9. triage.yml runs the opened path for opened, reopened and synchronize, and the merged path on merge",
+              "types: [opened, reopened, synchronize, closed]" in wf and "'merged'" in wf and "pr-opened" in wf
+              and "github.event.pull_request.merged == true" in wf)
+        e.call("pr-merged", 200)  # a merge of a proof of S900031 again: the held 221 must survive it too
+        st = e.get()
+        check("9. merged path: the needs-maintainer hold survives a merge event", st["pulls"]["221"]["state"] == "open")
+        r222, _ = e.call("pr-opened", 222)
+        out223, _ = e.call("pr-merged", 223)
+        st = e.get()
+        check("9. opened path: a pull request labelled disputed is not closed though its step is proved",
+              r220 == "held" and st["pulls"]["220"]["state"] == "open", r220)
+        check("9. opened path: a pull request whose step's issue is disputed is not closed",
+              r222 == "held" and st["pulls"]["222"]["state"] == "open", r222)
+        check("9. merged path: a pull request whose step's issue is disputed is not closed",
+              st["pulls"]["222"]["state"] == "open" and "held #222" in out223, out223)
+
+        # 11. Timeliness from the comment's own time, and out-of-order processing.
+        e = Env(base / "t", {"issues": {
+            "71": issue(71, "S900071: x", ("step", "claimed"), ["alice"],
+                        [(10, "alice", "/claim", NOW - 24 * H - 300), (11, "alice", "/renew", NOW - 600)]),
+            "72": issue(72, "S900072: x", comments=[(20, "bob", "/claim", NOW - 120), (21, "bob", "/release", NOW - 60)]),
+            "73": issue(73, "S900073: x", comments=[(30, "carl", "/claim", NOW - 120), (31, "dora", "/claim", NOW - 60)])}})
+        r71, _ = e.call("claim-comment", 71, 11)
+        st = e.get()
+        check("11. a /renew written 5 minutes before expiry and processed 5 minutes after it renews",
+              r71 == "renewed" and holders(st, 71) == ["alice"], (r71, holders(st, 71), bot_says(st, 71)))
+        late_release, _ = e.call("claim-comment", 72, 21)
+        late_claim, _ = e.call("claim-comment", 72, 20)
+        st = e.get()
+        check("11. /claim then /release, processed in reverse order: no holder (the older /claim does not undo it)",
+              holders(st, 72) == [] and late_claim == "superseded", (late_release, late_claim, holders(st, 72)))
+        second, _ = e.call("claim-comment", 73, 31)
+        first, _ = e.call("claim-comment", 73, 30)
+        st = e.get()
+        check("11. two /claims processed in reverse order: the earlier comment's author holds the step",
+              holders(st, 73) == ["carl"] and second == "taken" and first == "claimed", (second, first, holders(st, 73)))
     except Exception as e:  # a crash is a failure, never a skip
         import traceback
         traceback.print_exc()

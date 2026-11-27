@@ -18,13 +18,16 @@
 
 Rules (JOIN.md, "Claims"):
   - A claim is a courtesy, not a lock. Exercises need no claim.
-  - One holder per step and one claimed step per account. Two runs can write
-    at once (GitHub keeps only one pending run per concurrency group, so the
-    claim workflow has none): after writing, each run re-reads and resolves
-    conflicts the same way, so they agree. The earliest current /claim
-    comment wins; the loser is reverted with a comment.
-  - A claim lapses 24 hours after the HOLDER's last comment on the issue;
-    /renew is an explicit one. Other people's comments do not renew it.
+  - One holder per step and one claimed step per account. The comments are the
+    state: each run replays an issue's comments in the order of their own
+    timestamps and makes the assignee match, so delayed, simultaneous and
+    out-of-order runs agree. The earliest /claim wins.
+  - A claim lapses 24 hours after the HOLDER's last comment, judged by the
+    comments' own times; /renew is an explicit one. Other people's comments
+    do not renew it.
+  - Only pull requests into main are acted on, and only while the proof is on
+    main. A pull request that is disputed or flagged needs-maintainer, or
+    whose step's issue is disputed, is never closed automatically.
 
 Talks to GitHub only through `gh api` (GH_REPO, GH_TOKEN), so the tests can
 stand in a fake `gh`. QPCP_NOW (epoch seconds) overrides the clock in tests.
@@ -105,12 +108,6 @@ def command(c):
     return word if word in COMMANDS else ""
 
 
-def current_claim(comments, who):
-    """The comment id of `who`'s latest /claim on this issue (their current attempt)."""
-    ids = [c["id"] for c in comments if c["user"]["login"] == who and command(c) == "/claim"]
-    return max(ids) if ids else None
-
-
 def step_of(issue):
     m = re.match(r"^(S\d{3,6}|L[1-9]\d{0,8}):", issue.get("title") or "")
     return m.group(1) if m else ""
@@ -124,71 +121,118 @@ def is_exercise(sid):
     return any(s.get("id") == sid and s.get("exercise") is True for s in steps)
 
 
-def unassign(n, who, remaining):
-    api("DELETE", f"issues/{n}/assignees", {"assignees": [who]})
-    if not remaining:
-        api("DELETE", f"issues/{n}/labels/claimed", missing_ok=True)
-
-
 def claimed_by(who):
     return [i for i in api("GET", f"issues?state=open&labels=claimed&per_page=100", paginate=True) or []
             if "pull_request" not in i and who in holders(i)]
 
 
 # ------------------------------------------------------------------ claims
+#
+# The comments are the state. Each run REPLAYS an issue's comments in the order
+# of their own timestamps and works out who holds the step now, then makes the
+# issue's assignee match. So a comment's effect depends on when it was written,
+# not on when its workflow ran: a /renew written inside the window counts even
+# if processed late, a lapsed claim is not revived, and two runs processing
+# comments in either order reach the same state.
+#
+# The one rule that spans issues (one claimed step per account) is recorded in
+# the issue itself: when a claim is reverted because the account already holds
+# an earlier claim elsewhere, the bot's comment carries `<!-- qpcp:void <id> -->`
+# for that /claim comment, and every later replay skips it. Only comments by
+# the bot account are read for markers.
 
-def resolve_issue(n):
-    """More than one holder: the earliest current /claim wins; the others are reverted."""
+BOT = "github-actions[bot]"
+VOID = re.compile(r"<!-- qpcp:void (\d+) -->")
+
+
+def replay(comments, at=None):
+    """(holder, claim comment id, {comment id: effect}, [lapsed holders]) as of time `at`."""
+    at = now() if at is None else at
+    voided = {int(v) for c in comments if c["user"]["login"] == BOT for v in VOID.findall(c.get("body") or "")}
+    holder, claim_id, last, effects, lapsed = None, None, None, {}, []
+    people = sorted((c for c in comments if c["user"]["login"] != BOT), key=lambda c: (ts(c["created_at"]), c["id"]))
+    for c in people:
+        t, who, cmd = ts(c["created_at"]), c["user"]["login"], command(c)
+        if holder and t - last > LAPSE:
+            lapsed.append(holder)
+            holder = None
+        if who == holder:
+            if cmd == "/release":
+                holder, effects[c["id"]] = None, "released"
+            else:
+                last = t  # any comment by the holder renews; /renew and /claim say so explicitly
+                effects[c["id"]] = "renewed" if cmd in ("/renew", "/claim") else "activity"
+        elif cmd == "/claim":
+            if c["id"] in voided:
+                effects[c["id"]] = "void"
+            elif holder is None:
+                holder, claim_id, last, effects[c["id"]] = who, c["id"], t, "claimed"
+            else:
+                effects[c["id"]] = ("taken", holder, claim_id)
+        elif cmd in ("/renew", "/release"):
+            effects[c["id"]] = "not-holder"
+    if holder and at - last > LAPSE:
+        lapsed.append(holder)
+        holder = None
+    return holder, claim_id, effects, lapsed
+
+
+def reconcile(n):
+    """Make issue n's holder the one its comments say. Returns (holder, claim id, effects, issue)."""
     issue = api("GET", f"issues/{n}")
-    hs = holders(issue)
-    if len(hs) < 2:
-        return
     cs = comments_of(n)
-    order = sorted(hs, key=lambda h: (current_claim(cs, h) is None, current_claim(cs, h) or 0, h))
-    winner = order[0]
-    for loser in order[1:]:
-        if loser in holders(api("GET", f"issues/{n}")):  # re-read: another run may have done it
-            unassign(n, loser, True)
-            comment(n, f"@{loser}: @{winner} claimed this step first (comment {current_claim(cs, winner)}), "
-                       "so your claim is reverted. A claim is a courtesy, not a lock: you may still submit, "
-                       "but please pick another open step.")
+    if is_exercise(step_of(issue)):
+        want, claim_id, effects, lapsed = None, None, {}, []
+    else:
+        want, claim_id, effects, lapsed = replay(cs)
+    have = holders(issue)
+    for h in have:
+        if h != want:
+            api("DELETE", f"issues/{n}/assignees", {"assignees": [h]})
+            if h in lapsed:
+                comment(n, f"The claim by @{h} had lapsed: no comment from them for 24 hours."
+                        + ("" if want else " This step is open again."))
+    if want and want not in [a["login"] for a in issue.get("assignees", [])]:
+        api("POST", f"issues/{n}/assignees", {"assignees": [want]})
+    names = {l["name"] for l in issue.get("labels", [])}
+    if want and "claimed" not in names:
+        api("POST", f"issues/{n}/labels", {"labels": ["claimed"]})
+    if not want and "claimed" in names:
+        api("DELETE", f"issues/{n}/labels/claimed", missing_ok=True)
+    return want, claim_id, effects, issue
 
 
 def resolve_account(who):
-    """One account, several claimed steps: the earliest current /claim is kept."""
-    held = claimed_by(who)
+    """One account, several claimed steps: the earliest current /claim is kept; the
+    others are voided in their issues (a marker the replay honours) and released."""
+    held = {}
+    for i in claimed_by(who):
+        holder, claim_id, _, _ = replay(comments_of(i["number"]))
+        if holder == who and claim_id is not None:
+            held[i["number"]] = claim_id
     if len(held) < 2:
         return
-    first = {i["number"]: current_claim(comments_of(i["number"]), who) for i in held}
-    keep = min(first, key=lambda n: (first[n] is None, first[n] or 0, n))
-    for n in sorted(first):
+    keep = min(held, key=lambda n: (held[n], n))
+    for n in sorted(held):
         if n == keep:
             continue
-        issue = api("GET", f"issues/{n}")
-        if who in holders(issue):
-            unassign(n, who, [h for h in holders(issue) if h != who])
-            comment(n, f"@{who} already holds #{keep} (claimed first), and one account holds one step at a "
-                       "time, so this claim is reverted.")
+        cs = comments_of(n)
+        if not any(c["user"]["login"] == BOT and f"<!-- qpcp:void {held[n]} -->" in (c.get("body") or "") for c in cs):
+            comment(n, f"@{who} already holds #{keep} (claimed first), and one account holds one step at a time, "
+                       f"so this claim is reverted. <!-- qpcp:void {held[n]} -->")
+        reconcile(n)
 
 
 def sweep(except_issue=None):
-    """Release every holder whose own last comment on the issue is over 24 hours old."""
+    """Release every claim whose holder has not commented for 24 hours (by the comments' own times)."""
     released = []
     for issue in api("GET", "issues?state=open&labels=claimed&per_page=100", paginate=True) or []:
         n = issue["number"]
         if "pull_request" in issue or n == except_issue:
             continue
-        hs = holders(issue)
-        cs = comments_of(n)
-        for h in hs:
-            mine = [ts(c["created_at"]) for c in cs if c["user"]["login"] == h]
-            last = max(mine) if mine else ts(issue["created_at"])
-            if last < now() - LAPSE:
-                rest = [x for x in holders(api("GET", f"issues/{n}")) if x != h]
-                unassign(n, h, rest)
-                comment(n, f"The claim by @{h} lapsed: no comment from them for 24 hours. "
-                           + ("This step is open again." if not rest else ""))
-                released.append(f"{n}:{h}")
+        before = holders(issue)
+        want, _, _, _ = reconcile(n)
+        released += [f"{n}:{h}" for h in before if h != want]
     return released
 
 
@@ -202,58 +246,54 @@ def claim_comment(n, comment_id):
     issue = api("GET", f"issues/{n}")
     if issue.get("state") != "open" or not cmd:
         return "ignored"
-    hs = holders(issue)
     sid = step_of(issue)
-    # This issue's holders are judged by their comments BEFORE this one, so a late
-    # /renew or /claim cannot revive a claim that had already lapsed.
-    for h in list(hs):
-        before = [ts(x["created_at"]) for x in cs if x["user"]["login"] == h and x["id"] != comment_id]
-        last = max(before) if before else ts(issue["created_at"])
-        if last < now() - LAPSE and not (h == who and cmd == "/release"):
-            hs = [x for x in hs if x != h]
-            unassign(n, h, hs)
-            comment(n, f"The claim by @{h} had lapsed: no comment from them for 24 hours.")
-    if cmd == "/release":
-        if who in hs:
-            unassign(n, who, [h for h in hs if h != who])
-            comment(n, f"Released by @{who}. This step is open again.")
-            return "released"
-        return "ignored"
-    if cmd == "/renew":
-        if who in hs:
-            comment(n, f"Claim renewed for @{who}: the 24-hour clock restarts from this comment.")
-            return "renewed"
-        comment(n, f"@{who}: only the holder can renew a claim, and you do not hold this one.")
-        return "ignored"
-    # /claim
     if is_exercise(sid):
-        comment(n, f"{sid} is a first-contribution exercise: it needs no claim and is first-come. "
-                   "Prepare it, check it in your workspace, and submit it.")
+        if cmd == "/claim":
+            comment(n, f"{sid} is a first-contribution exercise: it needs no claim and is first-come. "
+                       "Prepare it, check it in your workspace, and submit it.")
+        reconcile(n)
         return "exercise"
-    if who in hs:
-        comment(n, f"Claim renewed for @{who}.")
-        return "renewed"
-    if hs:
-        comment(n, f"This step is already claimed by @{', @'.join(hs)}. A claim is a courtesy, not a lock: "
-                   "a correct proof from anyone is not rejected for it, but please pick another open step.")
+    want, _, effects, _ = reconcile(n)
+    effect = effects.get(comment_id)
+    if effect == "claimed":
+        # Another run may have written at the same time: re-read, and apply the account rule.
+        resolve_account(who)
+        want, _, effects, _ = reconcile(n)
+        if want == who:
+            comment(n, f"Claimed by @{who}. The claim lapses 24 hours after your last comment here; comment "
+                       "`/renew` to restart the clock and `/release` to give it up. Other people's comments do "
+                       "not renew it.")
+            return "claimed"
+        return "superseded"  # a later comment (or an earlier claim elsewhere) decided otherwise
+    if effect == "renewed":
+        if want == who:
+            comment(n, f"Claim renewed for @{who}: the 24-hour clock restarts from this comment's own time.")
+            return "renewed"
+        return "superseded"
+    if effect == "released":
+        if want != who:
+            comment(n, f"Released by @{who}. This step is open again.")
+        return "released"
+    if isinstance(effect, tuple) and effect[0] == "taken":
+        comment(n, f"@{who}: @{effect[1]} claimed this step first (comment {effect[2]}), so your claim is not "
+                   "taken. A claim is a courtesy, not a lock: a correct proof from anyone is not rejected for "
+                   "it, but please pick another open step.")
         return "taken"
-    if claimed_by(who):
-        comment(n, f"@{who} already holds a claimed step. Finish it or comment `/release` there first.")
-        return "refused"
-    api("POST", f"issues/{n}/assignees", {"assignees": [who]})
-    api("POST", f"issues/{n}/labels", {"labels": ["claimed"]})
-    # Another run may have written at the same time: re-read and resolve, the same way it will.
-    resolve_issue(n)
-    resolve_account(who)
-    if who in holders(api("GET", f"issues/{n}")):
-        comment(n, f"Claimed by @{who}. The claim lapses 24 hours after your last comment here; comment "
-                   "`/renew` to restart the clock and `/release` to give it up. Other people's comments do "
-                   "not renew it.")
-        return "claimed"
-    return "lost"
+    if effect == "not-holder" and cmd == "/renew":
+        comment(n, f"@{who}: only the holder can renew a claim, and you do not hold this one.")
+    return "ignored"
 
 
 # ------------------------------------------------------------------ pull requests
+#
+# The authoritative dispute state (one rule, used by both closing paths): a pull
+# request is HELD, and never closed automatically, if it carries the `disputed`
+# or `needs-maintainer` label, or if its step's issue carries `disputed` (the
+# report workflow's label while a report on that step is open). Only pull
+# requests into main are acted on, and only while the proof is on main now.
+
+HOLD = {"disputed", FLAG}
+
 
 def contribution(pr_number):
     files = api("GET", f"pulls/{pr_number}/files?per_page=100", paginate=True) or []
@@ -268,26 +308,51 @@ def on_main(kind, sid):
     return api("GET", f"contents/QPCP/{folder}/{sid}.lean?ref=main", missing_ok=True) is not None
 
 
+def into_main(pr):
+    return (pr.get("base") or {}).get("ref") == "main"
+
+
+def held(pr, sid):
+    """True if the pull request or its step is disputed or flagged for the maintainer."""
+    if HOLD & {l["name"] for l in pr.get("labels", [])}:
+        return True
+    disputed = api("GET", "issues?state=open&labels=disputed&per_page=100", paginate=True) or []
+    return any(step_of(i) == sid for i in disputed if "pull_request" not in i)
+
+
+def build_status():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("qpcp_build_status", ROOT / "scripts" / "build_status.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def settled_by(kind, sid):
-    """The merged pull request whose commit added the file on main, or None (never a guess from titles)."""
+    """The merged pull request into main whose commit ADDED the file now on main, or None.
+
+    The same provenance as the site's credit (build_status.added_commits and
+    pick_pull: the latest commit on main's history that added the path), so a
+    deleted and re-added file names the pull request that added the current one."""
+    bs = build_status()
     folder = "Proofs" if kind == "proof" else "Refutations"
-    commits = api("GET", f"commits?sha=main&path=QPCP/{folder}/{sid}.lean&per_page=100", paginate=True) or []
-    if not commits:
-        return None
-    adding = commits[-1]["sha"]  # newest first: the last one added it
-    pulls = [p for p in api("GET", f"commits/{adding}/pulls") or []
-             if p.get("merged_at") and (p.get("base") or {}).get("ref") == "main"]
-    return min(pulls, key=lambda p: p["merged_at"]) if pulls else None
+    path = f"QPCP/{folder}/{sid}.lean"
+    repo_dir = Path(os.environ.get("QPCP_REPO") or ROOT)
+    adding = bs.added_commits(repo_dir, [path]).get(path)
+    return bs.pick_pull(api("GET", f"commits/{adding}/pulls")) if adding else None
 
 
 def flag(n, text):
+    pr = api("GET", f"pulls/{n}")
+    if FLAG in {l["name"] for l in pr.get("labels", [])}:
+        return  # already flagged: no second comment
     api("POST", f"issues/{n}/labels", {"labels": [FLAG]})
     comment(n, text)
 
 
 def pr_opened(n):
     pr = api("GET", f"pulls/{n}")
-    if pr.get("state") != "open":
+    if pr.get("state") != "open" or not into_main(pr):
         return "ignored"
     got = contribution(n)
     if not got:
@@ -295,6 +360,8 @@ def pr_opened(n):
     kind, sid = got
     proved, refuted = on_main("proof", sid), on_main("refutation", sid)
     if kind == "proof" and proved:
+        if held(pr, sid):
+            return "held"
         by = settled_by("proof", sid)
         ref = f"#{by['number']}" if by else "a commit with no pull request"
         comment(n, f"{sid} is already settled by {ref}: `QPCP/Proofs/{sid}.lean` is on main. Closing this "
@@ -312,18 +379,24 @@ def pr_opened(n):
 
 def pr_merged(n):
     pr = api("GET", f"pulls/{n}")
-    if not pr.get("merged_at"):
+    if not pr.get("merged_at") or not into_main(pr):
         return []
     got = contribution(n)
     if not got or got[0] != "proof":
         return []
     sid = got[1]
+    if not on_main("proof", sid):
+        return []  # not on main now (for example, deleted since): nothing is settled
     done = []
     for other in api("GET", "pulls?state=open&per_page=100", paginate=True) or []:
-        if other["number"] == n:
+        if other["number"] == n or not into_main(other):
             continue
         theirs = contribution(other["number"])
         if theirs == ("proof", sid):
+            current = api("GET", f"pulls/{other['number']}")  # re-read just before closing
+            if current.get("state") != "open" or held(current, sid):
+                done.append(f"held #{other['number']}")
+                continue
             comment(other["number"], f"Closed as a confirmed duplicate: #{n}, a proof of {sid}, has merged. "
                                      "Thank you; if yours takes a different route worth keeping, say so here.")
             api("PATCH", f"pulls/{other['number']}", {"state": "closed"})

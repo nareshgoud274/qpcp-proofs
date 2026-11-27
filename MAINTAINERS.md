@@ -443,21 +443,36 @@ requests for settled steps (`triage.yml`), through `gh api` only.
 - A claim is a courtesy, not a lock: the checker never rejects a proof
   because someone else holds the step. Exercises need no claim.
 - One holder per step and one claimed step per account. `claim.yml` has no
-  concurrency group, because GitHub keeps only one pending run per group. So
-  two runs can write at once, and each then re-reads and resolves the same
-  way: the earliest current `/claim` wins, and the loser is reverted with a
-  comment.
-- A claim lapses 24 hours after the holder's own last comment. `/renew`
-  renews it explicitly; other people's comments do not.
+  concurrency group, because GitHub keeps only one pending run per group.
+  Instead, **the comments are the state**: each run replays the issue's
+  comments in the order of their own timestamps, works out who holds the
+  step, and makes the assignee match. So delayed, simultaneous and
+  out-of-order runs agree, and the earliest `/claim` wins.
+- The account rule spans issues. When a claim is reverted because the account
+  already holds an earlier one, the bot's comment carries
+  `<!-- qpcp:void <comment id> -->`, which later replays honour. Assigning
+  someone by hand on a step issue does not stick: the claim comments decide.
+- A claim lapses 24 hours after the holder's own last comment, judged by the
+  comments' own times, so a `/renew` written in time counts even if its
+  workflow runs late. A lapsed claim is never revived. `/renew` renews it
+  explicitly; other people's comments do not.
 - **Already-settled steps.** A proof of a step already proved on main fails
   at the gate (`ci_contribution.sh`), before anything is built, and
   `triage.yml` closes it with "already settled by #n".
 - **Duplicates on merge.** When a proof merges, other open pull requests
   adding a proof of the same step are closed as confirmed duplicates, naming
   it.
-- **Never closed automatically:** a refutation, or anything conflicting with
-  a settled result. These get the `needs-maintainer` label: decide them by
-  hand. A refutation of a proved step means a statement, a definition or the
+- **Never closed automatically:**
+  - a refutation, or anything conflicting with a settled result. These get
+    the `needs-maintainer` label: decide them by hand.
+  - anything **held**. The one dispute state, used by both closing paths: a
+    pull request labelled `disputed` or `needs-maintainer`, or one whose
+    step's issue is labelled `disputed` (the report workflow's label while a
+    report is open). Add either label to a pull request to keep it open.
+- Only pull requests into `main` are acted on, and a merge closes duplicates
+  only if its base is `main` and the proof is on main now. "Settled by #n"
+  uses `build_status.py`'s provenance: the latest commit on main that added
+  the file. A refutation of a proved step means a statement, a definition or the
   checker is wrong.
 - `tests/test_claims.py` covers these cases against a stand-in `gh`
   (`tests/fake_gh.py`).
