@@ -5,7 +5,8 @@
 
   1. The setup block in JOIN.md stops, non-zero and before any `lake` command
      runs, when JOIN.md differs from the pinned commit or the pinned commit
-     does not exist; when it is unchanged it records the checkout's commit in
+     does not exist, and before cloning when /out is missing or not writable
+     (a fresh virtual machine); when it is unchanged it records the checkout's commit in
      /out/base-commit and goes on. It runs the block exactly as written, with
      only the clone URL and /out redirected, against synthetic repositories
      and a stand-in `lake` that records whether it was called.
@@ -76,9 +77,12 @@ def stub(bindir, name, script):
 
 # ------------------------------------------------------------------ 1. the stop
 
-def run_setup(block, work, join_sha, url):
+def run_setup(block, work, join_sha, url, out_state="ready"):
     out = work / "out"
-    out.mkdir()
+    if out_state != "missing":
+        out.mkdir()
+    if out_state == "read-only":
+        out.chmod(0o555)
     bindir = work / "bin"
     bindir.mkdir()
     calls = work / "lake-calls"
@@ -138,6 +142,19 @@ def test_stop(tmp):
     r, lake, base = run_setup(block, fresh("missing"), "0" * 40, str(up))
     check("1. a pin that is not in the history: non-zero, and lake never runs",
           r.returncode != 0 and lake == [] and base is None, (r.returncode, lake, base))
+
+    # /out missing, or not writable by the working user (a fresh Lima VM): stop before cloning.
+    now_pin = git(up, "rev-parse", "HEAD")  # JOIN.md unchanged since this pin: only /out can stop it
+    for state in ("missing", "read-only"):
+        if state == "read-only" and os.geteuid() == 0:
+            continue  # root can write anywhere: the read-only case cannot be shown as root
+        w = fresh(f"out-{state}")
+        r, lake, base = run_setup(block, w, now_pin, str(up), out_state=state)
+        check(f"1. /out {state}: setup says STOP, exits non-zero, clones nothing and never runs lake",
+              r.returncode != 0 and "STOP: /out is missing or not writable" in r.stdout and lake == []
+              and not (w / "ws" / "qpcp-proofs").exists(), (r.returncode, r.stdout, r.stderr, lake))
+        if state == "read-only":
+            (w / "out").chmod(0o755)
 
 
 # ----------------------------------------------------------- 2. the card and feed
