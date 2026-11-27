@@ -159,12 +159,30 @@ def is_exercise(sid):
 # Claims still held are then lapsed as of now. Exercises take no part.
 #
 # Closing and reopening are events too, read from each issue's own event history
-# and replayed in the same time order (in one second: a reopening first, then
-# comments, then a closing). A closing ends the step's claim permanently: the
-# holder is free from that moment. While an issue is closed its comments count
-# for nothing. A reopening only makes the step available for a FRESH /claim; it
-# never revives a claim that a closing ended. So closing or reopening an issue
-# never changes what was decided, before it, on any issue.
+# and replayed in the same time order. A closing ends the step's claim
+# permanently: the holder is free from that moment. While an issue is closed its
+# comments count for nothing. A reopening only makes the step available for a
+# FRESH /claim; it never revives a claim that a closing ended. So closing or
+# reopening an issue never changes what was decided, before it, on any issue.
+#
+# ORDER (one policy, `order_key`, used by transitions_of and by compute):
+#   - Timestamps have one-second resolution, so time alone cannot order events.
+#   - Closings and reopenings of one issue keep their REAL sequence: GitHub's
+#     event id, which increases in creation order. They are never ordered by
+#     their names or kinds. (Without ids, the API's own order is kept.)
+#   - Comments keep their order by comment id.
+#   - A comment and a transition in the same second are genuinely ambiguous:
+#     their ids come from different sequences and cannot be compared. Policy:
+#     all transitions of that second come first, then its comments. A comment is
+#     judged against the issue's state at the end of its second. Why: GitHub's
+#     "close with comment" and "reopen and comment" put a comment and a
+#     transition in the same second. A comment that closes the issue makes no
+#     difference either way (the closing ends any claim). A /claim that comes
+#     with a reopening, which is what a person reopening and claiming means,
+#     counts.
+# After the replay, each issue's replayed state (open or closed) must agree with
+# its observed state. A mismatch is a fault naming the issue, never a silent
+# result.
 #
 # After writing, a run reads everything again and repeats until a read needs no
 # write, so a run that read before a later comment existed does not leave its
@@ -175,22 +193,29 @@ BOT = "github-actions[bot]"
 RE = "<!-- qpcp:re {} -->"
 
 
-OPENING, COMMENT, CLOSING = 0, 1, 2  # the order of events within one second
+TRANSITION, COMMENT = 0, 1  # within one second: transitions (in their sequence), then comments
 
 
-def compute(comments_by_issue, at=None, transitions=None):
+def order_key(t, phase, seq):
+    """THE ordering of replayed events: time, then transitions before comments in the same
+    second, then each one's own sequence (event id, or comment id)."""
+    return (t, phase, seq)
+
+
+def compute(comments_by_issue, at=None, transitions=None, observed=None):
     """Claim state from the comments and the issues' close/reopen history.
 
-    `transitions`: {issue: [(time, "closed" | "reopened"), ...]}. Returns (holder by issue,
-    {comment id: effect}, {issue: [accounts whose claim lapsed]}, {comment id: the claim it
-    made or renewed}, {issue: the claim holding it now})."""
+    `transitions`: {issue: [(time, sequence, "closed" | "reopened"), ...]}. `observed`: {issue:
+    "open" | "closed"}, checked against the replayed state. Returns (holder by issue, {comment
+    id: effect}, {issue: [accounts whose claim lapsed]}, {comment id: the claim it made or
+    renewed}, {issue: the claim holding it now})."""
     at = now() if at is None else at
     transitions = transitions or {}
-    events = [(ts(c["created_at"]), COMMENT, c["id"], n, c) for n, cs in comments_by_issue.items()
-              for c in cs if c["user"]["login"] != BOT]
-    events += [(t, CLOSING if kind == "closed" else OPENING, k, n, None)
-               for n, ts_ in transitions.items() for k, (t, kind) in enumerate(ts_)]
-    events.sort(key=lambda e: e[:3])
+    events = [(order_key(ts(c["created_at"]), COMMENT, c["id"]), n, c, None)
+              for n, cs in comments_by_issue.items() for c in cs if c["user"]["login"] != BOT]
+    events += [(order_key(t, TRANSITION, seq), n, None, kind)
+               for n, tr in transitions.items() for t, seq, kind in tr]
+    events.sort(key=lambda e: e[0])
     closed_now = set()
     holder, last, claim_id, owns, effects, of_claim = {}, {}, {}, {}, {}, {}
     lapsed = {n: [] for n in comments_by_issue}
@@ -201,18 +226,20 @@ def compute(comments_by_issue, at=None, transitions=None):
                 lapsed[n].append(holder[n])
                 del owns[holder[n]], holder[n], last[n], claim_id[n]
 
-    for t, kind, cid, n, c in events:
+    for key, n, c, kind in events:
+        t = key[0]
         expire(t)
-        if kind == CLOSING:
+        if kind == "closed":
             closed_now.add(n)
             if n in holder:  # the step is closed: its claim ends for good, and the account is free
                 del owns[holder[n]], holder[n], last[n], claim_id[n]
             continue
-        if kind == OPENING:
+        if kind == "reopened":
             closed_now.discard(n)  # open for a fresh claim; nothing is revived
             continue
         if n in closed_now:
             continue  # a comment on a closed issue counts for nothing
+        cid = c["id"]
         who, cmd = c["user"]["login"], command(c)
         if holder.get(n) == who:
             if cmd == "/release":
@@ -234,6 +261,10 @@ def compute(comments_by_issue, at=None, transitions=None):
         elif cmd in ("/renew", "/release"):
             effects[cid] = "not-holder"
     expire(at)
+    for n, state in sorted((observed or {}).items()):
+        replayed = "closed" if n in closed_now else "open"
+        if replayed != state:
+            raise Fault(f"#{n}: its close/reopen history replays to {replayed}, but the issue is {state}")
     return holder, effects, lapsed, of_claim, claim_id
 
 
@@ -250,25 +281,31 @@ def step_issues():
 
 
 def transitions_of(issue):
-    """The issue's closings and reopenings, in time order, from its own event history. If the
-    history has not caught up with the issue's state yet, the state is taken as starting now."""
+    """The issue's closings and reopenings as [(time, sequence, kind)], in `order_key` order,
+    from its own event history. The sequence is GitHub's event id (the API's own order if any
+    event lacks one). If the history has not caught up with the issue's state yet, the state is
+    taken as starting now (at the latest), after every recorded event."""
     n = issue["number"]
-    out = sorted((ts(e["created_at"]), e["event"])
-                 for e in api("GET", f"issues/{n}/events?per_page=100", paginate=True) or []
-                 if e.get("event") in ("closed", "reopened"))
-    shown = out[-1][1] if out else "reopened"
+    raw = [e for e in api("GET", f"issues/{n}/events?per_page=100", paginate=True) or []
+           if e.get("event") in ("closed", "reopened")]
+    by_id = all(isinstance(e.get("id"), int) for e in raw)
+    out = sorted(((ts(e["created_at"]), e["id"] if by_id else k, e["event"]) for k, e in enumerate(raw)),
+                 key=lambda x: order_key(x[0], TRANSITION, x[1]))
+    shown = out[-1][2] if out else "reopened"
+    nxt = max([s for _, s, _ in out], default=0) + 1
+    latest = max([t for t, _, _ in out], default=0)
     if issue.get("state") == "closed" and shown != "closed":
         at = ts(issue["closed_at"]) if issue.get("closed_at") else now()
-        out.append((max([at] + [t for t, _ in out]), "closed"))
+        out.append((max(at, latest), nxt, "closed"))
     elif issue.get("state") == "open" and shown == "closed":
-        out.append((now(), "reopened"))
+        out.append((max(now(), latest), nxt, "reopened"))
     return out
 
 
 def read_all():
     """(open issues, comments by issue, {issue: closings and reopenings}). An issue listed with no
     comments is not fetched: with no comments it holds no claim, whatever its history."""
-    issues, cs, tr = {}, {}, {}
+    issues, cs, tr, seen = {}, {}, {}, {}
     for i in step_issues():
         n = i["number"]
         if i.get("state") == "open":
@@ -277,9 +314,10 @@ def read_all():
             continue
         cs[n] = comments_of(n)
         tr[n] = transitions_of(i)
+        seen[n] = "closed" if i.get("state") == "closed" else "open"
     for n in issues:
         cs.setdefault(n, [])
-    return issues, cs, tr
+    return issues, cs, tr, seen
 
 
 def apply(issue, want, lapsed):
@@ -312,8 +350,8 @@ def settle(rounds=5):
     {comment id: the claim it made or renewed}, {issue: the claim holding it now})."""
     released = []
     for _ in range(rounds):
-        issues, cs, tr = read_all()
-        holder, effects, lapsed, of_claim, current = compute(cs, transitions=tr)
+        issues, cs, tr, seen = read_all()
+        holder, effects, lapsed, of_claim, current = compute(cs, transitions=tr, observed=seen)
         wrote = False
         for n in sorted(issues):
             before = holders(issues[n])

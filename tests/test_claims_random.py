@@ -7,8 +7,9 @@
 Each case is a random history of /claim, /renew, /release and ordinary
 comments by several accounts on several steps, with their own timestamps
 (some equal), over about three days. In some, a step's issue is closed and
-reopened, up to four times, at random moments (sometimes at a comment's very
-second; comments may come while it is closed). The history is then processed in many
+reopened, up to four times, at random moments: deliberately sometimes several in
+one second, and sometimes in a comment's very second. Each transition keeps its
+real sequence (an event id); comments may come while the issue is closed. The history is then processed in many
 random schedules, as GitHub Actions might run it: each comment's run comes
 late by a random delay (minutes to more than a day), some run twice, some
 never run, hourly and random sweeps interleave, and runs with the same time
@@ -79,11 +80,11 @@ class World:
                 {"id": c["id"], "user": {"login": c["who"]}, "body": c["body"], "created_at": iso(c["t"]), "_t": c["t"]})
 
     def seen(self, n):
-        return [(t, e) for t, e in self.transitions[n] if t <= self.clock]
+        return [(t, q, e) for t, q, e in self.transitions[n] if t <= self.clock]
 
     def is_open(self, n):
         s = self.seen(n)
-        return not s or s[-1][1] == "reopened"
+        return not s or s[-1][2] == "reopened"
 
     def public(self, i):
         out = {k: v for k, v in i.items() if k != "comments"}
@@ -107,7 +108,9 @@ class World:
         if seg[2] == "comments" and method == "GET":
             return self.visible(i["number"])
         if seg[2] == "events" and method == "GET":
-            return [{"event": e, "created_at": iso(t)} for t, e in self.seen(i["number"])]
+            # Each event carries its id (its real sequence). They are returned newest first, so
+            # triage.py must order them by id, not by the order or the names it is given.
+            return [{"id": q, "event": e, "created_at": iso(t)} for t, q, e in reversed(self.seen(i["number"]))]
         if seg[2] == "comments" and method == "POST":
             self.next_id += 1
             i["comments"].append({"id": self.next_id, "user": {"login": BOT}, "body": body["body"],
@@ -160,24 +163,33 @@ class World:
 
 
 def transitions(history, n):
-    """Issue n's closings and reopenings, in time order."""
-    return sorted((c["t"], c["event"]) for c in history if c.get("event") and c["issue"] == n)
+    """Issue n's closings and reopenings as (time, sequence, kind), in their real order: the
+    sequence they were made in (several can share a second)."""
+    return sorted(((c["t"], c["seq"], c["event"]) for c in history if c.get("event") and c["issue"] == n),
+                  key=lambda x: x[1])
 
 
 def reference(history, at):
     """The rules, written out on their own: holders of the open steps at time `at`.
 
-    In time order (within one second: a reopening, then comments by id, then a
-    closing): a claim lapses when its holder has not commented on that issue for
-    more than 24 hours; a closing ends the claim on that step for good, and while
-    the issue is closed its comments count for nothing; a reopening only lets a
-    new /claim in; the holder's /release frees the step and any other comment by
-    the holder renews it; anyone else's /claim is granted only if the step is
-    free and the account holds no other step."""
-    order = {"reopened": 0, "comment": 1, "closed": 2}
-    moments = [(c["t"], order[c.get("event", "comment")], c.get("id", 0), c) for c in history if c["t"] <= at]
+    Second by second. In each second, first that second's closings and
+    reopenings in the sequence they were made in (never by their kind), then
+    that second's comments by id: a comment is judged against the issue's state
+    at the end of its second (the stated policy for that ambiguous tie). A claim
+    lapses when its holder has not commented on that issue for more than 24
+    hours; a closing ends the claim on that step for good, and while the issue
+    is closed its comments count for nothing; a reopening only lets a new /claim
+    in; the holder's /release frees the step and any other comment by the holder
+    renews it; anyone else's /claim is granted only if the step is free and the
+    account holds no other step."""
+    seconds = sorted({c["t"] for c in history if c["t"] <= at})
+    timeline = []
+    for sec in seconds:
+        timeline += sorted((c for c in history if c["t"] == sec and c.get("event")), key=lambda c: c["seq"])
+        timeline += sorted((c for c in history if c["t"] == sec and not c.get("event")), key=lambda c: c["id"])
     step, shut = {}, set()  # step: issue -> [holder, time of their last comment there]
-    for t, _, _, c in sorted(moments, key=lambda m: m[:3]):
+    for c in timeline:
+        t = c["t"]
         step = {n: h for n, h in step.items() if t - h[1] <= tri.LAPSE}
         n = c["issue"]
         if c.get("event") == "closed":
@@ -208,11 +220,22 @@ def history_of(rng):
     bodies = ["/claim"] * 5 + ["/renew"] * 2 + ["/release"] * 2 + ["Working on it.", "/claim please"]
     out = [{"id": 1000 + k, "issue": rng.choice(STEPS), "who": rng.choice(ACCOUNTS), "body": rng.choice(bodies), "t": t}
            for k, t in enumerate(times)]
-    for n in STEPS:  # some issues close and reopen, up to four times, sometimes at a comment's very second
+    seq = 50_000  # event ids, in creation order across all issues
+    for n in STEPS:  # some issues close and reopen, up to four times
         if rng.random() < 0.4:
-            ts_ = sorted(set(rng.choice([rng.randint(T0, times[-1] + H), rng.choice(times)])
-                             for _ in range(rng.randint(1, 4))))
-            out += [{"issue": n, "event": ("closed", "reopened")[k % 2], "t": t} for k, t in enumerate(ts_)]
+            ts_ = []
+            for _ in range(rng.randint(1, 4)):
+                pick = rng.random()
+                if ts_ and pick < 0.35:
+                    ts_.append(ts_[-1])                    # deliberately in the same second as the last one
+                elif pick < 0.6:
+                    ts_.append(rng.choice(times))          # in a comment's very second
+                else:
+                    ts_.append(rng.randint(T0, times[-1] + H))
+            ts_.sort()  # equal times kept: never sorted(set(...))
+            for k, t in enumerate(ts_):
+                seq += 1
+                out.append({"issue": n, "event": ("closed", "reopened")[k % 2], "t": t, "seq": seq})
     return out
 
 

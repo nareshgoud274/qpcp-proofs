@@ -453,7 +453,23 @@ requests for settled steps (`triage.yml`), through `gh api` only.
   `/claim` in and never revives an old one. So closing or reopening an issue
   never changes a decision made before it, on any issue. If the event history
   lags the issue's state, the state is taken as starting at that run's time
-  until the event appears. So delayed,
+  until the event appears.
+- **Order within one second** (timestamps have one-second resolution). One
+  policy, `order_key` in `triage.py`, is used everywhere:
+  - closings and reopenings keep their real sequence, GitHub's event id, and
+    are never ordered by their names;
+  - comments keep their order by comment id;
+  - **a comment and a transition in the same second** are genuinely ambiguous,
+    because their ids come from different sequences. All transitions of that
+    second come first, then its comments, so a comment is judged against the
+    issue's state at the end of its second. Chosen because "close with
+    comment" and "reopen and comment" put both in one second: a comment that
+    closes the issue makes no difference either way, and a `/claim` that
+    comes with a reopening counts.
+
+  After the replay, each issue's replayed state (open or closed) must equal
+  its observed state; a mismatch is a fault naming the issue, and nothing is
+  written. So delayed,
   duplicated, simultaneous and out-of-order runs agree, and the earliest
   `/claim` wins.
 - The account rule spans issues, so the replay is global, not per issue: at
@@ -469,8 +485,9 @@ requests for settled steps (`triage.yml`), through `gh api` only.
   older than 24 hours from its holder's last comment, the same state in
   every schedule at a checkpoint while claims are live and after a final
   sweep, and, after every run, the state an independent reference model of
-  the rules gives. Histories include closings and reopenings. A failure
-  prints a `--replay` line.
+  the rules gives. Histories include closings and reopenings, several in one
+  second and in a comment's second, each with its real sequence, and the
+  model orders them by that sequence. A failure prints a `--replay` line.
 - A claim lapses 24 hours after the holder's own last comment, judged by the
   comments' own times, so a `/renew` written in time counts even if its
   workflow runs late. A lapsed claim is never revived. `/renew` renews it

@@ -56,6 +56,13 @@
      granted; a /claim made while the issue was closed counts for nothing;
      several close/reopen cycles each end the claim of their period; and a
      reopening processed late, or before its event appears, decides the same.
+ 17. (#158 review 5) Transitions in the same second keep their real order
+     (event ids), never an order by name: close then reopen in one second,
+     then a fresh /claim, is granted; reopen then close in one second leaves
+     the issue closed and a later /claim ignored; several transitions in one
+     second; a comment in the same second as a transition is judged against
+     the issue's state at the end of that second; and a history that replays
+     to a state other than the issue's is a fault naming the issue.
 """
 
 import json
@@ -467,6 +474,51 @@ def main():
         st = e.get()
         check("16. once the reopening is in the history, the other account's fresh /claim is granted; the old claim stays ended",
               again == "claimed" and holders(st, 96) == ["fox"], (again, holders(st, 96)))
+
+        # 17. Same-second transitions.
+        def evs(*triples):
+            return [{"id": i, "event": k, "created_at": iso(t)} for i, k, t in triples]
+        T = NOW - H
+        cases = {
+            "97": dict(issue(97, "S900097: x", comments=[(40, "gil", "/claim", NOW - 1800)]),
+                       events=evs((101, "closed", T), (102, "reopened", T))),
+            "98": dict(issue(98, "S900098: x", comments=[(41, "hana", "/claim", NOW - 1800)]),
+                       events=evs((201, "closed", T - H), (202, "reopened", T), (203, "closed", T)),
+                       state="closed", closed_at=iso(T)),
+            "99": dict(issue(99, "S900099: x", ("step", "claimed"), ["ike"],
+                             [(42, "ike", "/claim", T - 2 * H), (43, "jo", "/claim", NOW - 1800)]),
+                       events=evs((301, "closed", T), (302, "reopened", T), (303, "closed", T), (304, "reopened", T))),
+            "89": dict(issue(89, "S900089: x", comments=[(44, "kai", "/claim", T)]),
+                       events=evs((401, "closed", T - H), (402, "reopened", T))),
+            "88": dict(issue(88, "S900088: x", comments=[(45, "lu", "/claim", T)]),
+                       events=evs((501, "closed", T)), state="closed", closed_at=iso(T)),
+        }
+        e = Env(base / "same-second", {"issues": cases})
+        r = {n: e.call("claim-comment", n, c)[0] for n, c in ((97, 40), (98, 41), (99, 43), (89, 44), (88, 45))}
+        out, err = e.call("sweep")
+        st = e.get()
+        check("17. close then reopen in one second, then a fresh /claim: granted",
+              r[97] == "claimed" and holders(st, 97) == ["gil"], (r, holders(st, 97)))
+        check("17. reopen then close in one second: closed, and a later /claim is ignored",
+              r[98] == "ignored" and st["issues"]["98"]["assignees"] == [], (r, st["issues"]["98"]["assignees"]))
+        check("17. four transitions in one second (ending open): the old claim stays ended, a fresh /claim is granted",
+              r[99] == "claimed" and holders(st, 99) == ["jo"], (r, holders(st, 99)))
+        check("17. a /claim in the same second as a reopening counts (judged at the end of that second)",
+              r[89] == "claimed" and holders(st, 89) == ["kai"], (r, holders(st, 89)))
+        check("17. a /claim in the same second as a closing counts for nothing",
+              r[88] == "ignored" and st["issues"]["88"]["assignees"] == [], (r, st["issues"]["88"]["assignees"]))
+        check("17. the sweep after them faults on nothing", out != "" and "FAULT" not in out, (out, err))
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("qpcp_triage_t", ROOT / "scripts" / "triage.py")
+        tri = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tri)
+        try:
+            tri.compute({7: []}, at=NOW, transitions={7: [(T, 1, "closed")]}, observed={7: "open"})
+            fault = ""
+        except tri.Fault as f:
+            fault = str(f)
+        check("17. a history that replays to closed while the issue is open is a fault naming the issue",
+              fault.startswith("#7:") and "replays to closed" in fault, fault)
     except Exception as e:  # a crash is a failure, never a skip
         import traceback
         traceback.print_exc()
