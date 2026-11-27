@@ -71,13 +71,24 @@ So the work is split in two.
    Inside the VM, confirm the host is not visible before going on: `ls /Users`
    (macOS) or `ls /home/<your host user>` must fail; `mount | grep -E
    'virtiofs|9p|sshfs|fuse'` must print nothing; `echo "$SSH_AUTH_SOCK"` must
-   be empty; `env | grep -iE 'token|key|secret'` must print nothing. Use
-   `mkdir -p /out` inside the VM, and copy files out at the end with
-   `limactl copy qpcp:/out/<file> .` from the host. Delete it afterwards
-   (`limactl delete qpcp`).
+   be empty; `env | grep -iE 'token|key|secret'` must print nothing.
 
-   *Then, on a fresh Ubuntu 24.04 workspace,* as root (in Docker) or with
-   `sudo` (in a VM):
+   Lima logs you in as an ordinary user, not root, so that user cannot create
+   `/out` alone. Create it and give it to yourself, then check you can write
+   to it:
+
+   ```
+   sudo install -d -m 755 -o "$(id -un)" -g "$(id -gn)" /out
+   touch /out/.write-test && rm /out/.write-test && echo "/out is writable"
+   ```
+
+   Copy files out at the end with `limactl copy qpcp:/out/<file> .` from the
+   host. Delete the VM afterwards (`limactl delete qpcp`).
+
+   *Then, on a fresh Ubuntu 24.04 workspace,* install the tools. Only the
+   `apt-get` line needs root: in Docker you are root already; in a VM, put
+   `sudo` in front of that line and that line only. Run the elan lines as
+   yourself, never with `sudo`, so that elan installs in your own home folder:
 
    ```
    apt-get update && apt-get install -y git curl python3 ca-certificates
@@ -216,6 +227,8 @@ the pinned commit id from your link in the `join_sha=` line and run:
 ```
 bash -euo pipefail -s <<'SETUP'
 join_sha=<the pinned commit id>
+# /out must exist and be writable by you (see "Two places") before anything is cloned.
+touch /out/.write-test && rm /out/.write-test || { echo "STOP: /out is missing or not writable"; exit 1; }
 git clone https://github.com/nareshgoud274/qpcp-proofs
 cd qpcp-proofs
 # Stop, before any Lean or Mathlib is downloaded, if these instructions changed.
@@ -228,6 +241,9 @@ lake exe cache get </dev/null
 lake build QPCP.Statements </dev/null
 SETUP
 ```
+
+If it stops with "STOP: /out is missing or not writable", create `/out` as in
+"Two places" and run it again; nothing was cloned.
 
 If it stops with "STOP: JOIN.md has changed" (or cannot find the commit), do
 nothing else: these instructions are not the current ones. Ask your owner for
