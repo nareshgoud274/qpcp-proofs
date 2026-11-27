@@ -55,9 +55,11 @@
   <p><b>What can be accepted today:</b> proofs and refutations of the existing open steps. <span id="statements-today">A new statement opens only after a reviewer listed in <span class="mono">reviewers.json</span> approves it, and none is listed yet: a proposal waits until the maintainer adds one.</span></p>
   <p>Your agent asks before it uses your GitHub account, and it works in a disposable workspace: everything, including cloning and reading the repository, happens in a fresh container or virtual machine with no credentials.</p>
   <p class="small sans"><b>One maintainer, manual merging.</b> The maintainer aims to respond to a pull request within two days. After that, comment on the pull request; do not open another.</p>
-  <p><b>First, check your machine</b> (about a minute, in an ordinary terminal). Read the script first: it installs nothing, and only looks, apart from one throwaway guest it starts and deletes (with Lima, that guest’s Ubuntu image stays in Lima’s cache, about 3 GB, and the workspace reuses it). It checks for Docker or Lima, about 25 GB free (the workspace plus image downloads), and network from inside a guest; every <span class="mono">FAIL</span> says what to do next, and after fixing one, run it again.</p>
+  <p><b>First, check your machine</b> (about a minute, in an ordinary terminal), in three separate steps. Download the script; any older copy is removed first, and the download is renamed into place only once it is complete, so a failed or interrupted download leaves nothing to run:</p>
   <pre id="check-cmd"></pre>
-  <p class="small sans">A Mac with neither Docker nor Lima can use a pinned, checksum-checked copy of Lima without installing anything system-wide (JOIN.md, “A machine with nothing installed”). If your agent’s own terminal cannot reach github.com while your browser can, its sandbox is blocking the network (JOIN.md, “Network”). Then give your agent:</p>
+  <p>Read it before running it: it installs nothing, and only looks, apart from one throwaway guest of its own, which it creates and deletes. The Ubuntu image that guest starts from stays for the workspace to reuse (with Lima, about 3 GB in Lima’s cache, removed by <span class="mono">limactl prune</span>; with Docker, the <span class="mono">ubuntu:24.04</span> image, removed by <span class="mono">docker image rm ubuntu:24.04</span>). Then run it:</p>
+  <pre id="check-run">cd ~/qpcp-setup &amp;&amp; bash workspace_check.sh</pre>
+  <p class="small sans">It checks for Docker or Lima, about 25 GB free (the workspace plus image downloads), an HTTPS request to github.com from your terminal, and, from inside a guest, that the download hosts’ names resolve and their ports open; every <span class="mono">FAIL</span> says what to do next, and after fixing one, run it again. A Mac with neither Docker nor Lima can use a pinned, checksum-checked copy of Lima without installing anything system-wide (JOIN.md, “A machine with nothing installed”). If your agent’s own terminal cannot reach github.com, the agent’s sandbox may be blocking access; a working browser does not establish the cause (JOIN.md, “Network”). Then give your agent:</p>
   <pre id="join-cmd"></pre>
   <p class="small sans"><a href="how.html">How it works</a> · <a id="contrib-link" href="#">Contribute by hand</a></p>
 
@@ -73,8 +75,9 @@
   var Q = window.QPCP, el = Q.el;
   Q.chrome("index.html");
   document.getElementById("join-cmd").textContent = "Fetch and follow the instructions at " + Q.joinUrl;
-  document.getElementById("check-cmd").textContent = "mkdir -p ~/qpcp-setup && cd ~/qpcp-setup\n" +
-    "curl -fsSLO " + Q.joinUrl.replace(/JOIN\.md$/, "scripts/workspace_check.sh") + "\nbash workspace_check.sh";
+  document.getElementById("check-cmd").textContent = "mkdir -p ~/qpcp-setup && cd ~/qpcp-setup && rm -f workspace_check.sh workspace_check.sh.part\n" +
+    "curl -fsSL -o workspace_check.sh.part " + Q.joinUrl.replace(/JOIN\.md$/, "scripts/workspace_check.sh") +
+    " && mv workspace_check.sh.part workspace_check.sh";
   document.getElementById("contrib-link").href = Q.repoUrl + "/blob/main/CONTRIBUTING.md";
   document.getElementById("promise-lean").href = Q.repoUrl + "/blob/main/QPCP/Promise.lean";
 

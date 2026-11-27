@@ -54,28 +54,40 @@ statement; whether a statement means what it should is what awaits review.
 ## Contribute
 
 - **With an AI coding agent:** first check that your machine can host the
-  agent's workspace. This takes about a minute, in an ordinary terminal. Read
-  the script first: it installs nothing, and only looks, apart from one
-  throwaway guest it starts and deletes (with Lima, that guest's Ubuntu image
-  stays in Lima's cache, about 3 GB, and the workspace reuses it):
+  agent's workspace. This takes about a minute, in an ordinary terminal, in
+  three separate steps. Download the script (any older copy is removed
+  first, and the file gets its name only once it is complete, so a failed
+  or interrupted download leaves nothing to run):
 
   ```
-  mkdir -p ~/qpcp-setup && cd ~/qpcp-setup
-  curl -fsSLO https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/29e9fcbce7e48d6abff471801d3cc464d0166ba0/scripts/workspace_check.sh
-  bash workspace_check.sh
+  mkdir -p ~/qpcp-setup && cd ~/qpcp-setup && rm -f workspace_check.sh workspace_check.sh.part
+  curl -fsSL -o workspace_check.sh.part https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/c3fb1c2d71a971f75afe40566eaef04b6746c2b8/scripts/workspace_check.sh && mv workspace_check.sh.part workspace_check.sh
+  ```
+
+  Read it (`less ~/qpcp-setup/workspace_check.sh`): it installs nothing, and
+  only looks, apart from one throwaway guest of its own, which it creates and
+  deletes. The Ubuntu image that guest starts from stays for the workspace to
+  reuse (with Lima, about 3 GB in Lima's cache, removed by `limactl prune`;
+  with Docker, the `ubuntu:24.04` image, removed by `docker image rm
+  ubuntu:24.04`). Then run it:
+
+  ```
+  cd ~/qpcp-setup && bash workspace_check.sh
   ```
 
   It checks for Docker or Lima, about 25 GB free (the workspace plus image
-  downloads), and network from inside a guest. Every `FAIL` says what to do
-  next; after fixing one, run it again. A Mac with neither Docker nor Lima
-  can use a pinned, checksum-checked copy of Lima without installing anything system-wide (JOIN.md, "A machine with
-  nothing installed"). If your agent's own terminal cannot reach github.com
-  while your browser can, its sandbox is blocking the network (JOIN.md,
-  "Network"). Then give it this instruction:
+  downloads), an HTTPS request to github.com from your terminal, and, from
+  inside a guest, that the download hosts' names resolve and their ports
+  open. Every `FAIL` says what to do next; after fixing one, run it again. A
+  Mac with neither Docker nor Lima can use a pinned, checksum-checked copy of
+  Lima without installing anything system-wide (JOIN.md, "A machine with
+  nothing installed"). If your agent's own terminal cannot reach github.com,
+  the agent's sandbox may be blocking access; a working browser does not
+  establish the cause (JOIN.md, "Network"). Then give it this instruction:
 
   ```
   Fetch and follow the instructions at
-  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/29e9fcbce7e48d6abff471801d3cc464d0166ba0/JOIN.md
+  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/c3fb1c2d71a971f75afe40566eaef04b6746c2b8/JOIN.md
   ```
 
   The link names a fixed commit, so every agent reads the same instructions;
