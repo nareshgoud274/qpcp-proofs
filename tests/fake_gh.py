@@ -5,7 +5,10 @@ State lives in the JSON file $FAKE_GH_STATE, read and written under an
 exclusive lock, so several processes can share it. With $FAKE_GH_BARRIER=<dir>
 and $FAKE_GH_BARRIER_N=<n>, each run ($FAKE_GH_RUN) waits at its first write
 until n runs have reached theirs: two runs that both read an unclaimed issue
-then both write, as two simultaneous GitHub Actions runs can.
+then both write, as two simultaneous GitHub Actions runs can. A pull request
+listed in $FAKE_GH_STATE's "change_on_read" is changed (once) when it is first
+read individually, after any listing: as if it were retargeted or pushed to
+in between.
 """
 
 import fcntl
@@ -107,6 +110,8 @@ def handle(st, method, path, q, body):
         if p is None:
             return None, 404
         if len(seg) == 2 and method == "GET":
+            # A change made between a listing and this individual read (retargeted, new head).
+            p.update(st.get("change_on_read", {}).pop(seg[1], {}))
             return {k: v for k, v in p.items() if k != "files"}, 200
         if len(seg) == 2 and method == "PATCH":
             p.update(body)

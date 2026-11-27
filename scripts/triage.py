@@ -19,9 +19,10 @@
 Rules (JOIN.md, "Claims"):
   - A claim is a courtesy, not a lock. Exercises need no claim.
   - One holder per step and one claimed step per account. The comments are the
-    state: each run replays an issue's comments in the order of their own
-    timestamps and makes the assignee match, so delayed, simultaneous and
-    out-of-order runs agree. The earliest /claim wins.
+    state: each run replays the comments of ALL open step issues in one pass,
+    in the order of their own timestamps, and makes every assignee match, so
+    delayed, duplicated, simultaneous and out-of-order runs agree. The earliest
+    /claim wins; a /claim by an account already holding a step is not taken.
   - A claim lapses 24 hours after the HOLDER's last comment, judged by the
     comments' own times; /renew is an explicit one. Other people's comments
     do not renew it.
@@ -33,13 +34,14 @@ Talks to GitHub only through `gh api` (GH_REPO, GH_TOKEN), so the tests can
 stand in a fake `gh`. QPCP_NOW (epoch seconds) overrides the clock in tests.
 """
 
+import calendar
+import functools
 import json
 import os
 import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -85,7 +87,11 @@ def now():
 
 
 def ts(iso):
-    return datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+    """Epoch seconds of GitHub's `YYYY-MM-DDTHH:MM:SSZ`."""
+    if len(iso) != 20 or iso[4] != "-" or iso[10] != "T" or iso[19] != "Z":
+        raise Fault(f"unexpected timestamp {iso!r}")
+    return float(calendar.timegm((int(iso[0:4]), int(iso[5:7]), int(iso[8:10]),
+                                  int(iso[11:13]), int(iso[14:16]), int(iso[17:19]))))
 
 
 def comment(issue, text):
@@ -113,174 +119,213 @@ def step_of(issue):
     return m.group(1) if m else ""
 
 
-def is_exercise(sid):
+@functools.lru_cache(maxsize=1)
+def exercises():
     try:
         steps = json.loads((ROOT / "steps.json").read_text())
     except (OSError, ValueError):
-        return False
-    return any(s.get("id") == sid and s.get("exercise") is True for s in steps)
+        return frozenset()
+    return frozenset(s.get("id") for s in steps if s.get("exercise") is True)
 
 
-def claimed_by(who):
-    return [i for i in api("GET", f"issues?state=open&labels=claimed&per_page=100", paginate=True) or []
-            if "pull_request" not in i and who in holders(i)]
+def is_exercise(sid):
+    return sid in exercises()
 
 
 # ------------------------------------------------------------------ claims
 #
-# The comments are the state. Each run REPLAYS an issue's comments in the order
-# of their own timestamps and works out who holds the step now, then makes the
-# issue's assignee match. So a comment's effect depends on when it was written,
-# not on when its workflow ran: a /renew written inside the window counts even
-# if processed late, a lapsed claim is not revived, and two runs processing
-# comments in either order reach the same state.
+# The comments are the state, and the state is computed GLOBALLY. Each run
+# reads the comments of every open step issue and replays all of them in one
+# pass, in the order of their own timestamps (ties by comment id, which GitHub
+# assigns in creation order). It then makes every issue's assignee match.
 #
-# The one rule that spans issues (one claimed step per account) is recorded in
-# the issue itself: when a claim is reverted because the account already holds
-# an earlier claim elsewhere, the bot's comment carries `<!-- qpcp:void <id> -->`
-# for that /claim comment, and every later replay skips it. Only comments by
-# the bot account are read for markers.
+# One pass over all issues, not a replay per issue, because the one-step-per-
+# account rule spans issues: a per-issue replay that voids a claim can hand the
+# step to someone whose own account rule it never checked. In the global pass
+# both rules are checked at the moment of every /claim, against the state at
+# that comment's own time, so every holder the pass introduces satisfies both,
+# and the result depends only on the comments and the clock: never on which
+# runs happened, in what order, how late, or how often.
+#
+# At each comment, in time order:
+#   - first, every claim whose holder's last comment on that issue is more than
+#     24 hours before this comment's time lapses (step and account freed);
+#   - the holder's /release frees the step; any other comment by the holder
+#     renews it (/renew and /claim say so explicitly);
+#   - a /claim by someone else is taken if the step is held, refused if the
+#     account already holds another step, and granted otherwise.
+# Claims still held are then lapsed as of now. Exercises and closed issues take
+# no part.
+#
+# After writing, a run reads everything again and repeats until a read needs no
+# write, so a run that read before a later comment existed does not leave its
+# stale view behind. Replies carry `<!-- qpcp:re <comment id> -->`, so a
+# comment processed twice is answered once.
 
 BOT = "github-actions[bot]"
-VOID = re.compile(r"<!-- qpcp:void (\d+) -->")
+RE = "<!-- qpcp:re {} -->"
 
 
-def replay(comments, at=None):
-    """(holder, claim comment id, {comment id: effect}, [lapsed holders]) as of time `at`."""
+def compute(comments_by_issue, at=None):
+    """Claim state from the comments alone. Returns (holder by issue, {comment id: effect},
+    {issue: [accounts whose claim lapsed]}, {issue: holder's last comment time})."""
     at = now() if at is None else at
-    voided = {int(v) for c in comments if c["user"]["login"] == BOT for v in VOID.findall(c.get("body") or "")}
-    holder, claim_id, last, effects, lapsed = None, None, None, {}, []
-    people = sorted((c for c in comments if c["user"]["login"] != BOT), key=lambda c: (ts(c["created_at"]), c["id"]))
-    for c in people:
-        t, who, cmd = ts(c["created_at"]), c["user"]["login"], command(c)
-        if holder and t - last > LAPSE:
-            lapsed.append(holder)
-            holder = None
-        if who == holder:
+    events = sorted(((ts(c["created_at"]), c["id"], n, c) for n, cs in comments_by_issue.items()
+                     for c in cs if c["user"]["login"] != BOT), key=lambda e: (e[0], e[1]))
+    holder, last, claim_id, owns, effects = {}, {}, {}, {}, {}
+    lapsed = {n: [] for n in comments_by_issue}
+
+    def expire(t):
+        for n in sorted(holder):
+            if t - last[n] > LAPSE:
+                lapsed[n].append(holder[n])
+                del owns[holder[n]], holder[n], last[n], claim_id[n]
+
+    for t, cid, n, c in events:
+        expire(t)
+        who, cmd = c["user"]["login"], command(c)
+        if holder.get(n) == who:
             if cmd == "/release":
-                holder, effects[c["id"]] = None, "released"
+                effects[cid] = "released"
+                del owns[who], holder[n], last[n], claim_id[n]
             else:
-                last = t  # any comment by the holder renews; /renew and /claim say so explicitly
-                effects[c["id"]] = "renewed" if cmd in ("/renew", "/claim") else "activity"
+                last[n] = t
+                effects[cid] = "renewed" if cmd in ("/renew", "/claim") else "activity"
         elif cmd == "/claim":
-            if c["id"] in voided:
-                effects[c["id"]] = "void"
-            elif holder is None:
-                holder, claim_id, last, effects[c["id"]] = who, c["id"], t, "claimed"
+            if n in holder:
+                effects[cid] = ("taken", holder[n], claim_id[n])
+            elif who in owns:
+                effects[cid] = ("holds", owns[who])
             else:
-                effects[c["id"]] = ("taken", holder, claim_id)
+                holder[n], last[n], claim_id[n], owns[who] = who, t, cid, n
+                effects[cid] = "claimed"
         elif cmd in ("/renew", "/release"):
-            effects[c["id"]] = "not-holder"
-    if holder and at - last > LAPSE:
-        lapsed.append(holder)
-        holder = None
-    return holder, claim_id, effects, lapsed
+            effects[cid] = "not-holder"
+    expire(at)
+    return holder, effects, lapsed, last
 
 
-def reconcile(n):
-    """Make issue n's holder the one its comments say. Returns (holder, claim id, effects, issue)."""
-    issue = api("GET", f"issues/{n}")
-    cs = comments_of(n)
-    if is_exercise(step_of(issue)):
-        want, claim_id, effects, lapsed = None, None, {}, []
-    else:
-        want, claim_id, effects, lapsed = replay(cs)
-    have = holders(issue)
+def step_issues():
+    """Open step issues that take part in claims (not exercises)."""
+    out = []
+    for i in api("GET", "issues?state=open&labels=step&per_page=100", paginate=True) or []:
+        if "pull_request" in i or i.get("state") != "open":
+            continue
+        sid = step_of(i)
+        if sid and not is_exercise(sid):
+            out.append(i)
+    return out
+
+
+def read_all():
+    issues = {i["number"]: i for i in step_issues()}
+    return issues, {n: comments_of(n) for n in issues}
+
+
+def apply(issue, want, lapsed):
+    """Make one issue's assignee and label match `want`. True if anything was written."""
+    n, wrote = issue["number"], False
+    have = sorted(a["login"] for a in issue.get("assignees", []))
     for h in have:
         if h != want:
             api("DELETE", f"issues/{n}/assignees", {"assignees": [h]})
+            wrote = True
             if h in lapsed:
                 comment(n, f"The claim by @{h} had lapsed: no comment from them for 24 hours."
                         + ("" if want else " This step is open again."))
-    if want and want not in [a["login"] for a in issue.get("assignees", [])]:
+    if want and want not in have:
         api("POST", f"issues/{n}/assignees", {"assignees": [want]})
+        wrote = True
     names = {l["name"] for l in issue.get("labels", [])}
     if want and "claimed" not in names:
         api("POST", f"issues/{n}/labels", {"labels": ["claimed"]})
+        wrote = True
     if not want and "claimed" in names:
         api("DELETE", f"issues/{n}/labels/claimed", missing_ok=True)
-    return want, claim_id, effects, issue
+        wrote = True
+    return wrote
 
 
-def resolve_account(who):
-    """One account, several claimed steps: the earliest current /claim is kept; the
-    others are voided in their issues (a marker the replay honours) and released."""
-    held = {}
-    for i in claimed_by(who):
-        holder, claim_id, _, _ = replay(comments_of(i["number"]))
-        if holder == who and claim_id is not None:
-            held[i["number"]] = claim_id
-    if len(held) < 2:
-        return
-    keep = min(held, key=lambda n: (held[n], n))
-    for n in sorted(held):
-        if n == keep:
-            continue
-        cs = comments_of(n)
-        if not any(c["user"]["login"] == BOT and f"<!-- qpcp:void {held[n]} -->" in (c.get("body") or "") for c in cs):
-            comment(n, f"@{who} already holds #{keep} (claimed first), and one account holds one step at a time, "
-                       f"so this claim is reverted. <!-- qpcp:void {held[n]} -->")
-        reconcile(n)
-
-
-def sweep(except_issue=None):
-    """Release every claim whose holder has not commented for 24 hours (by the comments' own times)."""
+def settle(rounds=5):
+    """Compute the global claim state and write it, re-reading until a read needs no write.
+    Returns (holder by issue, effects, comments by issue, issues as last read, released)."""
     released = []
-    for issue in api("GET", "issues?state=open&labels=claimed&per_page=100", paginate=True) or []:
-        n = issue["number"]
-        if "pull_request" in issue or n == except_issue:
-            continue
-        before = holders(issue)
-        want, _, _, _ = reconcile(n)
-        released += [f"{n}:{h}" for h in before if h != want]
-    return released
+    for _ in range(rounds):
+        issues, cs = read_all()
+        holder, effects, lapsed, _ = compute(cs)
+        wrote = False
+        for n in sorted(issues):
+            before = holders(issues[n])
+            if apply(issues[n], holder.get(n), lapsed[n]):
+                wrote = True
+                released += [f"{n}:{h}" for h in before if h != holder.get(n)]
+        if not wrote:
+            return holder, effects, cs, issues, released
+    raise Fault(f"claim state did not settle in {rounds} rounds")
+
+
+def sweep():
+    """Release every claim whose holder has not commented for 24 hours (by the comments' own times)."""
+    return settle()[4]
+
+
+def reply(n, cs, comment_id, text):
+    """Answer comment `comment_id` once, however often it is processed."""
+    mark = RE.format(comment_id)
+    if any(c["user"]["login"] == BOT and mark in (c.get("body") or "") for c in cs):
+        return
+    comment(n, f"{text} {mark}")
 
 
 def claim_comment(n, comment_id):
-    sweep(except_issue=n)
+    issue = api("GET", f"issues/{n}")
     cs = comments_of(n)
     c = next((x for x in cs if x["id"] == comment_id), None)
     if c is None:
         raise Fault(f"no comment {comment_id} on #{n}")
     who, cmd = c["user"]["login"], command(c)
-    issue = api("GET", f"issues/{n}")
     if issue.get("state") != "open" or not cmd:
+        settle()
         return "ignored"
     sid = step_of(issue)
     if is_exercise(sid):
         if cmd == "/claim":
-            comment(n, f"{sid} is a first-contribution exercise: it needs no claim and is first-come. "
-                       "Prepare it, check it in your workspace, and submit it.")
-        reconcile(n)
+            reply(n, cs, comment_id, f"{sid} is a first-contribution exercise: it needs no claim and is "
+                  "first-come. Prepare it, check it in your workspace, and submit it.")
+        apply(issue, None, [])
+        settle()
         return "exercise"
-    want, _, effects, _ = reconcile(n)
-    effect = effects.get(comment_id)
+    holder, effects, all_cs, _, _ = settle()
+    cs = all_cs.get(n, cs)
+    want, effect = holder.get(n), effects.get(comment_id)
     if effect == "claimed":
-        # Another run may have written at the same time: re-read, and apply the account rule.
-        resolve_account(who)
-        want, _, effects, _ = reconcile(n)
         if want == who:
-            comment(n, f"Claimed by @{who}. The claim lapses 24 hours after your last comment here; comment "
-                       "`/renew` to restart the clock and `/release` to give it up. Other people's comments do "
-                       "not renew it.")
+            reply(n, cs, comment_id, f"Claimed by @{who}. The claim lapses 24 hours after your last comment "
+                  "here; comment `/renew` to restart the clock and `/release` to give it up. Other people's "
+                  "comments do not renew it.")
             return "claimed"
-        return "superseded"  # a later comment (or an earlier claim elsewhere) decided otherwise
+        return "superseded"  # a later comment decided otherwise (a /release, or the claim lapsed)
     if effect == "renewed":
         if want == who:
-            comment(n, f"Claim renewed for @{who}: the 24-hour clock restarts from this comment's own time.")
+            reply(n, cs, comment_id, f"Claim renewed for @{who}: the 24-hour clock restarts from this "
+                  "comment's own time.")
             return "renewed"
         return "superseded"
     if effect == "released":
         if want != who:
-            comment(n, f"Released by @{who}. This step is open again.")
+            reply(n, cs, comment_id, f"Released by @{who}. This step is open again.")
         return "released"
     if isinstance(effect, tuple) and effect[0] == "taken":
-        comment(n, f"@{who}: @{effect[1]} claimed this step first (comment {effect[2]}), so your claim is not "
-                   "taken. A claim is a courtesy, not a lock: a correct proof from anyone is not rejected for "
-                   "it, but please pick another open step.")
+        reply(n, cs, comment_id, f"@{who}: @{effect[1]} claimed this step first (comment {effect[2]}), so "
+              "your claim is not taken. A claim is a courtesy, not a lock: a correct proof from anyone is "
+              "not rejected for it, but please pick another open step.")
         return "taken"
+    if isinstance(effect, tuple) and effect[0] == "holds":
+        reply(n, cs, comment_id, f"@{who} already holds #{effect[1]} (claimed first), and one account holds "
+              "one step at a time, so this claim is not taken. `/release` that one first.")
+        return "holds-other"
     if effect == "not-holder" and cmd == "/renew":
-        comment(n, f"@{who}: only the holder can renew a claim, and you do not hold this one.")
+        reply(n, cs, comment_id, f"@{who}: only the holder can renew a claim, and you do not hold this one.")
     return "ignored"
 
 
@@ -393,8 +438,17 @@ def pr_merged(n):
             continue
         theirs = contribution(other["number"])
         if theirs == ("proof", sid):
-            current = api("GET", f"pulls/{other['number']}")  # re-read just before closing
-            if current.get("state") != "open" or held(current, sid):
+            # Re-read just before closing, and never ignore a change it shows: closed, retargeted
+            # away from main, or held are skipped; a new head means its files are read again.
+            current = api("GET", f"pulls/{other['number']}")
+            if current.get("state") != "open" or not into_main(current):
+                done.append(f"changed #{other['number']}")
+                continue
+            if (current.get("head") or {}).get("sha") != (other.get("head") or {}).get("sha") \
+                    and contribution(other["number"]) != ("proof", sid):
+                done.append(f"changed #{other['number']}")
+                continue
+            if held(current, sid):
                 done.append(f"held #{other['number']}")
                 continue
             comment(other["number"], f"Closed as a confirmed duplicate: #{n}, a proof of {sid}, has merged. "

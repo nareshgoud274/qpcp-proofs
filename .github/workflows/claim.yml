@@ -8,9 +8,11 @@ name: claim
 # A claim is a courtesy, not a lock (JOIN.md, "Claims"). Exercises need no
 # claim. One holder per step, one claimed step per account. There is no
 # concurrency group: GitHub keeps only one pending run per group, so a burst
-# of comments could drop a claim. Instead, two runs can write at the same time,
-# and each then re-reads and resolves conflicts the same way (the earliest
-# current /claim wins; the loser is reverted with a comment).
+# of comments could drop a claim. Instead, every run replays the comments of
+# all open step issues in one pass by their own timestamps and makes every
+# assignee match, then re-reads until nothing needs writing; any two runs
+# reach the same state (the earliest /claim wins; a /claim by an account that
+# already holds a step is not taken).
 #
 # A claim lapses 24 hours after the holder's own last comment on the issue;
 # lapsed claims are released here whenever someone comments a command, and by

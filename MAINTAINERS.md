@@ -444,14 +444,23 @@ requests for settled steps (`triage.yml`), through `gh api` only.
   because someone else holds the step. Exercises need no claim.
 - One holder per step and one claimed step per account. `claim.yml` has no
   concurrency group, because GitHub keeps only one pending run per group.
-  Instead, **the comments are the state**: each run replays the issue's
-  comments in the order of their own timestamps, works out who holds the
-  step, and makes the assignee match. So delayed, simultaneous and
-  out-of-order runs agree, and the earliest `/claim` wins.
-- The account rule spans issues. When a claim is reverted because the account
-  already holds an earlier one, the bot's comment carries
-  `<!-- qpcp:void <comment id> -->`, which later replays honour. Assigning
-  someone by hand on a step issue does not stick: the claim comments decide.
+  Instead, **the comments are the state**: each run replays the comments of
+  every open step issue in one pass, in the order of their own timestamps,
+  works out who holds each step, and makes every assignee match. So delayed,
+  duplicated, simultaneous and out-of-order runs agree, and the earliest
+  `/claim` wins.
+- The account rule spans issues, so the replay is global, not per issue: at
+  each `/claim`'s own time, a claim by an account that already holds another
+  step is not taken. Every holder the replay produces has passed both rules.
+  A run writes, reads everything again, and repeats until a read needs no
+  write. Replies carry `<!-- qpcp:re <comment id> -->`, so a comment
+  processed twice is answered once. Assigning someone by hand on a step
+  issue does not stick: the claim comments decide.
+- `tests/test_claims_random.py` checks this as a class: random histories,
+  each processed in many random schedules (late, duplicated, dropped, with
+  sweeps), asserting one holder per step, one step per account, no claim
+  older than 24 hours from its holder's last comment, and the same final
+  state in every schedule. A failure prints a `--replay` line.
 - A claim lapses 24 hours after the holder's own last comment, judged by the
   comments' own times, so a `/renew` written in time counts even if its
   workflow runs late. A lapsed claim is never revived. `/renew` renews it
@@ -461,7 +470,9 @@ requests for settled steps (`triage.yml`), through `gh api` only.
   `triage.yml` closes it with "already settled by #n".
 - **Duplicates on merge.** When a proof merges, other open pull requests
   adding a proof of the same step are closed as confirmed duplicates, naming
-  it.
+  it. Each candidate is read again just before closing; if that read shows
+  it closed, retargeted away from main, or with a new head that no longer adds
+  that proof, it is left alone.
 - **Never closed automatically:**
   - a refutation, or anything conflicting with a settled result. These get
     the `needs-maintainer` label: decide them by hand.

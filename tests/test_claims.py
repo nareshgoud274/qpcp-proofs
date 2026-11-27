@@ -33,6 +33,17 @@
      renews; two comments processed in reverse order end as if processed in
      order (a /claim then /release leaves no holder; of two /claims, the
      earlier wins).
+ 12. (#158 review 3) The account rule holds for every holder the replay
+     introduces. Alice holds one step and Bob another; both /claim a third
+     (Alice first): in either processing order nobody takes it, and a sweep
+     leaves it so. A claim made after the account's earlier claim lapsed or
+     was released is taken; one made while it was still held is not revived
+     when that one lapses later.
+ 13. (#158 review 3) A duplicate candidate's re-read is checked, not ignored:
+     retargeted to another branch between the list call and the individual
+     read, it is not closed; with a new head that no longer adds that proof,
+     it is not closed; with a new head that still does, it is.
+ 14. A comment processed twice is answered once.
 """
 
 import json
@@ -315,6 +326,70 @@ def main():
         st = e.get()
         check("11. two /claims processed in reverse order: the earlier comment's author holds the step",
               holders(st, 73) == ["carl"] and second == "taken" and first == "claimed", (second, first, holders(st, 73)))
+
+        # 12. The account rule across issues, in both processing orders and after a sweep.
+        def cascade():
+            return {"issues": {
+                "61": issue(61, "S900061: x", ("step", "claimed"), ["alice"], [(10, "alice", "/claim", NOW - 100)]),
+                "62": issue(62, "S900062: x", ("step", "claimed"), ["bob"], [(11, "bob", "/claim", NOW - 90)]),
+                "63": issue(63, "S900063: x", comments=[(12, "alice", "/claim", NOW - 80), (13, "bob", "/claim", NOW - 70)])}}
+        for name, order in (("Bob's event first", (13, 12)), ("Alice's event first", (12, 13))):
+            e = Env(base / f"x{order[0]}", cascade())
+            rs = [e.call("claim-comment", 63, cid)[0] for cid in order]
+            st = e.get()
+            check(f"12. {name}: neither account takes a second step (61 alice, 62 bob, 63 nobody)",
+                  [holders(st, n) for n in (61, 62, 63)] == [["alice"], ["bob"], []] and rs == ["holds-other"] * 2,
+                  (rs, [holders(st, n) for n in (61, 62, 63)], bot_says(st, 63)))
+            out, _ = e.call("sweep")
+            st = e.get()
+            check(f"12. {name}: a sweep afterwards leaves it so",
+                  [holders(st, n) for n in (61, 62, 63)] == [["alice"], ["bob"], []], (out, [holders(st, n) for n in (61, 62, 63)]))
+        e = Env(base / "x-sweep", {"issues": {
+            "81": issue(81, "S900081: x", ("step", "claimed"), ["bob"], [(10, "bob", "/claim", NOW - 30 * H)]),
+            "82": issue(82, "S900082: x", comments=[(11, "bob", "/claim", NOW - 2 * H)]),
+            "83": issue(83, "S900083: x", ("step", "claimed"), ["cy"], [(20, "cy", "/claim", NOW - 25 * H)]),
+            "84": issue(84, "S900084: x", comments=[(21, "cy", "/claim", NOW - 22 * H)]),
+            "85": issue(85, "S900085: x", ("step", "claimed"), ["di"], [(30, "di", "/claim", NOW - 5 * H),
+                                                                         (31, "di", "/release", NOW - 3 * H)]),
+            "86": issue(86, "S900086: x", comments=[(32, "di", "/claim", NOW - 2 * H)])}})
+        out, _ = e.call("sweep")
+        st = e.get()
+        check("12. after a sweep: a claim made after the account's earlier claim lapsed is taken",
+              holders(st, 81) == [] and holders(st, 82) == ["bob"], (out, holders(st, 81), holders(st, 82)))
+        check("12. after a sweep: a claim refused while the account held another is not revived when that one lapses",
+              holders(st, 83) == [] and holders(st, 84) == [], (out, holders(st, 83), holders(st, 84)))
+        check("12. after a sweep: a claim made after the account released its earlier one is taken",
+              holders(st, 85) == [] and holders(st, 86) == ["di"], (out, holders(st, 85), holders(st, 86)))
+
+        # 13. A candidate changed between the list call and its individual read.
+        def cand(n, path, sha):
+            return dict(pr(n, path), head={"sha": sha})
+        pulls = {"400": pr(400, "QPCP/Proofs/S900031.lean", "closed", "2026-11-27T00:00:00Z"),
+                 "401": cand(401, "QPCP/Proofs/S900031.lean", "a" * 40),
+                 "402": cand(402, "QPCP/Proofs/S900031.lean", "a" * 40),
+                 "403": cand(403, "QPCP/Proofs/S900031.lean", "a" * 40)}
+        e = Env(base / "r", {"issues": {n: issue(int(n), f"PR {n}") for n in pulls}, "pulls": pulls,
+                             "main_files": ["QPCP/Proofs/S900031.lean"],
+                             "change_on_read": {
+                                 "401": {"base": {"ref": "staging"}},
+                                 "402": {"head": {"sha": "b" * 40}, "files": [{"filename": "QPCP/Proofs/S900037.lean", "status": "added"}]},
+                                 "403": {"head": {"sha": "c" * 40}}}})
+        out, _ = e.call("pr-merged", 400)
+        st = e.get()
+        check("13. retargeted to staging between the list call and the individual read: not closed",
+              st["pulls"]["401"]["state"] == "open" and "changed #401" in out, out)
+        check("13. a new head that no longer adds that proof: not closed",
+              st["pulls"]["402"]["state"] == "open" and "changed #402" in out, out)
+        check("13. a new head that still adds that proof: closed as a duplicate",
+              st["pulls"]["403"]["state"] == "closed" and "closed #403" in out, out)
+
+        # 14. A comment processed twice is answered once.
+        e = Env(base / "d", {"issues": {"90": issue(90, "S900090: x", comments=[(10, "ann", "/claim", NOW - 60)])}})
+        r1, _ = e.call("claim-comment", 90, 10)
+        r2, _ = e.call("claim-comment", 90, 10)
+        st = e.get()
+        check("14. a comment processed twice is answered once",
+              r1 == r2 == "claimed" and sum("Claimed by @ann" in b for b in bot_says(st, 90)) == 1, (r1, r2, bot_says(st, 90)))
     except Exception as e:  # a crash is a failure, never a skip
         import traceback
         traceback.print_exc()
