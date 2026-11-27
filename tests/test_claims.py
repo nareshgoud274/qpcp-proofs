@@ -44,6 +44,11 @@
      read, it is not closed; with a new head that no longer adds that proof,
      it is not closed; with a new head that still does, it is.
  14. A comment processed twice is answered once.
+ 15. Closing a step's issue ends its claim at that moment without
+     re-deciding history: a /claim refused while its author held the
+     now-closed step stays refused (the step granted to someone else after
+     it stays theirs), and the author may claim another step after the
+     closure.
 """
 
 import json
@@ -390,6 +395,23 @@ def main():
         st = e.get()
         check("14. a comment processed twice is answered once",
               r1 == r2 == "claimed" and sum("Claimed by @ann" in b for b in bot_says(st, 90)) == 1, (r1, r2, bot_says(st, 90)))
+
+        # 15. A closed step's issue still counts, up to its closure.
+        closed91 = dict(issue(91, "S900091: x", ("step", "claimed"), ["alice"],
+                              [(10, "alice", "/claim", NOW - 10 * H), (14, "alice", "/claim", NOW - 20 * 60)]),
+                        state="closed", closed_at=iso(NOW - 1 * H))
+        e = Env(base / "close", {"issues": {
+            "91": closed91,
+            "92": issue(92, "S900092: x", comments=[(15, "alice", "/claim", NOW - 30 * 60)]),
+            "93": issue(93, "S900093: x", ("step", "claimed"), ["bob"],
+                        [(11, "alice", "/claim", NOW - 9 * H), (12, "bob", "/claim", NOW - 8 * H)])}})
+        r92, _ = e.call("claim-comment", 92, 15)
+        out, _ = e.call("sweep")
+        st = e.get()
+        check("15. closing a step does not re-decide history: bob keeps the step alice was refused while holding hers",
+              holders(st, 93) == ["bob"] and not any("lapsed" in b for b in bot_says(st, 93)), (out, holders(st, 93), bot_says(st, 93)))
+        check("15. after her step's issue closes, alice may claim another step",
+              r92 == "claimed" and holders(st, 92) == ["alice"], (r92, holders(st, 92)))
     except Exception as e:  # a crash is a failure, never a skip
         import traceback
         traceback.print_exc()

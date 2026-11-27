@@ -445,8 +445,10 @@ requests for settled steps (`triage.yml`), through `gh api` only.
 - One holder per step and one claimed step per account. `claim.yml` has no
   concurrency group, because GitHub keeps only one pending run per group.
   Instead, **the comments are the state**: each run replays the comments of
-  every open step issue in one pass, in the order of their own timestamps,
-  works out who holds each step, and makes every assignee match. So delayed,
+  every step issue in one pass, in the order of their own timestamps,
+  works out who holds each step, and makes every open issue's assignee match.
+  A closed step's issue takes part up to its `closed_at`: closing ends its
+  claim then, so it never re-decides a refusal made while its holder held it. So delayed,
   duplicated, simultaneous and out-of-order runs agree, and the earliest
   `/claim` wins.
 - The account rule spans issues, so the replay is global, not per issue: at
@@ -459,8 +461,9 @@ requests for settled steps (`triage.yml`), through `gh api` only.
 - `tests/test_claims_random.py` checks this as a class: random histories,
   each processed in many random schedules (late, duplicated, dropped, with
   sweeps), asserting one holder per step, one step per account, no claim
-  older than 24 hours from its holder's last comment, and the same final
-  state in every schedule. A failure prints a `--replay` line.
+  older than 24 hours from its holder's last comment, the same final state
+  in every schedule, and, after every run, the state an independent
+  reference model of the rules gives. A failure prints a `--replay` line.
 - A claim lapses 24 hours after the holder's own last comment, judged by the
   comments' own times, so a `/renew` written in time counts even if its
   workflow runs late. A lapsed claim is never revived. `/renew` renews it

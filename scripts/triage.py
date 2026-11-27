@@ -19,8 +19,9 @@
 Rules (JOIN.md, "Claims"):
   - A claim is a courtesy, not a lock. Exercises need no claim.
   - One holder per step and one claimed step per account. The comments are the
-    state: each run replays the comments of ALL open step issues in one pass,
-    in the order of their own timestamps, and makes every assignee match, so
+    state: each run replays the comments of ALL step issues in one pass (a
+    closed one up to its closure, which ends its claim), in the order of their
+    own timestamps, and makes every open issue's assignee match, so
     delayed, duplicated, simultaneous and out-of-order runs agree. The earliest
     /claim wins; a /claim by an account already holding a step is not taken.
   - A claim lapses 24 hours after the HOLDER's last comment, judged by the
@@ -135,7 +136,7 @@ def is_exercise(sid):
 # ------------------------------------------------------------------ claims
 #
 # The comments are the state, and the state is computed GLOBALLY. Each run
-# reads the comments of every open step issue and replays all of them in one
+# reads the comments of every step issue and replays all of them in one
 # pass, in the order of their own timestamps (ties by comment id, which GitHub
 # assigns in creation order). It then makes every issue's assignee match.
 #
@@ -154,8 +155,12 @@ def is_exercise(sid):
 #     renews it (/renew and /claim say so explicitly);
 #   - a /claim by someone else is taken if the step is held, refused if the
 #     account already holds another step, and granted otherwise.
-# Claims still held are then lapsed as of now. Exercises and closed issues take
-# no part.
+# Claims still held are then lapsed as of now. Closed step issues take part up to
+# their `closed_at`: closing ends a claim at that moment (the holder is then free
+# to claim another step), and later comments there count for nothing. So closing
+# a step never re-decides a refusal made while its holder held it. (Reopening an
+# issue forgets its earlier closure; that is a maintainer's action.) Exercises
+# take no part.
 #
 # After writing, a run reads everything again and repeats until a read needs no
 # write, so a run that read before a later comment existed does not leave its
@@ -166,12 +171,17 @@ BOT = "github-actions[bot]"
 RE = "<!-- qpcp:re {} -->"
 
 
-def compute(comments_by_issue, at=None):
-    """Claim state from the comments alone. Returns (holder by issue, {comment id: effect},
-    {issue: [accounts whose claim lapsed]}, {issue: holder's last comment time})."""
+def compute(comments_by_issue, at=None, closed=None):
+    """Claim state from the comments alone (and `closed`: {issue: closed_at time} for closed issues).
+    Returns (holder by issue, {comment id: effect}, {issue: [accounts whose claim lapsed]},
+    {issue: holder's last comment time})."""
     at = now() if at is None else at
-    events = sorted(((ts(c["created_at"]), c["id"], n, c) for n, cs in comments_by_issue.items()
-                     for c in cs if c["user"]["login"] != BOT), key=lambda e: (e[0], e[1]))
+    closed = closed or {}
+    events = [(ts(c["created_at"]), 0, c["id"], n, c) for n, cs in comments_by_issue.items()
+              for c in cs if c["user"]["login"] != BOT
+              and not (n in closed and ts(c["created_at"]) > closed[n])]
+    events += [(t, 1, 0, n, None) for n, t in closed.items()]  # a closure comes after comments of its second
+    events.sort(key=lambda e: e[:3])
     holder, last, claim_id, owns, effects = {}, {}, {}, {}, {}
     lapsed = {n: [] for n in comments_by_issue}
 
@@ -181,8 +191,12 @@ def compute(comments_by_issue, at=None):
                 lapsed[n].append(holder[n])
                 del owns[holder[n]], holder[n], last[n], claim_id[n]
 
-    for t, cid, n, c in events:
+    for t, is_close, cid, n, c in events:
         expire(t)
+        if is_close:
+            if n in holder:  # the step is closed: its claim ends, and the account is free
+                del owns[holder[n]], holder[n], last[n], claim_id[n]
+            continue
         who, cmd = c["user"]["login"], command(c)
         if holder.get(n) == who:
             if cmd == "/release":
@@ -206,10 +220,10 @@ def compute(comments_by_issue, at=None):
 
 
 def step_issues():
-    """Open step issues that take part in claims (not exercises)."""
+    """Step issues, open and closed, that take part in claims (not exercises)."""
     out = []
-    for i in api("GET", "issues?state=open&labels=step&per_page=100", paginate=True) or []:
-        if "pull_request" in i or i.get("state") != "open":
+    for i in api("GET", "issues?state=all&labels=step&per_page=100", paginate=True) or []:
+        if "pull_request" in i:
             continue
         sid = step_of(i)
         if sid and not is_exercise(sid):
@@ -218,8 +232,19 @@ def step_issues():
 
 
 def read_all():
-    issues = {i["number"]: i for i in step_issues()}
-    return issues, {n: comments_of(n) for n in issues}
+    """(open issues, comments by issue, {closed issue: closed_at}). An issue listed with no comments
+    is not fetched."""
+    issues, cs, closed = {}, {}, {}
+    for i in step_issues():
+        n = i["number"]
+        if i.get("state") == "open":
+            issues[n] = i
+        elif i.get("closed_at"):
+            closed[n] = ts(i["closed_at"])
+        else:
+            continue
+        cs[n] = [] if i.get("comments") == 0 else comments_of(n)
+    return issues, cs, closed
 
 
 def apply(issue, want, lapsed):
@@ -251,8 +276,8 @@ def settle(rounds=5):
     Returns (holder by issue, effects, comments by issue, issues as last read, released)."""
     released = []
     for _ in range(rounds):
-        issues, cs = read_all()
-        holder, effects, lapsed, _ = compute(cs)
+        issues, cs, closed = read_all()
+        holder, effects, lapsed, _ = compute(cs, closed=closed)
         wrote = False
         for n in sorted(issues):
             before = holders(issues[n])

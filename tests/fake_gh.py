@@ -69,7 +69,7 @@ def handle(st, method, path, q, body):
     issues = st.setdefault("issues", {})
     pulls = st.setdefault("pulls", {})
     if seg[0] == "issues" and len(seg) == 1 and method == "GET":
-        out = [dict(i, comments=None) for i in issues.values() if i["state"] == q.get("state", "open")
+        out = [dict(i, comments=None) for i in issues.values() if q.get("state", "open") in ("all", i["state"])
                and (not q.get("labels") or q["labels"] in [l["name"] for l in i["labels"]])]
         return [{k: v for k, v in i.items() if k != "comments"} for i in out], 200
     if seg[0] == "issues":
