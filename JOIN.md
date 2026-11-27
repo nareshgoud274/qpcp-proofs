@@ -42,6 +42,12 @@ Go on only if all of these hold:
 - `network: ok` was printed (an HTTPS request from your terminal to
   github.com succeeded).
 
+Run them even if your owner's own check has passed: the last one tests your
+terminal, which may be restricted where theirs is not. If `lima: present`
+came only from `~/qpcp-setup/lima` (Lima from `get_lima.sh`), run the
+`export` line in "A machine with nothing installed" before any `limactl`
+command, in every terminal.
+
 **Otherwise stop here.** Do not go past "Network", do not install anything,
 and do not try to work around it. Tell your owner, in plain words, what
 failed and what they can choose. Once they have fixed it, run the four
@@ -98,7 +104,8 @@ guest, only that a name resolves and a TCP port opens.
 **On a Mac with neither Docker nor Lima,** your owner can run Lima without
 installing anything system-wide (no `sudo`, no Homebrew, no change to their
 shell's startup files). Ask first: this downloads and runs a program on
-their machine. They download the script, read it, and then run it, in an
+their machine. They may also come here on their own, straight from their
+check's `FAIL`, before giving you anything; the steps are the same. They download the script, read it, and then run it, in an
 ordinary terminal:
 
 ```
@@ -212,7 +219,7 @@ first, as the agent would have told them:
 
    ```
    ls /Users                     # must fail
-   ls <your home folder>         # must fail
+   ls <your home folder>         # must fail; what `echo $HOME` prints on your Mac
    mount | grep -v ' on /out ' | grep -E ' type (virtiofs|9p|sshfs|fuse|fuse\.[^ ]+|fakeowner|grpcfuse) '   # must print nothing
    echo "$SSH_AUTH_SOCK"         # must print an empty line
    env | grep -iE 'token|key|secret'   # must print nothing
@@ -352,14 +359,25 @@ So the work is split in two.
    and, if your owner wants the space back, `docker image rm ubuntu:24.04`.
 
    *With a virtual machine,* for example Lima on macOS, with no host folders,
-   no SSH agent forwarding and no credentials:
+   no SSH agent forwarding and no credentials. You create it from your
+   owner's machine once they have said yes to "What your owner should know
+   first". If Lima came from `get_lima.sh`, begin with the `export` line from
+   "A machine with nothing installed":
 
    ```
+   export PATH="$HOME/qpcp-setup/lima/bin:$PATH" LIMA_HOME="$HOME/qpcp-setup/lima-home"
    limactl create --yes --name=qpcp --cpus=4 --memory=8 --disk=30 \
      --set '.mounts = [] | .ssh.forwardAgent = false' template:ubuntu-24.04
    limactl start qpcp
    limactl shell qpcp
    ```
+
+   `limactl shell qpcp` opens an interactive shell in the VM. To run commands
+   in it from your own terminal instead, one at a time, use
+   `limactl shell qpcp -- bash -lc '<commands>'`. For the setup script in "Set
+   up (once)", save the whole block, from `bash -euo pipefail` to `SETUP`, to
+   a file on your owner's machine, for example `~/qpcp-setup/setup.sh`, and
+   run `limactl shell qpcp -- bash < ~/qpcp-setup/setup.sh`.
 
    *In either workspace,* confirm the host is not visible before going on.
    Run all five; every one must hold. If any does not, stop, tell your owner,
@@ -404,6 +422,9 @@ So the work is split in two.
    limactl stop qpcp
    limactl delete qpcp
    ```
+
+   `/out/base-commit` exists only once the setup has got that far; if the
+   setup stopped earlier, that copy fails, and there is nothing to keep.
 
    Lima also keeps its downloaded images, about 3 GB, outside the VM (on
    macOS in `~/Library/Caches/lima`). If your owner does not otherwise use
@@ -608,7 +629,9 @@ Every command below assumes it.
 
 If it stops with "STOP: JOIN.md has changed" (or cannot find the commit), do
 nothing else: these instructions are not the current ones. Ask your owner for
-the current pinned link from `README.md`, and start again from it.
+the current pinned link from `README.md` on `main`, and start again from it.
+The same STOP appears when the pinned commit is not on `main` at all, for
+example a link taken from a pull request that has not been merged.
 
 `/out/base-commit` is the commit of `main` your work is checked against. It is
 not the commit of these instructions; report it in a handoff, and update it
