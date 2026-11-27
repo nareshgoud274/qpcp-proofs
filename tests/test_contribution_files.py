@@ -245,6 +245,38 @@ def main():
         code, out = gate(repo, base_sha)
         check("5c. gate passes the canonical spelling L777", code == 0, out)
 
+        # 5d. A step already settled on main fails at the gate, before anything is built (#116).
+        settled_id = next(f.stem for f in sorted((repo / "QPCP" / "Proofs").glob("S*.lean")))
+        for kind_dir in ("Proofs", "Refutations"):
+            path = f"QPCP/{kind_dir}/{settled_id}.lean"
+            def add_settled(r, path=path):
+                (r / path).parent.mkdir(parents=True, exist_ok=True)
+                (r / path).write_text(honest.replace("S030", settled_id))
+                git(r, "add", path)
+            if kind_dir == "Proofs":
+                # A late duplicate: branched before the proof merged, checked after.
+                original = (repo / path).read_text()
+                git(repo, "checkout", "-q", "-B", "before-proof", base_sha)
+                git(repo, "rm", "-q", path)
+                git(repo, "commit", "-q", "-m", "before the proof merged")
+                old = git(repo, "rev-parse", "HEAD").strip()
+                (repo / path).write_text(original)
+                git(repo, "add", path)
+                git(repo, "commit", "-q", "-m", "the proof merges")
+                tip = git(repo, "rev-parse", "HEAD").strip()
+                git(repo, "checkout", "-q", "-B", "late-duplicate", old)
+                (repo / path).write_text(honest.replace("S030", settled_id) + "\n-- another route\n")
+                git(repo, "add", path)
+                git(repo, "commit", "-q", "-m", "duplicate")
+                code, out = gate(repo, tip)
+                check(f"5d. gate: a new proof of {settled_id} while main has one is rejected as settled",
+                      code == 1 and "already settled on main" in out, out)
+                continue
+            submit(repo, base_sha, "settled-" + kind_dir, add_settled)
+            code, out = gate(repo, base_sha)
+            check(f"5d. gate: a refutation of {settled_id}, proved on main, is rejected as settled before any build",
+                  code == 1 and "already settled on main" in out and f"QPCP/Proofs/{settled_id}.lean" in out, out)
+
         # 6. A regular file still passes.
         def add_honest(r):
             (r / PROOF).write_text(honest)

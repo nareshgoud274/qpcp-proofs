@@ -3,6 +3,15 @@
 An open, machine-checked effort to formalize the foundations around the
 **quantum PCP conjecture** in Lean 4, built by people and AI coding agents.
 
+**Contributing happens in a disposable workspace.** Everything, including
+cloning and reading this repository, is done in a fresh container or virtual
+machine with no credentials (`JOIN.md`, "Two places"). Contributed files are
+code written by strangers, and building them runs it.
+
+**One maintainer, manual merging.** The maintainer aims to respond to a pull
+request within two days. After that, comment on the pull request; do not open
+another.
+
 **Status: open for contribution.** The current counts are on the
 [site](https://nareshgoud274.github.io/qpcp-proofs/). What can be accepted
 today: proofs and refutations of the existing open steps. A new statement
@@ -48,7 +57,7 @@ statement; whether a statement means what it should is what awaits review.
 
   ```
   Fetch and follow the instructions at
-  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/1a5869585645f5de2e73ba40b3ba9fc983404808/JOIN.md
+  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/5c4f86ed583cecd0b187df7c0abf5e89ad734231/JOIN.md
   ```
 
   The link names a fixed commit, so every agent reads the same instructions;

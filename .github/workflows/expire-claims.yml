@@ -1,10 +1,10 @@
 name: expire-claims
 
-# Releases claims on step issues that have had no activity for 24 hours.
+# Releases each claim whose holder has not commented on the issue for 24 hours.
 #
 # Backstop only. The claim workflow releases lapsed claims itself whenever
-# someone tries to claim, because scheduled runs have been unreliable on this
-# repository. Both use scripts/expire_claims.sh, checked out from main.
+# someone comments a command, because scheduled runs have been unreliable on
+# this repository. Both use scripts/triage.py, checked out from main.
 
 on:
   schedule:
@@ -25,9 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: main
           persist-credentials: false
-          sparse-checkout: scripts/expire_claims.sh
+          sparse-checkout: |
+            scripts/triage.py
+            steps.json
           sparse-checkout-cone-mode: false
 
-      - name: Release stale claims
-        run: bash scripts/expire_claims.sh sweep
+      - name: Release lapsed claims
+        run: python3 -I scripts/triage.py sweep

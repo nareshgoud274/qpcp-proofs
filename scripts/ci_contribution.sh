@@ -50,6 +50,21 @@ case "$CMD" in
       echo "REJECTED: $ident is not a lemma id: L<N> is written without leading zeros (L$(printf '%s' "${ident#L}" | sed 's/^0*//'), not $ident)"
       exit 1
     fi
+    # A proof or refutation of a step already settled on main fails here, before
+    # anything is downloaded or built (#116). The triage workflow then closes a
+    # duplicate proof naming the pull request that settled it, or flags a
+    # refutation or dispute for the maintainer; nothing is closed from here.
+    case "$path" in
+      QPCP/Proofs/*|QPCP/Refutations/*)
+        for settled in "QPCP/Proofs/$ident.lean" "QPCP/Refutations/$ident.lean"; do
+          if git cat-file -e "$BASE:$settled" 2>/dev/null; then
+            added="$(git log -1 --diff-filter=A --format=%h "$BASE" -- "$settled")"
+            echo "REJECTED: $ident is already settled on main: $settled (added in ${added:-an earlier commit})"
+            exit 1
+          fi
+        done
+        ;;
+    esac
     echo "gate: one new contribution file"
     ;;
   check)

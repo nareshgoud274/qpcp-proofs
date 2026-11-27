@@ -477,6 +477,88 @@ The site is static and reads its data from GitHub in the visitor's browser.
   List a supporter only with their agreement.
 - The site never handles payments or payment details itself.
 
+## Claims and duplicate pull requests
+
+`scripts/triage.py` handles claims (`claim.yml`, `expire-claims.yml`) and pull
+requests for settled steps (`triage.yml`), through `gh api` only.
+
+- A claim is a courtesy, not a lock: the checker never rejects a proof
+  because someone else holds the step. Exercises need no claim.
+- One holder per step and one claimed step per account. `claim.yml` has no
+  concurrency group, because GitHub keeps only one pending run per group.
+  Instead, **the comments are the state**: each run replays the comments of
+  every step issue in one pass, in the order of their own timestamps,
+  works out who holds each step, and makes every open issue's assignee match.
+  Closings and reopenings are replayed too, from each issue's own event
+  history, in the same time order. A closing ends the step's claim for good;
+  comments on a closed issue count for nothing; a reopening only lets a fresh
+  `/claim` in and never revives an old one. So closing or reopening an issue
+  never changes a decision made before it, on any issue. If the event history
+  lags the issue's state, the state is taken as starting at that run's time
+  until the event appears.
+- **Order within one second** (timestamps have one-second resolution). One
+  policy, `order_key` in `triage.py`, is used everywhere:
+  - closings and reopenings keep their real sequence, GitHub's event id, and
+    are never ordered by their names;
+  - comments keep their order by comment id;
+  - **a comment and a transition in the same second** are genuinely ambiguous,
+    because their ids come from different sequences. All transitions of that
+    second come first, then its comments, so a comment is judged against the
+    issue's state at the end of its second. Chosen because "close with
+    comment" and "reopen and comment" put both in one second: a comment that
+    closes the issue makes no difference either way, and a `/claim` that
+    comes with a reopening counts.
+
+  After the replay, each issue's replayed state (open or closed) must equal
+  its observed state; a mismatch is a fault naming the issue, and the run stops
+  before writing anything from that replay. So delayed,
+  duplicated, simultaneous and out-of-order runs agree, and the earliest
+  `/claim` wins.
+- The account rule spans issues, so the replay is global, not per issue: at
+  each `/claim`'s own time, a claim by an account that already holds another
+  step is not taken. Every holder the replay produces has passed both rules.
+  A run writes, reads everything again, and repeats until a read needs no
+  write. Replies carry `<!-- qpcp:re <comment id> -->`, so a comment
+  processed twice is answered once. Assigning someone by hand on a step
+  issue does not stick: the claim comments decide.
+- `tests/test_claims_random.py` checks this as a class: random histories,
+  each processed in many random schedules (late, duplicated, dropped, with
+  sweeps), asserting one holder per step, one step per account, no claim
+  older than 24 hours from its holder's last comment, the same state in
+  every schedule at a checkpoint while claims are live and after a final
+  sweep, and, after every run, the state an independent reference model of
+  the rules gives. Histories include closings and reopenings, several in one
+  second and in a comment's second, each with its real sequence, and the
+  model orders them by that sequence. A failure prints a `--replay` line.
+- A claim lapses 24 hours after the holder's own last comment, judged by the
+  comments' own times, so a `/renew` written in time counts even if its
+  workflow runs late. A lapsed claim is never revived. `/renew` renews it
+  explicitly; other people's comments do not.
+- **Already-settled steps.** A proof of a step already proved on main fails
+  at the gate (`ci_contribution.sh`), before anything is built, and
+  `triage.yml` closes it with "already settled by #n".
+- **Duplicates on merge.** When a proof merges, other open pull requests
+  adding a proof of the same step are closed as confirmed duplicates, naming
+  it. Each candidate is read again just before closing; if that read shows
+  it closed, retargeted away from main, or with a new head that no longer adds
+  that proof, it is left alone.
+- **Never closed automatically:**
+  - a refutation, or anything conflicting with a settled result. These get
+    the `needs-maintainer` label: decide them by hand.
+  - anything **held**. The one dispute state, used by both closing paths: a
+    pull request labelled `disputed` or `needs-maintainer`, or one whose
+    step's issue is labelled `disputed` (the report workflow's label while a
+    report is open). Add either label to a pull request to keep it open.
+- Only pull requests into `main` are acted on, and a merge closes duplicates
+  only if its base is `main` and the proof is on main now. "Settled by #n"
+  uses `build_status.py`'s provenance: the latest commit on main that added
+  the file. A refutation of a proved step means a statement, a definition or the
+  checker is wrong.
+- `tests/test_claims.py` covers these cases against a stand-in `gh`
+  (`tests/fake_gh.py`).
+- The dormant automerger (`automerge.py`) still skips a proof of a step held
+  by someone else, leaving it to you. It is unchanged, and stays dry-run.
+
 ## Handling reports
 
 A report is an issue with the `report` label. The `report` workflow adds

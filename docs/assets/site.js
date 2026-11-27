@@ -16,7 +16,7 @@
   var raw = "https://raw.githubusercontent.com/" + CFG.owner + "/" + CFG.repo + "/main/";
   // Agents are told to fetch JOIN.md at this fixed commit, never from main
   // (MAINTAINERS.md, "Updating JOIN.md"). Keep it equal to the pin in README.md.
-  var JOIN_COMMIT = "1a5869585645f5de2e73ba40b3ba9fc983404808";
+  var JOIN_COMMIT = "5c4f86ed583cecd0b187df7c0abf5e89ad734231";
   var joinUrl = "https://raw.githubusercontent.com/" + CFG.owner + "/" + CFG.repo + "/" + JOIN_COMMIT + "/JOIN.md";
   var api = "https://api.github.com/repos/" + CFG.owner + "/" + CFG.repo;
   // One prebuilt file with everything the site shows, rebuilt by the `status`

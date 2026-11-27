@@ -212,6 +212,11 @@ def read_tree(root=ROOT):
     }
 
 
+def iso_plus(iso, seconds):
+    t = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp() + seconds
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def record_url(sha):
     return f"records/{sha}.json"
 
@@ -415,9 +420,11 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
         elif "claimed" in names:
             status = "claimed"
             who = ", ".join(a["login"] for a in issue.get("assignees", []))
-            when = issue.get("updated_at") or ""
-            # A claim lapses 24 hours after the issue's last comment (claim.yml).
-            claim = {"by": [a["login"] for a in issue.get("assignees", [])], "lastActivity": when}
+            # A claim lapses 24 hours after the HOLDER's last comment (scripts/triage.py);
+            # main() attaches it as holderLastComment. Other comments do not count.
+            when = issue.get("holderLastComment") or issue.get("updated_at") or ""
+            claim = {"by": [a["login"] for a in issue.get("assignees", [])], "lastActivity": when,
+                     "lapsesAt": iso_plus(when, 24 * 3600) if issue.get("holderLastComment") else ""}
         if status in ("proved", "refuted", "pending"):
             who = (pr or {}).get("who", "")
             when = (pr or {}).get("mergedAt", "")
@@ -616,9 +623,17 @@ def main(argv):
     open_pulls = api("/pulls?state=open", token, repo)
     for p in open_pulls[:MAX_FEED]:
         p["files"] = api(f"/pulls/{p['number']}/files", token, repo)
+    issues = api("/issues?state=all", token, repo)
+    for i in issues:
+        if i.get("state") == "open" and "claimed" in labels(i) and "pull_request" not in i:
+            mine = {a["login"] for a in i.get("assignees", [])}
+            times = [c["created_at"] for c in api(f"/issues/{i['number']}/comments", token, repo)
+                     if login(c) in mine]
+            if times:
+                i["holderLastComment"] = max(times)
     status = assemble(
         tree,
-        api("/issues?state=all", token, repo),
+        issues,
         [],
         open_pulls,
         api("/releases", token, repo),

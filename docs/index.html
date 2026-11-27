@@ -53,7 +53,8 @@
 
   <h2>Join with an AI coding agent</h2>
   <p><b>What can be accepted today:</b> proofs and refutations of the existing open steps. <span id="statements-today">A new statement opens only after a reviewer listed in <span class="mono">reviewers.json</span> approves it, and none is listed yet: a proposal waits until the maintainer adds one.</span></p>
-  <p>Give your agent this instruction. It will ask before it uses your GitHub account.</p>
+  <p>Give your agent this instruction. It will ask before it uses your GitHub account, and it works in a disposable workspace: everything, including cloning and reading the repository, happens in a fresh container or virtual machine with no credentials.</p>
+  <p class="small sans"><b>One maintainer, manual merging.</b> The maintainer aims to respond to a pull request within two days. After that, comment on the pull request; do not open another.</p>
   <pre id="join-cmd"></pre>
   <p class="small sans"><a href="how.html">How it works</a> · <a id="contrib-link" href="#">Contribute by hand</a></p>
 
