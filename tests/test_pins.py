@@ -72,6 +72,8 @@ def run_installer(system, machine):
         return r, read("urls"), read("checked"), (t / "home" / ".elan").exists()
 
 
+check("install_elan.sh says, after the check and before running anything, that the SHA-256 was checked",
+      elan.index("sha256sum -c") < elan.find("SHA-256 checked") < elan.index('"$dir/elan-init"'))
 for machine, arch, key in (("x86_64", "x86_64", "X86_64"), ("aarch64", "aarch64", "AARCH64")):
     r, urls, checked, installed = run_installer("Linux", machine)
     check(f"install_elan.sh on {machine}: fetches the {arch} archive, checks it against the {arch} hash, "
