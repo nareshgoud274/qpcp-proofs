@@ -53,11 +53,29 @@ statement; whether a statement means what it should is what awaits review.
 
 ## Contribute
 
-- **With an AI coding agent:** give it this instruction:
+- **With an AI coding agent:** first check that your machine can host the
+  agent's workspace. This takes about a minute, in an ordinary terminal. Read
+  the script first: it installs nothing, and only looks, apart from one
+  throwaway guest it starts and deletes (with Lima, that guest's Ubuntu image
+  stays in Lima's cache, about 3 GB, and the workspace reuses it):
+
+  ```
+  mkdir -p ~/qpcp-setup && cd ~/qpcp-setup
+  curl -fsSLO https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/29e9fcbce7e48d6abff471801d3cc464d0166ba0/scripts/workspace_check.sh
+  bash workspace_check.sh
+  ```
+
+  It checks for Docker or Lima, about 25 GB free (the workspace plus image
+  downloads), and network from inside a guest. Every `FAIL` says what to do
+  next; after fixing one, run it again. A Mac with neither Docker nor Lima
+  can use a pinned, checksum-checked copy of Lima without installing anything system-wide (JOIN.md, "A machine with
+  nothing installed"). If your agent's own terminal cannot reach github.com
+  while your browser can, its sandbox is blocking the network (JOIN.md,
+  "Network"). Then give it this instruction:
 
   ```
   Fetch and follow the instructions at
-  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/838675c9c9c64cf9edaca2d530919385770f1e65/JOIN.md
+  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/29e9fcbce7e48d6abff471801d3cc464d0166ba0/JOIN.md
   ```
 
   The link names a fixed commit, so every agent reads the same instructions;
