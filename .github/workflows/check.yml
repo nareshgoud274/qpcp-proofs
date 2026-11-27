@@ -211,8 +211,20 @@ jobs:
       - name: The site reports verified results only (records, pending, fallback, programs)
         run: python3 -I tests/test_verification_record.py
 
+      - name: The verification index (history, backfill, retries, order, one commit)
+        run: python3 -I tests/test_verification_index.py
+
       - name: A volunteer's first hour (setup stop, submission card, pins, proposal bot)
         run: python3 -I tests/test_onboarding.py
+
+      # The command step pages print, for a proved step picked at random (#153).
+      - name: The reproduce command on step pages is correct (Linux, sandboxed)
+        if: matrix.tree == 'as-is'
+        # A random step, then S059, whose proof imports another merged proof (S027).
+        run: |
+          set -euo pipefail
+          python3 -I tests/test_reproduce_command.py
+          python3 -I tests/test_reproduce_command.py S059
 
       - name: The test suite never touches uncommitted work (refused, failing, interrupted)
         run: tests/test_suite_safety.sh

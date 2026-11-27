@@ -216,6 +216,17 @@ def record_url(sha):
     return f"records/{sha}.json"
 
 
+def reproduce_check(kind, sid):
+    """The command that re-runs one result's sandboxed check, and the line it must print.
+
+    tests/test_reproduce_command.py runs exactly this, for a step picked at
+    random, on Linux CI; see REPRODUCE.md for the setup it needs.
+    """
+    module = {"proof": "QPCP.Proofs", "refutation": "QPCP.Refutations"}[kind]
+    return {"command": f"python3 -I scripts/sandbox_verify.py record --only {module}.{sid}",
+            "expect": f"ACCEPTED: {kind} {sid}"}
+
+
 def submission_card(sid, issue_number):
     """What a volunteer copies to submit a proof or refutation of `sid`.
 
@@ -276,12 +287,41 @@ def verified_results(record):
     return out
 
 
-def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=None):
+def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=None, repo=""):
     """Pure function: the tree, raw GitHub data and the latest verification record in,
-    the status document out."""
+    the status document out. `repo` (owner/name) is used only to write citation links."""
     verified = verified_results(record)
     rec_commit = (record or {}).get("evidence", {}).get("commit", "")
     rec_run = (record or {}).get("run", {})
+    pub = (record or {}).get("publication") or {}
+    # Display metadata, kept outside the record's immutable evidence.
+    display_defs = ((record or {}).get("display") or {}).get("statementDefinitions", {})
+    rec_pub = pub.get("recordCommit", "")
+
+    def raw_at(commit, path):
+        return f"https://raw.githubusercontent.com/{repo}/{commit}/{path}" if repo and commit else ""
+
+    # index.json on site-data (site_data.py): for each exact file (kind, id, Git blob),
+    # every commit at which it was verified, ordered by position on main.
+    index = (pub.get("index") or {}).get("entries", {})
+    rec_commits = pub.get("recordCommits", {})
+
+    def pinned(v):
+        c = rec_commits.get(v["record"], "")
+        return {"commit": v["commit"], "verifiedAt": v["verifiedAt"], "record": v["record"],
+                "recordCommit": c, "recordUrl": raw_at(c, v["record"])}
+
+    def first_verified(kind, it):
+        e = index.get(f"{kind}:{it['id']}:{it['blob']}")
+        return dict(pinned(e["first"]), path=e["path"], blob=e["blob"]) if e else None
+
+    def history(kind, sid):
+        """The latest verification, by position on main, of any file for (kind, sid)."""
+        found = [e for e in index.values() if e["kind"] == kind and e["id"] == sid]
+        if not found:
+            return None
+        e = max(found, key=lambda e: e["last"]["position"])
+        return dict(pinned(e["last"]), path=e["path"], blob=e["blob"], first=pinned(e["first"]))
     step_issue, reports, proposals, mandates, by_number = {}, [], [], [], {}
     for i in issues:
         if "pull_request" in i:
@@ -340,13 +380,28 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
         # Only the canonical spelling L<N> names issue #N: L0777 is not L777 (#115).
         issue = step_issue.get(sid) or (by_number.get(int(sid[1:])) if canonical_lemma(sid) else None)
         names = labels(issue) if issue else set()
-        status, who, when, pr, ver, claim = "open", "", "", None, None, None
-        # A verdict comes only from the record, and only for the bytes on main.
+        status, who, when, pr, ver, claim, former = "open", "", "", None, None, None, None
+        # A verdict comes only from the record, and only for the bytes on main: the
+        # file must be on main now, at the record's path, with the record's blob.
+        # A result the record lists whose file is gone from main is not proved now;
+        # it is kept, for its page only, as "was verified at <commit>".
         for kind, done in (("proof", "proved"), ("refutation", "refuted")):
             it = verified.get((kind, sid))
             on_main = tree["proofs" if kind == "proof" else "refutations"].get(sid)
-            if it and (on_main is None or (on_main["path"], on_main["blob"]) == (it["path"], it["blob"])):
-                ver = (done, it)
+            if it and on_main is not None and (on_main["path"], on_main["blob"]) == (it["path"], it["blob"]):
+                ver = (done, it, kind)
+            elif it and on_main is None and not index:
+                # No index yet: only the latest record can say it was verified.
+                former = {"status": done, "commit": rec_commit, "path": it["path"], "blob": it["blob"],
+                          "record": record_url(rec_commit), "recordUrl": raw_at(rec_pub, record_url(rec_commit))}
+        if not ver and index:
+            # From the index, so it survives later records that no longer list the file (#155 review).
+            for kind, done in (("proof", "proved"), ("refutation", "refuted")):
+                h = history(kind, sid)
+                if h and not (former and former["status"] != done):
+                    former = {"status": done, "commit": h["commit"], "path": h["path"], "blob": h["blob"],
+                              "record": h["record"], "recordUrl": h["recordUrl"], "verifiedAt": h["verifiedAt"],
+                              "first": h["first"]}
         on_main = tree["proofs"].get(sid) or tree["refutations"].get(sid)
         if r["retired"] or sid in tree["retired"] or "retired" in names:
             status = "retired"
@@ -401,7 +456,15 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
                 "declaration": ver[1]["declaration"], "path": ver[1]["path"], "blob": ver[1]["blob"],
                 "statementPath": ver[1]["statementPath"], "statementLine": ver[1]["statementLine"],
                 "statementDigest": ver[1]["statementDigest"], "dependsOn": ver[1]["dependsOn"],
+                # The definition a one-line statement names, at the verified commit (absent from older records).
+                "statementDefinition": display_defs.get(f"{ver[2]}:{sid}"),
+                # The record's bytes at the site-data commit that published them: they never change.
+                "citeUrl": raw_at(rec_pub, record_url(rec_commit)), "recordCommit": rec_pub,
+                "firstVerified": first_verified(ver[2], ver[1]),
+                "reproduce": dict(reproduce_check(ver[2], sid), commit=rec_commit),
             },
+            # Not a verdict: the latest record verified a file that is no longer on main.
+            "formerlyVerified": former if not ver else None,
         })
 
     # Prerequisites with their current state (#117): `deps` are the steps a proof
@@ -559,7 +622,7 @@ def main(argv):
         [],
         open_pulls,
         api("/releases", token, repo),
-        record=record,
+        record=record, repo=repo,
     )
     out = Path(argv[1])
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -117,9 +117,38 @@
     });
   }
 
+  /* The same rule as build_status.py, applied again to whatever feed arrives: a
+     step is proved or refuted now only if the feed names the verified file on
+     main (`verified`). Anything else is shown as "unknown" and taken out of the
+     counts, overall and per program, and out of that person's proved and refuted
+     lists, so no page can show a verdict without it. */
+  function enforceVerified(s) {
+    var byProgram = {};
+    (s.programs || []).forEach(function (p) { byProgram[p.id] = p; });
+    s.steps.forEach(function (st) {
+      if ((st.status === "proved" || st.status === "refuted") && !(st.verified && st.verified.path && st.verified.blob)) {
+        var was = st.status;
+        st.status = "unknown";
+        s.count[was] = Math.max(0, (s.count[was] || 0) - 1);
+        s.count.unknown = (s.count.unknown || 0) + 1;
+        var p = byProgram[st.program];
+        if (p && p.count) {
+          p.count[was] = Math.max(0, (p.count[was] || 0) - 1);
+          p.count.unknown = (p.count.unknown || 0) + 1;
+        }
+        // ...and from every person's list, so the contributors page agrees with the counts.
+        Object.keys(s.people || {}).forEach(function (who) {
+          var lists = s.people[who];
+          if (lists && Array.isArray(lists[was])) lists[was] = lists[was].filter(function (id) { return id !== st.id; });
+        });
+      }
+    });
+    return s;
+  }
+
   /* Loads the step list and its live status. maxAgeMs controls cache reuse. */
   function loadCore(maxAgeMs) {
-    return loadStatus(maxAgeMs).then(function (s) {
+    return loadStatus(maxAgeMs).then(enforceVerified).then(function (s) {
       s.steps.forEach(function (st) { if (!st.url) st.url = repoUrl + "/issues"; });
       return {
         steps: s.steps, count: s.count, people: s.people || {},
@@ -289,6 +318,7 @@
     loadCore: loadCore, loadReports: loadReports, loadReleases: loadReleases, stamp: stamp, chrome: chrome, fail: fail,
     verificationLine: verificationLine,
     // For tests/test_site_fallback.py: the builder the pages use when the feed is unavailable.
-    _buildFromApi: build
+    _buildFromApi: build,
+    _enforceVerified: enforceVerified
   };
 })();

@@ -367,9 +367,51 @@ record:
   "pending verification" and is not counted. Until the first record exists,
   `status` publishes nothing. Without the feed, the site shows verification
   status as unavailable and never infers "proved" from a closed issue;
+- `index.json` on site-data lists, for each exact file (kind, id, Git blob),
+  every commit at which a record accepted it, ordered by position on main
+  (`git rev-list --count`), with the first and the last, and every record it
+  covers. `publish-record` writes it in the same commit as the record and
+  `latest.json`; a rejected push redoes the whole update from the new tip.
+  Publishing a record twice changes nothing, and publishing an older commit's
+  record later still orders it by position. The first publication after this
+  was added built the index from every record already there.
+  `site_data.py check-index github:<owner>/<repo> .` checks that it equals the
+  index rebuilt from the records. "First verified" and "formerly verified"
+  are read from it, so a deleted proof keeps its history after later records;
+- a step is proved or refuted now only if its file is on main at the
+  record's path with the record's blob. If the latest record lists a result
+  whose file has since been deleted, the step is not counted; its page keeps
+  "was verified at <commit>" as history (`formerlyVerified`). The site's
+  `enforceVerified` applies the same rule to whatever feed it reads;
 - each step has a page, `docs/step.html?id=<ID>`, built from the feed: the
-  statement and proof at the verified commit, the run, the definitions it
-  depends on, who submitted it, and its human-review status.
+  statement and proof at the verified commit, and, when the statement is one
+  name (S057-S059), that definition's source (`statementDefinition`). Lean
+  reports where the definition is: after the trusted build, `sandbox_verify.py
+  record` asks the maintainer-written modules (no contributed code) for each
+  one-name statement's constant and declaration range, and the evidence
+  carries it. The publish job takes the source text from Git at the commit
+  and checks it against that location. Without Lean's answer it falls back to a
+  text search with comments removed, which accepts exactly one match. Zero or
+  several matches show links to the files, never a guess. The result goes in
+  the record's `display.statementDefinitions`, outside its `evidence`: two
+  runs on one commit may locate a definition differently (Lean, or the
+  fallback), and that must never make the second publication a fault. Only
+  `evidence` (verdicts, blobs, digests, dependencies, statement locations) is
+  compared and immutable. It also shows:
+  - the run, and the definitions it depends on;
+  - a "Cite this verification" link, which is the record at the site-data
+    commit that added it, so the bytes never change;
+  - the first commit at which this exact file was verified;
+  - a "Reproduce this check" block (`REPRODUCE.md`);
+  - who submitted it, and its human-review status.
+
+  The `publish` job checks out the run's own commit, so a record is always
+  built by that commit's scripts: a re-run on an older commit reproduces its
+  evidence, and new record parts such as `display` appear only in records of
+  commits that have them. `site_data.py fetch-latest` reads the publishing commits and first
+  verifications from site-data's own history (`publication`), and
+  `tests/test_reproduce_command.py` runs the printed command for a random
+  step on your pull requests.
 
 ## Adding steps
 

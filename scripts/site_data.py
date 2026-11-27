@@ -9,7 +9,16 @@
         a fault (exit 2).
     site_data.py fetch-latest <remote> <out.json>
         Writes the record latest.json points at to <out.json>; if there is no
-        record yet, writes nothing and says so (exit 0).
+        record yet, writes nothing and says so (exit 0). It adds one key the
+        record file does not have, `publication`: from the branch's own
+        history, the site-data commit that added each record (so a citation
+        can name bytes that never change), and index.json, which lists for
+        each exact file (kind, id, Git blob) every commit at which it was
+        verified, first and last by position on main. With [<repo>], an index
+        missing on the branch is built from the records.
+    site_data.py check-index <remote> <repo>
+        Exits non-zero unless index.json equals the index rebuilt from every
+        record on the branch (commits placed on main's history in <repo>).
     site_data.py publish-status <status.json> <remote>
         Replaces status.json.
 
@@ -96,8 +105,65 @@ def dump(obj):
     return json.dumps(obj, indent=1, sort_keys=True) + "\n"
 
 
-def apply_record(d, record, is_ancestor):
-    """Add the record to the checkout d. Returns True if anything changed."""
+INDEX = "index.json"
+INDEX_FORMAT = 1
+
+
+def positions(repo):
+    """position(sha): the commit's place on main's history (its number of
+    ancestors), so that records sort by where their commits are on main, not
+    by when they were published. Commits of main form one line, so this is a
+    total order on them."""
+    cache = {}
+
+    def position(sha):
+        if sha not in cache:
+            r = subprocess.run(["git", "-C", str(repo), "rev-list", "--count", sha], capture_output=True, text=True)
+            if r.returncode != 0:
+                raise Fault(f"cannot place {sha[:7]} on main's history in {repo}")
+            cache[sha] = int(r.stdout.strip())
+        return cache[sha]
+    return position
+
+
+def index_add(index, record, position):
+    """The index with one record's accepted results added. Pure and idempotent.
+
+    Keyed by kind, id and Git blob: for each exact file, every commit at which a
+    record accepted it, ordered by position on main, with the first and the
+    last. Formerly verified and first verified are read from it (#155 review)."""
+    entries = {k: dict(v, verified=list(v["verified"])) for k, v in (index or {}).get("entries", {}).items()}
+    sha = record["evidence"]["commit"]
+    # Every record the index covers, even one that accepts nothing new: a reader can
+    # check that the index and the records agree.
+    covered = dict((index or {}).get("records", {}))
+    covered[f"records/{sha}.json"] = {"commit": sha, "position": position(sha)}
+    for it in record["evidence"]["items"]:
+        if it.get("verdict") != "ACCEPTED":
+            continue
+        key = f"{it['kind']}:{it['id']}:{it['blob']}"
+        e = entries.setdefault(key, {"kind": it["kind"], "id": it["id"], "path": it["path"], "blob": it["blob"],
+                                     "verified": []})
+        if not any(v["commit"] == sha for v in e["verified"]):
+            e["verified"].append({"commit": sha, "position": position(sha), "record": f"records/{sha}.json",
+                                  "verifiedAt": record["verifiedAt"]})
+        e["verified"].sort(key=lambda v: (v["position"], v["commit"]))
+        e["first"], e["last"] = e["verified"][0], e["verified"][-1]
+    return {"format": INDEX_FORMAT, "records": dict(sorted(covered.items())), "entries": dict(sorted(entries.items()))}
+
+
+def index_from_records(d, position):
+    """The index built from every record in the checkout d (the backfill, and the check)."""
+    index = {"format": INDEX_FORMAT, "records": {}, "entries": {}}
+    for path in sorted((Path(d) / "records").glob("*.json")):
+        index = index_add(index, json.loads(path.read_text()), position)
+    return index
+
+
+def apply_record(d, record, is_ancestor, position=None):
+    """Add the record to the checkout d, and with it (in the same commit) its
+    entries in index.json; the first time, the index is built from every record
+    already there. Returns True if anything changed."""
     sha = record["evidence"]["commit"]
     if not HEX40.match(sha):
         raise Fault(f"bad commit id {sha!r}")
@@ -123,6 +189,16 @@ def apply_record(d, record, is_ancestor):
         changed = True
     elif latest["commit"] != sha:
         print(f"latest.json stays at {latest['commit'][:7]}: {sha[:7]} does not descend from it")
+    if position is not None:
+        index_path = d / INDEX
+        # From the stored bytes, so that rebuilding the index from the records gives the same index.
+        stored = json.loads(rec_path.read_text())
+        index = (index_add(json.loads(index_path.read_text()), stored, position) if index_path.exists()
+                 else index_from_records(d, position))
+        text = dump(index)
+        if not index_path.exists() or index_path.read_text() != text:
+            index_path.write_text(text)
+            changed = True
     return changed
 
 
@@ -141,12 +217,25 @@ def cmd_publish_record(record_path, remote, repo):
     is_ancestor = ancestry(repo)
     if not is_ancestor(sha, "refs/remotes/origin/main"):
         raise Fault(f"{sha[:7]} is not on main's history; only commits of main get a record")
-    changed = write_with_retry(remote_url(remote), lambda d: apply_record(d, record, is_ancestor),
+    position = positions(repo)
+    # One commit carries the record, latest.json and index.json; a lost race starts again from the new tip.
+    changed = write_with_retry(remote_url(remote), lambda d: apply_record(d, record, is_ancestor, position),
                                f"verification record for {sha[:7]}")
     print(f"records/{sha}.json: " + ("published" if changed else "already published, identical evidence"))
 
 
-def cmd_fetch_latest(remote, out):
+def cmd_check_index(remote, repo):
+    """index.json equals the index rebuilt from every record on site-data."""
+    with tempfile.TemporaryDirectory(prefix="qpcp-site-data-") as tmp:
+        d = checkout(remote_url(remote), Path(tmp) / "site")
+        have = json.loads((d / INDEX).read_text()) if (d / INDEX).exists() else None
+        want = index_from_records(d, positions(repo))
+        if have != want:
+            raise Fault("index.json differs from the index rebuilt from the records")
+        print(f"index.json matches the records ({len(want['entries'])} files)")
+
+
+def cmd_fetch_latest(remote, out, repo=None):
     with tempfile.TemporaryDirectory(prefix="qpcp-site-data-") as tmp:
         d = checkout(remote_url(remote), Path(tmp) / "site")
         latest = d / "latest.json"
@@ -160,8 +249,32 @@ def cmd_fetch_latest(remote, out):
         record = json.loads(rec.read_text())
         if record["evidence"]["commit"] != pointer["commit"]:
             raise Fault("latest.json and its record name different commits")
-        Path(out).write_text(rec.read_text())
+        record["publication"] = publication(d, record, repo)
+        Path(out).write_text(json.dumps(record, indent=1) + "\n")
         print(f"latest verified commit: {pointer['commit'][:7]} ({record['verifiedAt']})")
+
+
+def publication(d, latest_record, repo=None):
+    """Where each record was published (the site-data commit that added it, for
+    pinned citations), and the index of verifications by exact file. Without
+    index.json yet, the index is built from the records, if `repo` can place
+    their commits on main."""
+    log = run("git", "log", "--reverse", "--diff-filter=A", "--format=%H", "--name-only", "--", "records/",
+              cwd=d).stdout.split("\n")
+    added, commit = [], None
+    for line in log:
+        if HEX40.match(line):
+            commit = line
+        elif re.fullmatch(r"records/[0-9a-f]{40}\.json", line) and commit:
+            added.append((line, commit))
+    record_commit = {path: c for path, c in added}
+    own = f"records/{latest_record['evidence']['commit']}.json"
+    index_path = d / INDEX
+    if index_path.exists():
+        index = json.loads(index_path.read_text())
+    else:
+        index = index_from_records(d, positions(repo)) if repo else None
+    return {"recordCommit": record_commit.get(own, ""), "recordCommits": record_commit, "index": index}
 
 
 def cmd_publish_status(status_path, remote):
@@ -182,8 +295,10 @@ def main(argv):
     try:
         if len(argv) == 5 and argv[1] == "publish-record":
             cmd_publish_record(argv[2], argv[3], argv[4])
-        elif len(argv) == 4 and argv[1] == "fetch-latest":
-            cmd_fetch_latest(argv[2], argv[3])
+        elif len(argv) in (4, 5) and argv[1] == "fetch-latest":
+            cmd_fetch_latest(argv[2], argv[3], argv[4] if len(argv) == 5 else None)
+        elif len(argv) == 4 and argv[1] == "check-index":
+            cmd_check_index(argv[2], argv[3])
         elif len(argv) == 4 and argv[1] == "publish-status":
             cmd_publish_status(argv[2], argv[3])
         else:
