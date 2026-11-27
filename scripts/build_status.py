@@ -294,6 +294,8 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
     rec_commit = (record or {}).get("evidence", {}).get("commit", "")
     rec_run = (record or {}).get("run", {})
     pub = (record or {}).get("publication") or {}
+    # Display metadata, kept outside the record's immutable evidence.
+    display_defs = ((record or {}).get("display") or {}).get("statementDefinitions", {})
     rec_pub = pub.get("recordCommit", "")
 
     def raw_at(commit, path):
@@ -455,7 +457,7 @@ def assemble(tree, issues, closed_pulls, open_pulls, releases, now=None, record=
                 "statementPath": ver[1]["statementPath"], "statementLine": ver[1]["statementLine"],
                 "statementDigest": ver[1]["statementDigest"], "dependsOn": ver[1]["dependsOn"],
                 # The definition a one-line statement names, at the verified commit (absent from older records).
-                "statementDefinition": ver[1].get("statementDefinition"),
+                "statementDefinition": display_defs.get(f"{ver[2]}:{sid}"),
                 # The record's bytes at the site-data commit that published them: they never change.
                 "citeUrl": raw_at(rec_pub, record_url(rec_commit)), "recordCommit": rec_pub,
                 "firstVerified": first_verified(ver[2], ver[1]),

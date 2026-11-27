@@ -392,7 +392,12 @@ record:
   carries it. The publish job takes the source text from Git at the commit
   and checks it against that location. Without Lean's answer it falls back to a
   text search with comments removed, which accepts exactly one match. Zero or
-  several matches show links to the files, never a guess. It also shows:
+  several matches show links to the files, never a guess. The result goes in
+  the record's `display.statementDefinitions`, outside its `evidence`: two
+  runs on one commit may locate a definition differently (Lean, or the
+  fallback), and that must never make the second publication a fault. Only
+  `evidence` (verdicts, blobs, digests, dependencies, statement locations) is
+  compared and immutable. It also shows:
   - the run, and the definitions it depends on;
   - a "Cite this verification" link, which is the record at the site-data
     commit that added it, so the bytes never change;
@@ -402,8 +407,8 @@ record:
 
   The `publish` job checks out the run's own commit, so a record is always
   built by that commit's scripts: a re-run on an older commit reproduces its
-  evidence, and new record fields such as `statementDefinition` appear only
-  in records of commits that have them. `site_data.py fetch-latest` reads the publishing commits and first
+  evidence, and new record parts such as `display` appear only in records of
+  commits that have them. `site_data.py fetch-latest` reads the publishing commits and first
   verifications from site-data's own history (`publication`), and
   `tests/test_reproduce_command.py` runs the printed command for a random
   step on your pull requests.

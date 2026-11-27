@@ -17,9 +17,11 @@
         the verdicts, declarations, statement digests and dependencies. Refuses
         a partial run (--only, a missing shard, replay-only), a missing or extra
         contribution, a blob that differs from the tree, or any verdict other
-        than ACCEPTED. When a statement is one name (S057-S059), each item also
-        gets that definition's source and lines (`statementDefinition`), from
-        a maintainer-written module (QPCP/*.lean) at <commit>.
+        than ACCEPTED. When a statement is one name (S057-S059), the record's
+        `display.statementDefinitions` gives that definition's source and
+        lines, from a maintainer-written module (QPCP/*.lean) at <commit>.
+        `display` is not evidence: two runs on one commit may locate a
+        definition differently, and that is never a different result.
 
 A record is evidence about one commit. Its `evidence` part (everything except
 the run, the attempt and the time) must be identical on every run for that
@@ -355,7 +357,7 @@ def build_record(evidence_docs, repo, sha, run_url, attempt, now=None):
     missing, extra = sorted(set(tree) - set(items)), sorted(set(items) - set(tree))
     if missing or extra:
         raise Fault(f"the evidence does not match the tree at {sha[:7]}: missing {missing}, not in the tree {extra}")
-    out = []
+    out, display = [], {}
     for path in sorted(items, key=lambda p: (items[p]["kind"] != "lemma", items[p]["id"])):
         it = items[path]
         if it["blob"] != tree[path]:
@@ -366,8 +368,10 @@ def build_record(evidence_docs, repo, sha, run_url, attempt, now=None):
         spath, sline = statement_location(repo, sha, it["kind"], it["id"])
         loc = it.get("statementDefinition")
         out.append({**{k: v for k, v in it.items() if k != "statementDefinition"},
-                    "statementPath": spath, "statementLine": sline,
-                    "statementDefinition": statement_definition(repo, sha, spath, sline, loc, lean_ran)})
+                    "statementPath": spath, "statementLine": sline})
+        shown = statement_definition(repo, sha, spath, sline, loc, lean_ran)
+        if shown is not None:
+            display[f"{it['kind']}:{it['id']}"] = shown
     manifest = json.loads(git(repo, "show", f"{sha}:lake-manifest.json"))
     mathlib = next((p for p in manifest.get("packages", []) if p.get("name") == "mathlib"), None)
     if not mathlib or not HEX40.match(mathlib.get("rev", "")):
@@ -380,6 +384,11 @@ def build_record(evidence_docs, repo, sha, run_url, attempt, now=None):
             "mathlib": mathlib["rev"],
             "items": out,
         },
+        # Display only, OUTSIDE the evidence: how a definition was found (Lean's
+        # location or the text fallback) can differ between two runs on the same
+        # commit, and must never make a second publication a fault. site_data.py
+        # compares only `evidence`; the first publication's display is kept.
+        "display": {"statementDefinitions": display},
         "run": {"url": run_url, "attempt": int(attempt)},
         "verifiedAt": (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }

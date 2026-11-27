@@ -21,6 +21,10 @@ Synthetic main repositories; local bare repositories stand in for site-data.
   5. Atomic update: every site-data commit that adds a record also writes
      index.json; when the push is rejected, the whole update is redone from
      the new tip, and both records end up in the index.
+  6. Display is not evidence (#155 review 2): one commit published once with
+     Lean's location for a one-name statement and once with the text fallback,
+     in both orders, is a no-op the second time, and the page still shows the
+     definition.
 """
 
 import importlib.util
@@ -212,6 +216,38 @@ def main():
               ri == sd.index_from_records(clone(race, base / "race-clone"), sd.positions(repo)))
         check("5. no site-data history was rewritten (every publication is a new commit)",
               len([l for l in log(race) if l]) == 3, log(race))
+        # 6. The same commit, located by Lean and by the fallback.
+        drepo, _ = t.make_main(base / "display")
+        (drepo / "QPCP" / "Statements.lean").write_text(
+            "namespace QPCP.Statement\n\ndef S001 : Prop := QPCP.Foo.Whole\n\nend QPCP.Statement\n")
+        (drepo / "QPCP" / "Foo.lean").write_text("namespace QPCP.Foo\n\ndef Whole : Prop := True\n\nend QPCP.Foo\n")
+        dsha = commit(drepo, "a one-name statement")
+        e_lean = t.evidence_for(drepo, dsha, locatedByLean=True)
+        e_lean["items"][0]["statementDefinition"] = {"name": "QPCP.Foo.Whole", "module": "QPCP.Foo", "line": 3, "endLine": 3}
+        e_text = t.evidence_for(drepo, dsha, locatedByLean=False)
+        r_lean = t.vr.build_record([e_lean], drepo, dsha, "https://github.com/o/r/actions/runs/1/attempts/1", 1)
+        r_text = t.vr.build_record([e_text], drepo, dsha, "https://github.com/o/r/actions/runs/2/attempts/1", 1)
+        check("6. the two routes locate the same definition, differently",
+              r_lean["display"]["statementDefinitions"]["proof:S001"]["located"] == "lean"
+              and r_text["display"]["statementDefinitions"]["proof:S001"]["located"] == "text")
+        check("6. how a definition was located is not part of the evidence",
+              r_lean["evidence"] == r_text["evidence"] and "statementDefinition" not in json.dumps(r_lean["evidence"]))
+        for order, (first, second) in (("Lean first", (r_lean, r_text)), ("fallback first", (r_text, r_lean))):
+            site = bare(base, f"display-{order.split()[0]}.git")
+            publish(site, drepo, first, base)
+            before = log(site)
+            try:
+                publish(site, drepo, second, base)
+                ok = log(site) == before
+                err = ""
+            except sd.Fault as e2:
+                ok, err = False, str(e2)
+            check(f"6. {order}: publishing the same commit by the other route is a no-op", ok, err or log(site))
+            shown = t.by_id(bs.assemble(t.tree_with({"S001": {"path": "QPCP/Proofs/S001.lean",
+                                                              "blob": first["evidence"]["items"][0]["blob"]}}, commit=dsha),
+                                        [], [], [], [], record=fetch(site, base), repo="o/r"))["S001"]["verified"]
+            check(f"6. {order}: the page still shows the definition",
+                  (shown.get("statementDefinition") or {}).get("source") == "def Whole : Prop := True", shown)
     except Exception as e:  # a crash is a failure, never a skip
         import traceback
         traceback.print_exc()
