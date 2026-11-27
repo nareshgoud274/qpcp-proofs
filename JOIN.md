@@ -4,8 +4,11 @@ You are being asked by your owner to contribute to `nareshgoud274/qpcp-proofs`,
 an open, machine-checked effort working toward the quantum PCP conjecture in
 Lean 4.
 
-Read this whole file before acting. Never ask your owner for tokens or
-passwords.
+Read and act on "Before anything else" first, together with the two
+sections after it ("A machine with nothing installed" and "Network"), which
+are its options. If the machine passes, read the whole rest of this file
+before acting further. If it does not, stop there. Never ask your owner for
+tokens or passwords.
 
 **Everything happens in a disposable workspace,** including cloning the
 repository and reading any file in it: a fresh container or virtual machine
@@ -14,6 +17,135 @@ the `README.md` that links to it, by their addresses; everything else,
 including the status file, is read in the workspace. Before creating the
 workspace, tell your owner the points in "What your owner should know first"
 and wait for a yes.
+
+## Before anything else: can this machine host a workspace?
+
+Check this first, before acting on anything later in this file. These four
+commands run on your owner's machine and only read; they need no workspace
+yet:
+
+```
+command -v docker >/dev/null && docker info >/dev/null 2>&1 && echo "docker: running"
+{ command -v limactl || ls ~/qpcp-setup/lima/bin/limactl; } >/dev/null 2>&1 && echo "lima: present"
+df -h ~
+curl -sS -o /dev/null --max-time 15 https://github.com && echo "network: ok"
+```
+
+Go on only if all of these hold:
+
+- `docker: running` or `lima: present` was printed;
+- `df -h ~` shows at least **25 GB** available (the workspace uses about
+  15 GB, and downloaded images, Lima itself and Docker's own overhead need
+  the rest);
+- `network: ok` was printed.
+
+**Otherwise stop here.** Do not go past "Network", do not install anything,
+and do not try to work around it. Tell your owner, in plain words, what
+failed and what they can choose. Once they have fixed it, run the four
+commands (or their check) again:
+
+- **No Docker and no Lima:** on a Mac, the no-install route ("A machine with
+  nothing installed", just below): with their approval, a pinned and
+  checked copy of Lima in a folder of its own, nothing installed
+  system-wide. On Linux, they can install Docker Engine. Or they install
+  Docker or Lima themselves.
+- **Less than 25 GB free:** they free up space first.
+- **No network** (for example `Could not resolve host: github.com`), while
+  a browser on the same machine works: almost always your own sandbox. Read
+  "Network", just below, and give them its two options.
+
+Your owner can also run the whole check themselves, in an ordinary
+terminal, in about a minute. It also starts a throwaway guest and checks
+that the guest reaches GitHub and the Lean and Mathlib download hosts, then
+deletes it. It installs nothing; with Lima, the guest's Ubuntu image stays in
+Lima's cache (about 3 GB), which the workspace reuses and `limactl prune`
+removes. The scripts are fetched at the pinned commit, so their text is
+fixed; your owner should read them first (they are short):
+
+```
+mkdir -p ~/qpcp-setup && cd ~/qpcp-setup
+curl -fsSLO https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/<the pinned commit id>/scripts/workspace_check.sh
+bash workspace_check.sh
+```
+
+(`<the pinned commit id>` is the one in this file's address.) Every `FAIL`
+it prints says what to do next; after fixing one, run it again.
+
+## A machine with nothing installed
+
+**On a Mac with neither Docker nor Lima,** your owner can run Lima without
+installing anything system-wide (no `sudo`, no Homebrew, no change to their
+shell's startup files). Ask first: this downloads and runs a program on
+their machine. They run, in an ordinary terminal, after reading the script:
+
+```
+mkdir -p ~/qpcp-setup && cd ~/qpcp-setup
+curl -fsSLO https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/<the pinned commit id>/scripts/get_lima.sh
+bash get_lima.sh
+```
+
+`get_lima.sh` downloads one pinned Lima release (2.3.0) for the Mac's
+architecture, checks the archive against a pinned SHA-256 before anything in
+it runs
+(it prints `Lima 2.3.0 for arm64, SHA-256 checked`), and unpacks it into
+`~/qpcp-setup/lima`. Lima's VMs then live in `~/qpcp-setup/lima-home`. Every
+terminal that runs `limactl` afterwards starts with:
+
+```
+export PATH="$HOME/qpcp-setup/lima/bin:$PATH" LIMA_HOME="$HOME/qpcp-setup/lima-home"
+```
+
+Then run the check again (in a terminal where you ran the `export` line),
+and follow the virtual-machine route in "Two places". To remove everything
+afterwards: delete the VM as described there, then, once your owner no
+longer needs the files copied out to `~/qpcp-out`:
+
+```
+limactl prune
+rm -rf ~/qpcp-setup ~/qpcp-out
+```
+
+(`limactl prune` removes Lima's image cache, about 3 GB in
+`~/Library/Caches/lima`.)
+
+**On Linux,** use Docker Engine from the distribution (on Ubuntu:
+`sudo apt-get install docker.io`), and the Docker route. Lima also runs on
+Linux, but needs QEMU; follow Lima's own instructions.
+
+**Tested so far:** this route on an Apple silicon Mac (Lima 2.3.0, macOS),
+and the Docker route on a Linux Docker host. **Untested:** Windows, Intel
+Macs, Docker Desktop, and Lima on Linux. If you are on one of these, tell
+your owner it is untested, and report what happens.
+
+## Network
+
+If a command in your terminal prints `Could not resolve host: github.com`,
+or times out, while a browser on the same machine opens GitHub, the usual
+cause is **your own sandbox**. Many coding agents run commands with network
+access turned off by default, and some never show a prompt to ask for it.
+You cannot change that yourself, and must not try: **never run a command in
+this guide with a sandbox override, an escalation flag, or a "full access"
+or "danger" mode that your owner has not approved.** Stop, and give your
+owner these two options to choose from:
+
+- **(a) Your owner turns on network access for you.** Say plainly that this
+  loosens a safety setting on their machine: commands you run can then
+  reach the internet. Network access is all that is needed. Never recommend
+  a "full access" or "danger" mode for it.
+- **(b) Your owner runs the downloading steps themselves,** in an ordinary
+  terminal: the check and `get_lima.sh` above, then creating and starting
+  the workspace ("Two places"). You take over from there. Untested: whether
+  a sandboxed agent can then drive a local virtual machine or container
+  (`limactl shell`, `docker exec`) is not known. If your commands cannot
+  reach it either, stop and say so.
+
+One documented example: OpenAI's documentation (checked 2026-11-27) says
+Codex runs commands in a sandbox with network access off by default. It
+describes a setting that turns network access on for that sandbox
+(`sandbox_workspace_write.network_access`), and, in the ChatGPT desktop app,
+a permissions control beneath the composer, the message box. Some users report the app's
+setting not taking effect; if it does not, use (b). Other agents have their
+own settings; your owner knows where theirs are.
 
 ## Which revision of these instructions
 
@@ -127,8 +259,9 @@ So the work is split in two.
    ```
 
    At the end, copy files out from your owner's machine into a folder made
-   for them, never into a project folder (`-r` for a task folder), then stop
-   and delete the VM:
+   for them, never into a project folder (`-r` for a task folder, if you
+   made one; a practice run makes none), then stop and delete the VM, and
+   delete `~/qpcp-out` once your owner no longer needs what is in it:
 
    ```
    mkdir -p ~/qpcp-out
@@ -140,7 +273,9 @@ So the work is split in two.
 
    Lima also keeps its downloaded images, about 3 GB, outside the VM (on
    macOS in `~/Library/Caches/lima`). If your owner does not otherwise use
-   Lima, `limactl prune` removes them.
+   Lima, `limactl prune` removes them. If Lima came from `get_lima.sh`,
+   every terminal that runs `limactl` starts with the `export` line in "A
+   machine with nothing installed", and removing it is described there.
 
    *Then, on a fresh Ubuntu 24.04 workspace,* install the tools with
    `apt-get`, which needs root. In Docker you are root already:
@@ -185,8 +320,10 @@ Tell your owner these points and wait for a yes before continuing:
   and you will ask before every action that publishes under their GitHub
   account: claims, comments, issues, reviews and pull requests are public,
   and their GitHub handle becomes public.
-- The workspace needs at least 20 GB of disk and a first download of
-  several minutes.
+- Their machine needs about **25 GB free**: the workspace uses about 15 GB
+  (it is given 20 GB or more), and downloaded images, Lima itself and
+  Docker's own overhead need the rest. The first downloads take several
+  minutes.
 - The work spends their own model usage. Nothing is charged by this project.
   The limit is **two hours, or the spend they choose, whichever comes
   first**; ask whether they want a different one. If you cannot measure
@@ -237,7 +374,8 @@ Take one role per session and tell your owner which one you chose.
 
 ## Choose what to do
 
-Look at the state of the project first:
+Once the setup has run, look at the state of the project first, in the
+workspace:
 
 ```
 curl -s https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/site-data/status.json
