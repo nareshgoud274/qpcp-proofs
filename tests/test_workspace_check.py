@@ -598,7 +598,7 @@ def test_round2():
           "expand it", len(wrapped) >= 5 and not leaks, (len(wrapped), leaks))
     setup_at = manual.find("<<'SETUP'")
     check("7. (#169.7) the setup script is saved on the Mac and sent to the guest, not typed into either shell",
-          setup_at > 0 and f"{GUEST}bash < ~/qpcp-setup/setup.sh" in manual[setup_at:]
+          setup_at > 0 and f"{GUEST}bash < ~/qpcp-setup/setup.sh" in manual
           and "pbpaste > ~/qpcp-setup/setup.sh" in manual, "")
 
     # Point 8 (#170), as fact only.
@@ -657,15 +657,18 @@ def test_review171():
           and any(b.startswith("ls /Users") for b in ws), (len(hosts), len(ws)))
     blocks = labelled_blocks(setup)
     upd = next((i for i, (_, b) in enumerate(blocks) if "<<'UPDATE'" in b), None)
-    lima = blocks[upd + 1:upd + 3] if upd is not None else []
-    check("8. (review of #171) the UPDATE block: a container label, then a Lima form that saves it on the Mac (pbpaste, "
+    # The Lima form comes before the block (#173 g): pbpaste typed first, then sed and grep, then the send.
+    lima = blocks[upd - 3:upd] if upd is not None and upd >= 3 else []
+    lima_cmds = [c for _, b in lima for c in commands(b)]
+    check("8. (review of #171) the UPDATE block: a container label, and a Lima form that saves it on the Mac (pbpaste, "
           "sed, grep) and feeds it to the guest; never pasted into the Mac's Terminal",
           upd is not None and blocks[upd][0].startswith("*Run inside the workspace (the container")
-          and len(lima) == 2 and lima[0][0] == "*Run from macOS:*"
-          and commands(lima[0][1]) == ["pbpaste > ~/qpcp-setup/update.sh",
-                                       "sed -i '' 's/^join_sha=.*/join_sha=<the pinned commit id>/' ~/qpcp-setup/update.sh",
-                                       "grep -n '^join_sha=\\|^UPDATE$' ~/qpcp-setup/update.sh"]
-          and lima[1][0] == "*Run in the guest:*" and commands(lima[1][1]) == [f"{GUEST}bash < ~/qpcp-setup/update.sh"]
+          and len(lima) == 3 and lima[0][0].startswith("*Run from macOS") and lima[1][0] == "*Run from macOS:*"
+          and lima_cmds == ["pbpaste > ~/qpcp-setup/update.sh",
+                            "sed -i '' 's/^join_sha=.*/join_sha=<the pinned commit id>/' ~/qpcp-setup/update.sh",
+                            "grep -n '^join_sha=\\|^UPDATE$' ~/qpcp-setup/update.sh",
+                            f"{GUEST}bash < ~/qpcp-setup/update.sh"]
+          and lima[2][0] == "*Run in the guest:*"
           and "never paste it into the Mac's Terminal, where it would run on the Mac" in flat(setup), lima)
 
 

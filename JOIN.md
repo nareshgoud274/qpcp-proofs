@@ -174,6 +174,11 @@ macOS, default sandbox), the owner's five steps and a manual S060 passed, and
 the agent's first command to enter the guest failed with `Operation not
 permitted` on Lima's SSH control socket. That is one Codex Desktop
 configuration on one Apple silicon Mac; Docker and other agents are open.
+With that same agent and settings, the "Owner-relayed pilot" (in "Network")
+then completed for S031: the agent wrote the candidate and never entered the
+guest, and candidate 1 passed the local source scan and Lean build. That too
+is one configuration on one machine, and the candidate has not been
+submitted, so CI has not seen it.
 **Untested:** Windows, Intel Macs, Docker Desktop, and Lima on Linux; and `workspace_check.sh` with
 Docker, which so far has run only against stand-ins in the project's tests
 (with Lima it has run on that Mac). If you are on one of these, tell your
@@ -310,11 +315,42 @@ in the guest's home folder, never in the Mac folder you typed it from.
    "Set up (once)", the same text, with the pinned commit id in its
    `join_sha=` line. It clones the repository, checks these instructions, installs elan
    from its pinned, checked release, downloads the Lean toolchain and
-   Mathlib's build (`lake exe cache get`), and builds the statements. Copy
-   the whole block, from `bash -euo pipefail` to the last `SETUP`; it is not
-   typed into either shell.
+   Mathlib's build (`lake exe cache get`), and builds the statements. Never
+   paste the block into the Mac's Terminal, where it would run on the Mac.
+   Do it in this order: in Terminal, type the `pbpaste` line below, but do
+   not press Return yet; copy the whole block below from this guide, from
+   `bash -euo pipefail` to the last `SETUP`; return to Terminal and press
+   Return, which saves what you copied. (An agent doing this step writes the
+   file directly instead.)
 
-*The setup script (copy it; do not type it):*
+*Run from macOS (type it; press Return only after copying the block):*
+
+```
+pbpaste > ~/qpcp-setup/setup.sh
+```
+
+Then put the pinned commit id in it and check it: the `grep` must show
+`join_sha=` followed by the 40-character id, and `SETUP` as the last line.
+
+*Run from macOS:*
+
+```
+sed -i '' 's/^join_sha=.*/join_sha=<the pinned commit id>/' ~/qpcp-setup/setup.sh
+grep -n '^join_sha=\|^SETUP$' ~/qpcp-setup/setup.sh
+```
+
+Then send it to the guest, which runs it:
+
+*Run in the guest:*
+
+```
+limactl shell qpcp -- bash < ~/qpcp-setup/setup.sh
+```
+
+It is done when it prints `install_elan.sh: elan ... SHA-256 checked` and
+ends without `STOP` or an error.
+
+*The setup script (copy it from here; never type or paste it at a prompt):*
 
 ```
 bash -euo pipefail -s <<'SETUP'
@@ -338,30 +374,6 @@ lake exe cache get </dev/null
 lake build QPCP.Statements </dev/null
 SETUP
 ```
-
-Then save it on the Mac (an agent doing this step writes the file directly
-instead of using `pbpaste`), put the pinned commit id in it, and check it: the
-`grep` must show `join_sha=` followed by the 40-character id, and `SETUP` as
-the last line.
-
-*Run from macOS:*
-
-```
-pbpaste > ~/qpcp-setup/setup.sh
-sed -i '' 's/^join_sha=.*/join_sha=<the pinned commit id>/' ~/qpcp-setup/setup.sh
-grep -n '^join_sha=\|^SETUP$' ~/qpcp-setup/setup.sh
-```
-
-Then send it to the guest, which runs it:
-
-*Run in the guest:*
-
-```
-limactl shell qpcp -- bash < ~/qpcp-setup/setup.sh
-```
-
-It is done when it prints `install_elan.sh: elan ... SHA-256 checked` and
-ends without `STOP` or an error.
 
 Then your owner tells you it is done. Do not run the setup again, create
 another guest, or ask again for approvals your owner has already given:
@@ -430,6 +442,20 @@ step 2, failed for it. Nothing is loosened. Your owner does option (b)'s five
 steps and the practice run's two commands in the guest themselves, and then
 relays files between you and the guest. You never enter the guest.
 
+Observed so far: with OpenAI Codex (ChatGPT desktop, Apple silicon macOS,
+default sandbox), the relay completed for S031, and candidate 1 passed the
+local scan and build. That is one configuration on one machine, and the
+candidate has not been submitted.
+
+**Before starting.** The agent's folder, `~/qpcp-relay`, must be one the
+agent can write in under its existing restrictions. The tested way is to
+open the agent with `~/qpcp-relay` as its working folder. If it cannot write
+there, stop: never change the agent's permissions to make it work. A guest
+built before this pilot existed has no `docs/pilot/S031.txt`: your owner
+first runs the update flow ("Set up (once)", the UPDATE block, with its Lima
+form), after which `/out/base-commit`, and so the sheet's `checkout commit:`
+line, is the new commit.
+
 **The one exception.** Everywhere else in this file, the repository is read
 only inside the workspace. This pilot makes exactly this exception, and
 nothing else crosses:
@@ -460,8 +486,13 @@ passing it on. Because the agent can write in `~/qpcp-relay`, nothing is
 written there by following what is already at a name. A file coming in is
 written to a fresh folder inside `~/qpcp-owner`, a folder of your owner's
 that the agent is never given, and checked and read there; then it is
-renamed into `~/qpcp-relay`, which replaces whatever is at that name, a link
-included, without following it. The candidate going out is first copied,
+renamed into `~/qpcp-relay`. The rename replaces a file or a link at that
+name (to a file, to a folder, or to nothing) without following it; a real
+folder there, not empty, makes it fail with `Is a directory`, and nothing is
+delivered. `~/qpcp-owner`'s mode 700 keeps out other users of the Mac, not
+an agent that runs as your owner's own user: keeping the agent out of it is
+a rule of this workflow, and holds only as far as the agent's own
+restrictions keep it out. The candidate going out is first copied,
 without following a link, into such a folder; your owner checks, reads,
 hashes and sends that copy, so the bytes sent are the bytes checked. Each
 of these commands removes its temporary folder and ends with the transfer's
@@ -474,11 +505,17 @@ instructions ("What is an instruction and what is not"). Work only in
 Lean integration disabled: never open it in an editor with a Lean extension
 enabled, and never run `lean`, `lake` or any other Lean tool on the Mac,
 because elaborating Lean source can run code. Then ask your owner to relay
-it, and wait for its result. After five candidates without a pass, stop and
+it, and wait for its result. Read `S031.result.txt` only after your owner
+tells you the result is delivered. A missing or empty file means "not yet",
+never "passed", and a result is for your candidate only if its first line,
+`candidate sha256: ...`, names your candidate's SHA-256. After five candidates without a pass, stop and
 hand off ("Budget and stopping").
 
 **What your owner does.** Your owner takes commands only from this pinned
-guide, never from the agent, the sheet or a result. In order:
+guide, never from the agent, the sheet or a result. In each transfer,
+`less` shows the file for your owner to read before it is passed on: it
+needs an interactive terminal, and pressing q quits it and lets the command
+go on. In order:
 
 1. Make the agent's folder, and your owner's own, which only your owner can
    use. `mkdir` fails if either is left from an earlier exercise; your owner
@@ -519,43 +556,57 @@ guide, never from the agent, the sheet or a result. In order:
 4. When the agent says a candidate is ready, copy it, without following a
    link, into a fresh folder of your owner's; check, hash and read that copy;
    and send that same copy into the guest. The SHA-256 printed on the Mac and
-   the one printed by the guest must be the same. It refuses a link, a
-   folder or anything else that is not a regular file.
+   the one printed by the guest must be the same, and it is recorded in
+   `~/qpcp-owner/S031.sent.sha256` for step 6. It refuses a link, a folder or
+   anything else that is not a regular file, and the copy never holds more
+   than 16385 bytes, one past the limit, so that an oversized file is seen
+   and refused.
 
    *Run from macOS (its `limactl shell` line writes the copy into the guest):*
 
    ```
-   t=$(mktemp -d ~/qpcp-owner/out.XXXXXX) &&
-   perl -MFcntl -e 'sysopen(I, $ARGV[0], O_RDONLY|O_NOFOLLOW|O_NONBLOCK) or die "open: $!\n"; -f I or die "not a regular file\n"; open(O, ">", $ARGV[1]) or die "write: $!\n"; my $s = ""; while (length($s) <= 16384 && sysread(I, my $c, 65536)) { $s .= $c } print O $s; close(O) or die "write: $!\n"' ~/qpcp-relay/S031.lean.txt "$t/S031.lean.txt" &&
+   rm -f ~/qpcp-owner/S031.sent.sha256 && t=$(mktemp -d ~/qpcp-owner/out.XXXXXX) &&
+   perl -MFcntl -e 'sysopen(I, $ARGV[0], O_RDONLY|O_NOFOLLOW|O_NONBLOCK) or die "open: $!\n"; -f I or die "not a regular file\n"; open(O, ">", $ARGV[1]) or die "write: $!\n"; my $s = ""; while (length($s) <= 16384 && sysread(I, my $c, 16385 - length($s))) { $s .= $c } print O $s; close(O) or die "write: $!\n"' ~/qpcp-relay/S031.lean.txt "$t/S031.lean.txt" &&
    [ "$(wc -c < "$t/S031.lean.txt")" -le 16384 ] && iconv -f UTF-8 -t UTF-8 "$t/S031.lean.txt" >/dev/null &&
    shasum -a 256 "$t/S031.lean.txt" && less "$t/S031.lean.txt" &&
-   limactl shell qpcp -- bash -c 'cat > ~/qpcp-proofs/QPCP/Proofs/S031.lean && sha256sum ~/qpcp-proofs/QPCP/Proofs/S031.lean' < "$t/S031.lean.txt"
+   limactl shell qpcp -- bash -c 'cat > ~/qpcp-proofs/QPCP/Proofs/S031.lean && sha256sum ~/qpcp-proofs/QPCP/Proofs/S031.lean' < "$t/S031.lean.txt" &&
+   shasum -a 256 < "$t/S031.lean.txt" | cut -c1-64 > ~/qpcp-owner/S031.sent.sha256
    s=$?; rm -rf "$t"; [ "$s" -eq 0 ]
    ```
 
 5. Check it with the guide's fixed commands, the practice run's scan and
-   build for S031, and make the result:
+   build for S031, and make the result. It removes the last result first and
+   writes the new one under a temporary name, renamed into place only when
+   complete, so `/out/S031.result.txt` is never an empty or partial file:
+   until it is done there is none.
 
    *Run in the guest:*
 
    ```
-   limactl shell qpcp -- bash -lc 'cd ~/qpcp-proofs && export PATH="$HOME/.elan/bin:$PATH" && f=QPCP/Proofs/S031.lean
+   limactl shell qpcp -- bash -lc 'cd ~/qpcp-proofs && export PATH="$HOME/.elan/bin:$PATH" && f=QPCP/Proofs/S031.lean && rm -f /out/S031.result.txt
    { echo "candidate sha256: $(sha256sum "$f" | cut -c1-64)"
      if python3 scripts/check.py scan-file proof S031 "$f" > /tmp/scan.log 2>&1; then echo "source scan passed"
        if lake build QPCP.Proofs.S031 </dev/null > /tmp/build.log 2>&1; then echo "Lean build passed"
        else echo "Lean build FAILED; the first error:"; awk "/error|unsolved goals/ && !n { n = 1; print; next } n && /^(info|warning|error|trace):|\[[0-9]+\/[0-9]+\]/ { exit } n && ++k <= 15" /tmp/build.log; fi
      else echo "source scan FAILED:"; head -20 /tmp/scan.log; fi
-   } | python3 -c "import sys; s = sys.stdin.buffer.read().decode(\"utf-8\", \"replace\"); sys.stdout.buffer.write(s.encode()[:4096].decode(\"utf-8\", \"ignore\").encode())" > /out/S031.result.txt; cat /out/S031.result.txt'
+   } | python3 -c "import sys; s = sys.stdin.buffer.read().decode(\"utf-8\", \"replace\"); sys.stdout.buffer.write(s.encode()[:4096].decode(\"utf-8\", \"ignore\").encode())" > /out/.S031.result.part && mv -f /out/.S031.result.part /out/S031.result.txt; cat /out/S031.result.txt'
    ```
 
-6. Bring the result to the Mac, the same way as the sheet. It must end with
-   `S031.result.txt: ok`; then tell the agent.
+6. When step 5 has finished, bring the result to the Mac, the same way as
+   the sheet. It refuses a result that is missing or empty, or whose first
+   line is not `candidate sha256:` followed by the SHA-256 recorded at step
+   4: it then prints `STOP: the result is not ready ...` and exits non-zero,
+   and nothing reaches the agent's folder. It must end with
+   `S031.result.txt: ok`; only then tell the agent the result is delivered.
 
    *Run from macOS (its `limactl shell` line reads the file from the guest):*
 
    ```
    t=$(mktemp -d ~/qpcp-owner/in.XXXXXX) &&
-   limactl shell qpcp -- cat /out/S031.result.txt > "$t/S031.result.txt" &&
+   { limactl shell qpcp -- cat /out/S031.result.txt > "$t/S031.result.txt" 2>/dev/null &&
+     grep -qx '[0-9a-f]\{64\}' ~/qpcp-owner/S031.sent.sha256 &&
+     [ "$(head -n 1 "$t/S031.result.txt")" = "candidate sha256: $(cat ~/qpcp-owner/S031.sent.sha256)" ] ||
+     { echo "STOP: the result is not ready, or is not for the candidate sent at step 4. Wait for step 5 to finish, then run this again."; false; }; } &&
    [ "$(wc -c < "$t/S031.result.txt")" -le 16384 ] && iconv -f UTF-8 -t UTF-8 "$t/S031.result.txt" >/dev/null &&
    less "$t/S031.result.txt" &&
    perl -e 'rename($ARGV[0], $ARGV[1]) or die "rename: $!\n"' "$t/S031.result.txt" ~/qpcp-relay/S031.result.txt &&
@@ -690,7 +741,9 @@ So the work is split in two.
    `/home/alice`. (One exception: the `ubuntu:24.04` image has its own empty
    `/home/ubuntu`, so if that is your owner's home folder, `ls -A /home/ubuntu`
    must instead show only `.bash_logout .bashrc .profile`.) With Lima, run
-   them from the Mac in their wrapped form ("Network", option (b), step 3).
+   them from the Mac in their wrapped form, the second block below (the same
+   as "Network", option (b), step 3); the first block is for a shell inside
+   the workspace.
 
    *Run inside the workspace (guest or container):*
 
@@ -701,6 +754,19 @@ So the work is split in two.
    echo "$SSH_AUTH_SOCK"         # must print an empty line
    env | grep -iE 'token|key|secret'   # must print nothing
    ```
+
+   *Run in the guest (Lima, from the Mac):*
+
+   ```
+   limactl shell qpcp -- ls /Users
+   limactl shell qpcp -- ls <your owner's home folder>
+   limactl shell qpcp -- bash -c "mount | grep -v ' on /out ' | grep -E ' type (virtiofs|9p|sshfs|fuse|fuse\.[^ ]+|fakeowner|grpcfuse) '"
+   limactl shell qpcp -- bash -c 'echo "[$SSH_AUTH_SOCK]"'
+   limactl shell qpcp -- bash -c "env | grep -iE 'token|key|secret'"
+   ```
+
+   The first two must fail, the third and fifth must print nothing, and the
+   fourth must print `[]`.
 
    The mount check looks for file systems shared from a host. It leaves out
    `/out`, the one folder meant to be shared with Docker, and it does not
@@ -735,6 +801,9 @@ So the work is split in two.
 
    `/out/base-commit` exists only once the setup has got that far; if the
    setup stopped earlier, that copy fails, and there is nothing to keep.
+   `limactl stop` may print a line with `level=error` and `use of closed
+   network connection`; it is harmless if the stop then succeeds and
+   `limactl delete` deletes the VM.
 
    Lima also keeps its downloaded images, about 3 GB, outside the VM (on
    macOS in `~/Library/Caches/lima`). If your owner does not otherwise use
@@ -765,7 +834,8 @@ So the work is split in two.
    elan, the Lean toolchain manager (<https://github.com/leanprover/elan>), is
    installed by the setup script below, from a pinned release whose checksum
    is checked, and only after the instructions check. Ask your owner before
-   running it. It installs no Lean toolchain: the right version comes from
+   running the setup script: their yes to "What your owner should know
+   first" does not cover installing elan. It installs no Lean toolchain: the right version comes from
    `lean-toolchain` when `lake` first runs. The only things that leave the workspace are what you put
    in `/out`: the commit you work against (`/out/base-commit`), the task
    folder with the `.lean` file you are writing and, if you stop early, its
@@ -834,7 +904,8 @@ Tell your owner these points and wait for a yes before continuing:
 Do the practice run first ("Practice run (before claiming anything)",
 below): it comes before choosing a role, choosing a step, or claiming
 anything. Then take one role per session and tell your owner which one you
-chose.
+chose. Proving a step, an exercise included, is the Builder role; trying
+only to refute one is Red team.
 
 | Role | What it does | Section |
 | --- | --- | --- |
@@ -972,11 +1043,39 @@ submit files copied from `/out`; nothing is built in it.
 
 Before each new piece of work, update the workspace clone and check the
 instructions again, with the same pinned commit id in the `join_sha=` line.
-With Docker, run it in the container's shell. With Lima, never paste it into
-the Mac's Terminal, where it would run on the Mac: copy the block, then save
-it, put the pinned commit id in it, and send it to the guest, as below.
+With Docker, run the block below in the container's shell. With Lima, never
+paste it into the Mac's Terminal, where it would run on the Mac. Do it in
+this order: in Terminal, type the `pbpaste` line below, but do not press
+Return yet; copy the whole block below from this guide, from
+`bash -euo pipefail` to the last `UPDATE`; return to Terminal and press
+Return, which saves what you copied. (An agent doing this writes the file
+directly instead.)
 
-*Run inside the workspace (the container; with Lima, see below):*
+*Run from macOS (type it; press Return only after copying the block):*
+
+```
+pbpaste > ~/qpcp-setup/update.sh
+```
+
+Then put the pinned commit id in it and check it: the `grep` must show
+`join_sha=` followed by the 40-character id, and `UPDATE` as the last line.
+
+*Run from macOS:*
+
+```
+sed -i '' 's/^join_sha=.*/join_sha=<the pinned commit id>/' ~/qpcp-setup/update.sh
+grep -n '^join_sha=\|^UPDATE$' ~/qpcp-setup/update.sh
+```
+
+Then send it to the guest, which runs it:
+
+*Run in the guest:*
+
+```
+limactl shell qpcp -- bash < ~/qpcp-setup/update.sh
+```
+
+*Run inside the workspace (the container), or copy it for Lima as above:*
 
 ```
 bash -euo pipefail -s <<'UPDATE'
@@ -987,24 +1086,6 @@ git diff --quiet "$join_sha" HEAD -- JOIN.md || { echo "STOP: JOIN.md has change
 git rev-parse HEAD > /out/base-commit
 echo "proving against: $(cat /out/base-commit)"
 UPDATE
-```
-
-With Lima, after copying the block (an agent doing this writes the file
-directly instead of using `pbpaste`); the `grep` must show `join_sha=`
-followed by the 40-character id, and `UPDATE` as the last line:
-
-*Run from macOS:*
-
-```
-pbpaste > ~/qpcp-setup/update.sh
-sed -i '' 's/^join_sha=.*/join_sha=<the pinned commit id>/' ~/qpcp-setup/update.sh
-grep -n '^join_sha=\|^UPDATE$' ~/qpcp-setup/update.sh
-```
-
-*Run in the guest:*
-
-```
-limactl shell qpcp -- bash < ~/qpcp-setup/update.sh
 ```
 
 If it says STOP, do as for the setup script: these instructions are not the
