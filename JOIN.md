@@ -96,7 +96,8 @@ less ~/qpcp-setup/workspace_check.sh
 cd ~/qpcp-setup && bash workspace_check.sh
 ```
 
-(`<the pinned commit id>` is the one in this file's address.) Every `FAIL`
+(`<the pinned commit id>` is the one in this file's address. `less` needs a
+person at the terminal; an agent reads a script with `cat` instead.) Every `FAIL`
 it prints says what to do next; after fixing one, run it again. Each `PASS`
 says what it measured: from your terminal, an HTTPS request; from inside the
 guest, only that a name resolves and a TCP port opens.
@@ -131,7 +132,7 @@ cd ~/qpcp-setup && bash get_lima.sh
 
 `get_lima.sh` downloads one pinned Lima release (2.3.0) for the Mac's
 architecture and checks the archive against a pinned SHA-256 before anything
-in it runs (it prints `get_lima.sh: Lima 2.3.0 for arm64, SHA-256 checked`). It unpacks it
+in it runs (it prints `get_lima.sh: Lima 2.3.0 for arm64, SHA-256 checked`, with `x86_64` on an Intel Mac). It unpacks it
 into a temporary folder and moves it to `~/qpcp-setup/lima` only once the
 check and the unpacking have both succeeded, so an interrupted run leaves no
 half-installed copy. If `~/qpcp-setup/lima` already exists, it stops and runs
@@ -258,7 +259,7 @@ in the guest's home folder, never in the Mac folder you typed it from.
    as they are. (If you are the agent and your owner asks you to, run just
    this block, change nothing, and tell them what it printed.)
 
-   *Run in the guest:*
+   *Run in the guest (typed on the Mac, where the `export` line sets up `limactl` first):*
 
    ```
    export PATH="$HOME/qpcp-setup/lima/bin:$PATH" LIMA_HOME="$HOME/qpcp-setup/lima-home"
@@ -338,7 +339,8 @@ lake build QPCP.Statements </dev/null
 SETUP
 ```
 
-Then save it on the Mac, put the pinned commit id in it, and check it: the
+Then save it on the Mac (an agent doing this step writes the file directly
+instead of using `pbpaste`), put the pinned commit id in it, and check it: the
 `grep` must show `join_sha=` followed by the 40-character id, and `SETUP` as
 the last line.
 
@@ -370,7 +372,7 @@ without loosening anything, that you reach the guest and that it is the
 prepared one: the clone is there, at the commit in `/out/base-commit`, with
 elan installed.
 
-*Run in the guest:*
+*Run in the guest (typed on the Mac, where the `export` line sets up `limactl` first):*
 
 ```
 export PATH="$HOME/qpcp-setup/lima/bin:$PATH" LIMA_HOME="$HOME/qpcp-setup/lima-home"
@@ -656,10 +658,12 @@ So the work is split in two.
    starting in the VM's home folder, and when it ends the prompt is back on
    the Mac. For the setup script in "Set up (once)", save the whole block,
    from `bash -euo pipefail` to `SETUP`, to a file on your owner's machine,
-   for example `~/qpcp-setup/setup.sh`, and run
-   `limactl shell qpcp -- bash < ~/qpcp-setup/setup.sh`. With Lima, the five
-   checks below are given in this wrapped form in "Network", option (b),
-   step 3.
+   for example `~/qpcp-setup/setup.sh` (you write the file directly), and
+   run `limactl shell qpcp -- bash < ~/qpcp-setup/setup.sh`. With Lima, the
+   five checks below and the `apt-get` line are given in this wrapped form in
+   "Network", option (b), steps 3 and 4. Each later command in the clone, the
+   practice run's for example, runs as
+   `limactl shell qpcp -- bash -lc 'cd ~/qpcp-proofs && export PATH="$HOME/.elan/bin:$PATH" && <command>'`.
 
    *In either workspace,* confirm the host is not visible before going on.
    Run all five; every one must hold. If any does not, stop, tell your owner,
