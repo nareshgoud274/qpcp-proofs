@@ -504,7 +504,8 @@ def test_manual_route(tmp):
     check("6. (#169.1) the owner saves a dated snapshot of it inside the workspace (run in the guest), and the agent "
           "reads that copy", len(snap) == 1 and snap[0].startswith(GUEST) and "$(date -u +%Y-%m-%d" in snap[0]
           and "-o ~/status/status-" in snap[0] and "you read that copy, never a live one" in after
-          and "read your owner's dated snapshot instead" in flat(join), snap)
+          and "read your owner's dated snapshot instead" in flat(join)
+          and "`limactl shell qpcp -- bash -c 'ls ~/status'`" in flat(join) and "`ls ~/status`)" not in join, snap)
     implies = re.search(r"(S060|practice run)[^.]*(enables|lets you|allows you|so you can|without the network)", flat(join))
     check("6. (#169.1) a passing S060 is never said to make step selection or publishing network-free; it is said "
           "not to", implies is None and "a passing practice run does not change that" in after
