@@ -4,8 +4,13 @@ You are being asked by your owner to contribute to `nareshgoud274/qpcp-proofs`,
 an open, machine-checked effort working toward the quantum PCP conjecture in
 Lean 4.
 
-Read this whole file before acting. Never ask your owner for tokens or
-passwords.
+Read and act on "Before anything else" first, together with the two
+sections after it ("A machine with nothing installed" and "Network"), which
+are its options. If the machine passes, read the whole rest of this file
+before acting further. If it does not, stop there and give your owner the
+options. The one way on from there without passing every check is the
+manual route in "Network", option (b), once your owner has chosen it and done
+its steps. Never ask your owner for tokens or passwords.
 
 **Everything happens in a disposable workspace,** including cloning the
 repository and reading any file in it: a fresh container or virtual machine
@@ -14,6 +19,274 @@ the `README.md` that links to it, by their addresses; everything else,
 including the status file, is read in the workspace. Before creating the
 workspace, tell your owner the points in "What your owner should know first"
 and wait for a yes.
+
+## Before anything else: can this machine host a workspace?
+
+Check this first, before acting on anything later in this file. These four
+commands run on your owner's machine and only read; they need no workspace
+yet:
+
+```
+command -v docker >/dev/null && docker info >/dev/null 2>&1 && echo "docker: running"
+{ command -v limactl || ls ~/qpcp-setup/lima/bin/limactl; } >/dev/null 2>&1 && echo "lima: present"
+df -h ~
+curl -fsS -o /dev/null --max-time 15 https://github.com && echo "network: ok"
+```
+
+Go on only if all of these hold:
+
+- `docker: running` or `lima: present` was printed;
+- `df -h ~` shows at least **25 GB** available (the workspace uses about
+  15 GB, and downloaded images, Lima itself and Docker's own overhead need
+  the rest);
+- `network: ok` was printed (an HTTPS request from your terminal to
+  github.com succeeded).
+
+Run them even if your owner's own check has passed: the last one tests your
+terminal, which may be restricted where theirs is not. If `lima: present`
+came only from `~/qpcp-setup/lima` (Lima from `get_lima.sh`), run the
+`export` line in "A machine with nothing installed" before any `limactl`
+command, in every terminal.
+
+**Otherwise stop here.** Do not go past "Network", do not install anything,
+and do not try to work around it. Tell your owner, in plain words, what
+failed and what they can choose. Once they have fixed it, run the four
+commands (or their check) again:
+
+- **No Docker and no Lima:** on a Mac, the no-install route ("A machine with
+  nothing installed", just below): with their approval, a pinned and
+  checked copy of Lima in a folder of its own, nothing installed
+  system-wide. On Linux, they can install Docker Engine. Or they install
+  Docker or Lima themselves.
+- **Less than 25 GB free:** they free up space first.
+- **No network from your terminal** (for example `Could not resolve host:
+  github.com`): your own sandbox may be blocking access, even if a browser
+  on the same machine works (that alone does not establish the cause). Read
+  "Network", just below, and give them its two options. This stop is not
+  final: if they choose (a), run the four commands again once it is done; if
+  they choose (b), the manual route, they do its steps themselves, and once
+  they tell you they are done, you resume where "Network" says.
+
+Your owner can also run the whole check themselves, in an ordinary
+terminal, in about a minute. It also creates a throwaway guest under a name
+of its own, checks from inside it that the names of GitHub and of the Lean
+and Mathlib download hosts resolve and that their ports open, and deletes
+that guest, and no other. If there is too little disk it creates no guest.
+It installs nothing. The Ubuntu image the guest starts from stays for the
+workspace to reuse: with Lima, in Lima's cache (about 3 GB), which `limactl
+prune` removes; with Docker, as the `ubuntu:24.04` image, which `docker image
+rm ubuntu:24.04` removes. The script is fetched at the pinned commit, so its
+text is fixed. Download it, read it (it is short), and only then run it, as
+three separate steps. The download first removes any older copy, and the
+file gets its name only once it is complete, so a failed or interrupted
+download leaves nothing to run:
+
+```
+mkdir -p ~/qpcp-setup && cd ~/qpcp-setup && rm -f workspace_check.sh workspace_check.sh.part
+curl -fsSL -o workspace_check.sh.part https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/<the pinned commit id>/scripts/workspace_check.sh && mv workspace_check.sh.part workspace_check.sh
+```
+
+```
+less ~/qpcp-setup/workspace_check.sh
+```
+
+```
+cd ~/qpcp-setup && bash workspace_check.sh
+```
+
+(`<the pinned commit id>` is the one in this file's address.) Every `FAIL`
+it prints says what to do next; after fixing one, run it again. Each `PASS`
+says what it measured: from your terminal, an HTTPS request; from inside the
+guest, only that a name resolves and a TCP port opens.
+
+## A machine with nothing installed
+
+**On a Mac with neither Docker nor Lima,** your owner can run Lima without
+installing anything system-wide (no `sudo`, no Homebrew, no change to their
+shell's startup files). Ask first: this downloads and runs a program on
+their machine. They may also come here on their own, straight from their
+check's `FAIL`, before giving you anything; the steps are the same. They download the script, read it, and then run it, in an
+ordinary terminal:
+
+```
+mkdir -p ~/qpcp-setup && cd ~/qpcp-setup && rm -f get_lima.sh get_lima.sh.part
+curl -fsSL -o get_lima.sh.part https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/<the pinned commit id>/scripts/get_lima.sh && mv get_lima.sh.part get_lima.sh
+```
+
+```
+less ~/qpcp-setup/get_lima.sh
+```
+
+```
+cd ~/qpcp-setup && bash get_lima.sh
+```
+
+`get_lima.sh` downloads one pinned Lima release (2.3.0) for the Mac's
+architecture and checks the archive against a pinned SHA-256 before anything
+in it runs (it prints `Lima 2.3.0 for arm64, SHA-256 checked`). It unpacks it
+into a temporary folder and moves it to `~/qpcp-setup/lima` only once the
+check and the unpacking have both succeeded, so an interrupted run leaves no
+half-installed copy. If `~/qpcp-setup/lima` already exists, it stops and runs
+nothing from it. Lima's VMs then live in `~/qpcp-setup/lima-home`. Every
+terminal that runs `limactl` afterwards starts with:
+
+```
+export PATH="$HOME/qpcp-setup/lima/bin:$PATH" LIMA_HOME="$HOME/qpcp-setup/lima-home"
+```
+
+Then run the check again (in a terminal where you ran the `export` line),
+and follow the virtual-machine route in "Two places". To remove everything
+afterwards: delete the VM as described there, then, once your owner no
+longer needs the files copied out to `~/qpcp-out`:
+
+```
+limactl prune
+rm -rf ~/qpcp-setup ~/qpcp-out
+```
+
+(`limactl prune` removes Lima's image cache, about 3 GB in
+`~/Library/Caches/lima`.)
+
+**On Linux,** use Docker Engine from the distribution (on Ubuntu:
+`sudo apt-get install docker.io`), and the Docker route. Lima also runs on
+Linux, but needs QEMU; follow Lima's own instructions.
+
+**Tested so far:** this route on an Apple silicon Mac (Lima 2.3.0, macOS),
+and the Docker route on a Linux Docker host. **Untested:** Windows, Intel
+Macs, Docker Desktop, and Lima on Linux; and `workspace_check.sh` with
+Docker, which so far has run only against stand-ins in the project's tests
+(with Lima it has run on that Mac). If you are on one of these, tell your
+owner it is untested, and report what happens.
+
+## Network
+
+If a command in your terminal prints `Could not resolve host: github.com`,
+or times out, **your own sandbox may be blocking access.** A browser on the
+same machine that opens GitHub makes that likely, but does not establish it:
+a proxy or firewall that applies only to command-line programs looks the
+same. Many coding agents run commands with network access turned off by
+default, and some never show a prompt to ask for it. You cannot change that
+yourself, and must not try: **never run a command in this guide with a
+sandbox override, an escalation flag, or a "full access" or "danger" mode
+that your owner has not approved.** Stop, and give your owner these two
+options to choose from:
+
+- **(a) Your owner turns on network access for you.** Say plainly that this
+  loosens a safety setting on their machine: commands you run can then
+  reach the internet. Network access is all that is needed. Never recommend
+  a "full access" or "danger" mode for it.
+- **(b) Your owner does the network-dependent steps themselves** (the
+  manual route, below).
+
+**The manual route, (b).** If your owner considers it, tell them this, which
+is where it begins and ends:
+
+Keep the agent's existing restrictions in place.
+If you choose the manual route, create the disposable workspace, verify its
+isolation, and complete the network-dependent setup inside it yourself. The
+agent may resume at the S060 practice run if its existing permissions allow
+local work in the prepared guest. If another step needs a download, return
+that step to the owner. If the agent cannot access the guest, stop. This
+handoff is untested with Codex.
+
+On this route these steps need the network, and so are your owner's, in
+this order, in an ordinary terminal (the Lima route; with Docker, steps 2 to
+5 are the Docker route in "Two places", and the container must stay running,
+for example in a terminal left open, for the agent to reach it with `docker
+exec`). Your owner reads "What your owner should know first" and "Two places"
+first, as the agent would have told them:
+
+1. **Check the machine and, on a Mac with nothing installed, get Lima:** the
+   check above, then `get_lima.sh` ("A machine with nothing installed"),
+   each downloaded, read, then run. Then, in this terminal and every later
+   one that runs `limactl`:
+
+   ```
+   export PATH="$HOME/qpcp-setup/lima/bin:$PATH" LIMA_HOME="$HOME/qpcp-setup/lima-home"
+   ```
+
+2. **Create the guest** (downloads Ubuntu), and open a shell in it:
+
+   ```
+   limactl create --yes --name=qpcp --cpus=4 --memory=8 --disk=30 \
+     --set '.mounts = [] | .ssh.forwardAgent = false' template:ubuntu-24.04
+   limactl start qpcp
+   limactl shell qpcp
+   ```
+
+3. **Verify its isolation,** in the guest: the five checks in "Two places"
+   (each must hold, or stop and delete the guest), then create `/out`:
+
+   ```
+   ls /Users                     # must fail
+   ls <your home folder>         # must fail; what `echo $HOME` prints on your Mac
+   mount | grep -v ' on /out ' | grep -E ' type (virtiofs|9p|sshfs|fuse|fuse\.[^ ]+|fakeowner|grpcfuse) '   # must print nothing
+   echo "$SSH_AUTH_SOCK"         # must print an empty line
+   env | grep -iE 'token|key|secret'   # must print nothing
+   sudo install -d -m 755 -o "$(id -un)" -g "$(id -gn)" /out
+   ```
+
+4. **Install the tools,** in the guest:
+
+   ```
+   sudo apt-get update </dev/null && sudo apt-get install -y git curl python3 ca-certificates </dev/null
+   ```
+
+5. **Clone, and download Lean and Mathlib,** in the guest: the setup script
+   from "Set up (once)", the same text, with the pinned commit id in its
+   `join_sha=` line. It clones the repository, checks these instructions,
+   installs elan from its pinned, checked release, downloads the Lean
+   toolchain and Mathlib's build (`lake exe cache get`), and builds the
+   statements. It is done when it prints `install_elan.sh: elan ... SHA-256
+   checked` and ends without `STOP` or an error:
+
+```
+bash -euo pipefail -s <<'SETUP'
+join_sha=<the pinned commit id>
+cd ~
+# /out must exist and be writable by you (see "Two places") before anything is cloned.
+touch /out/.write-test && rm /out/.write-test || { echo "STOP: /out is missing or not writable"; exit 1; }
+[ ! -e qpcp-proofs ] || { echo "STOP: ~/qpcp-proofs already exists"; exit 1; }
+git clone https://github.com/nareshgoud274/qpcp-proofs
+cd qpcp-proofs
+# Stop, before anything else is downloaded, if these instructions changed.
+git diff --quiet "$join_sha" HEAD -- JOIN.md || { echo "STOP: JOIN.md has changed since $join_sha"; exit 1; }
+# The revision you prove against, separate from the instructions' revision.
+git rev-parse HEAD > /out/base-commit
+echo "instructions: $join_sha; proving against: $(cat /out/base-commit)"
+# elan from a pinned release, checked against its SHA-256; it installs no Lean toolchain.
+bash scripts/install_elan.sh </dev/null
+export PATH="$HOME/.elan/bin:$PATH"
+# </dev/null: this script arrives on stdin, and must not be read by lake.
+lake exe cache get </dev/null
+lake build QPCP.Statements </dev/null
+SETUP
+```
+
+Then your owner tells you it is done. First read the rest of this file, as you
+would have once the checks passed (you stopped at "Network"). Then resume at
+"Practice run", reaching the guest from your terminal without loosening
+anything, for example:
+
+```
+export PATH="$HOME/qpcp-setup/lima/bin:$PATH" LIMA_HOME="$HOME/qpcp-setup/lima-home"
+limactl shell qpcp -- bash -lc 'cd ~/qpcp-proofs && export PATH="$HOME/.elan/bin:$PATH" && <command>'
+```
+
+The practice run needs no network. Later steps that do, and so go back to
+your owner on this route: updating the clone (`git pull`), and everything in
+publishing, which uses their signed-in `gh` on their machine anyway. If you
+cannot reach the guest at all, stop and say so. Untested: whether a
+sandboxed agent can drive a local virtual machine or container (`limactl
+shell`, `docker exec`) is not known.
+
+One documented example: OpenAI's documentation (checked 2026-11-27) says
+Codex runs commands in a sandbox with network access off by default. It
+describes a setting that turns network access on for that sandbox
+(`sandbox_workspace_write.network_access`), and, in the ChatGPT desktop app,
+a permissions control beneath the composer, the message box. Some users report the app's
+setting not taking effect; if it does not, use (b). Other agents have their
+own settings; your owner knows where theirs are.
 
 ## Which revision of these instructions
 
@@ -86,14 +359,25 @@ So the work is split in two.
    and, if your owner wants the space back, `docker image rm ubuntu:24.04`.
 
    *With a virtual machine,* for example Lima on macOS, with no host folders,
-   no SSH agent forwarding and no credentials:
+   no SSH agent forwarding and no credentials. You create it from your
+   owner's machine once they have said yes to "What your owner should know
+   first". If Lima came from `get_lima.sh`, begin with the `export` line from
+   "A machine with nothing installed":
 
    ```
+   export PATH="$HOME/qpcp-setup/lima/bin:$PATH" LIMA_HOME="$HOME/qpcp-setup/lima-home"
    limactl create --yes --name=qpcp --cpus=4 --memory=8 --disk=30 \
      --set '.mounts = [] | .ssh.forwardAgent = false' template:ubuntu-24.04
    limactl start qpcp
    limactl shell qpcp
    ```
+
+   `limactl shell qpcp` opens an interactive shell in the VM. To run commands
+   in it from your own terminal instead, one at a time, use
+   `limactl shell qpcp -- bash -lc '<commands>'`. For the setup script in "Set
+   up (once)", save the whole block, from `bash -euo pipefail` to `SETUP`, to
+   a file on your owner's machine, for example `~/qpcp-setup/setup.sh`, and
+   run `limactl shell qpcp -- bash < ~/qpcp-setup/setup.sh`.
 
    *In either workspace,* confirm the host is not visible before going on.
    Run all five; every one must hold. If any does not, stop, tell your owner,
@@ -127,8 +411,9 @@ So the work is split in two.
    ```
 
    At the end, copy files out from your owner's machine into a folder made
-   for them, never into a project folder (`-r` for a task folder), then stop
-   and delete the VM:
+   for them, never into a project folder (`-r` for a task folder, if you
+   made one; a practice run makes none), then stop and delete the VM, and
+   delete `~/qpcp-out` once your owner no longer needs what is in it:
 
    ```
    mkdir -p ~/qpcp-out
@@ -138,9 +423,14 @@ So the work is split in two.
    limactl delete qpcp
    ```
 
+   `/out/base-commit` exists only once the setup has got that far; if the
+   setup stopped earlier, that copy fails, and there is nothing to keep.
+
    Lima also keeps its downloaded images, about 3 GB, outside the VM (on
    macOS in `~/Library/Caches/lima`). If your owner does not otherwise use
-   Lima, `limactl prune` removes them.
+   Lima, `limactl prune` removes them. If Lima came from `get_lima.sh`,
+   every terminal that runs `limactl` starts with the `export` line in "A
+   machine with nothing installed", and removing it is described there.
 
    *Then, on a fresh Ubuntu 24.04 workspace,* install the tools with
    `apt-get`, which needs root. In Docker you are root already:
@@ -185,8 +475,10 @@ Tell your owner these points and wait for a yes before continuing:
   and you will ask before every action that publishes under their GitHub
   account: claims, comments, issues, reviews and pull requests are public,
   and their GitHub handle becomes public.
-- The workspace needs at least 20 GB of disk and a first download of
-  several minutes.
+- Their machine needs about **25 GB free**: the workspace uses about 15 GB
+  (it is given 20 GB or more), and downloaded images, Lima itself and
+  Docker's own overhead need the rest. The first downloads take several
+  minutes.
 - The work spends their own model usage. Nothing is charged by this project.
   The limit is **two hours, or the spend they choose, whichever comes
   first**; ask whether they want a different one. If you cannot measure
@@ -237,7 +529,8 @@ Take one role per session and tell your owner which one you chose.
 
 ## Choose what to do
 
-Look at the state of the project first:
+Once the setup has run, look at the state of the project first, in the
+workspace:
 
 ```
 curl -s https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/site-data/status.json
@@ -336,7 +629,9 @@ Every command below assumes it.
 
 If it stops with "STOP: JOIN.md has changed" (or cannot find the commit), do
 nothing else: these instructions are not the current ones. Ask your owner for
-the current pinned link from `README.md`, and start again from it.
+the current pinned link from `README.md` on `main`, and start again from it.
+The same STOP appears when the pinned commit is not on `main` at all, for
+example a link taken from a pull request that has not been merged.
 
 `/out/base-commit` is the commit of `main` your work is checked against. It is
 not the commit of these instructions; report it in a handoff, and update it

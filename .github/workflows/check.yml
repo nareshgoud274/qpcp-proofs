@@ -181,6 +181,9 @@ jobs:
       - name: Claims, randomized invariants (fixed seed, printed)
         run: python3 -I tests/test_claims_random.py
 
+      - name: The front door (prerequisite check, no-install Lima, early stop)
+        run: python3 -I tests/test_workspace_check.py
+
       - name: Statement preview rules
         run: python3 -I tests/test_statement_preview.py
 

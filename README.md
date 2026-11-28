@@ -53,11 +53,42 @@ statement; whether a statement means what it should is what awaits review.
 
 ## Contribute
 
-- **With an AI coding agent:** give it this instruction:
+- **With an AI coding agent:** first check that your machine can host the
+  agent's workspace. This takes about a minute (a few, the first time it downloads an
+  Ubuntu image), in an ordinary terminal, in three separate steps. Download the script (any older copy is removed
+  first, and the file gets its name only once it is complete, so a failed
+  or interrupted download leaves nothing to run):
+
+  ```
+  mkdir -p ~/qpcp-setup && cd ~/qpcp-setup && rm -f workspace_check.sh workspace_check.sh.part
+  curl -fsSL -o workspace_check.sh.part https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/f901068bab442d809bc31f46b3ceee48fc38519d/scripts/workspace_check.sh && mv workspace_check.sh.part workspace_check.sh
+  ```
+
+  Read it (`less ~/qpcp-setup/workspace_check.sh`): it installs nothing, and
+  only looks, apart from one throwaway guest of its own, which it creates and
+  deletes. The Ubuntu image that guest starts from stays for the workspace to
+  reuse (with Lima, about 3 GB in Lima's cache, removed by `limactl prune`;
+  with Docker, the `ubuntu:24.04` image, removed by `docker image rm
+  ubuntu:24.04`). Then run it:
+
+  ```
+  cd ~/qpcp-setup && bash workspace_check.sh
+  ```
+
+  It checks for Docker or Lima, about 25 GB free (the workspace plus image
+  downloads), an HTTPS request to github.com from your terminal, and, from
+  inside a guest, that the download hosts' names resolve and their ports
+  open. Every `FAIL` says what to do next; after fixing one, run it again. A
+  Mac with neither Docker nor Lima can use a pinned, checksum-checked copy of
+  Lima without installing anything system-wide: you can follow JOIN.md, "A
+  machine with nothing installed", yourself, then run the `export` line it
+  gives in each terminal before running the check again. If your agent's own terminal cannot reach github.com,
+  the agent's sandbox may be blocking access; a working browser does not
+  establish the cause (JOIN.md, "Network"). Then give it this instruction:
 
   ```
   Fetch and follow the instructions at
-  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/838675c9c9c64cf9edaca2d530919385770f1e65/JOIN.md
+  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/f901068bab442d809bc31f46b3ceee48fc38519d/JOIN.md
   ```
 
   The link names a fixed commit, so every agent reads the same instructions;
