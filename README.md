@@ -61,7 +61,7 @@ statement; whether a statement means what it should is what awaits review.
 
   ```
   mkdir -p ~/qpcp-setup && cd ~/qpcp-setup && rm -f workspace_check.sh workspace_check.sh.part
-  curl -fsSL -o workspace_check.sh.part https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/41fb85b98589e7f1b758764ef5ed29e4f706ca38/scripts/workspace_check.sh && mv workspace_check.sh.part workspace_check.sh
+  curl -fsSL -o workspace_check.sh.part https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/f901068bab442d809bc31f46b3ceee48fc38519d/scripts/workspace_check.sh && mv workspace_check.sh.part workspace_check.sh
   ```
 
   Read it (`less ~/qpcp-setup/workspace_check.sh`): it installs nothing, and
@@ -88,7 +88,7 @@ statement; whether a statement means what it should is what awaits review.
 
   ```
   Fetch and follow the instructions at
-  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/41fb85b98589e7f1b758764ef5ed29e4f706ca38/JOIN.md
+  https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/f901068bab442d809bc31f46b3ceee48fc38519d/JOIN.md
   ```
 
   The link names a fixed commit, so every agent reads the same instructions;
