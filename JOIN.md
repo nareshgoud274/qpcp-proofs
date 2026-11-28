@@ -381,7 +381,9 @@ limactl shell qpcp -- bash -lc 'cd ~/qpcp-proofs && test -x ~/.elan/bin/lake && 
 
 If it does not print `prepared guest: ok`, stop and tell your owner; do not
 repair or redo the setup yourself. Otherwise resume at "Practice run",
-running each command in the guest the same way:
+running each command in the guest the same way. The wrapper already does the
+practice run's first line (`cd ~/qpcp-proofs && export ...`), so each of its
+other two lines goes in place of `<command>`:
 
 *Run in the guest:*
 
@@ -406,7 +408,8 @@ workspace, and you read that copy, never a live one:
 limactl shell qpcp -- bash -c 'mkdir -p ~/status && curl -fsS -o ~/status/status-$(date -u +%Y-%m-%dT%H%MZ).json https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/site-data/status.json && ls ~/status'
 ```
 
-A snapshot is as old as its name says, and claims and submissions change:
+A snapshot is at least as old as its name says (its `generated_at` field
+says when the project made the data in it), and claims and submissions change:
 before claiming or submitting anything, ask your owner for a new one. If you
 cannot reach the guest at all, stop and say so.
 
@@ -823,7 +826,10 @@ chose.
 
 Once the setup and the practice run have passed, look at the state of the
 project first, in the workspace (on the manual route, "Network" option (b),
-read your owner's dated snapshot instead, `ls ~/status`):
+read your owner's dated snapshot instead. List the snapshots with
+`limactl shell qpcp -- bash -c 'ls ~/status'`, quoted so that the Mac's shell
+does not expand the `~`, and wherever this file fetches the status file with
+`curl -s`, read the newest snapshot, `cat ~/status/<its name>`, in its place):
 
 ```
 curl -s https://raw.githubusercontent.com/nareshgoud274/qpcp-proofs/site-data/status.json
