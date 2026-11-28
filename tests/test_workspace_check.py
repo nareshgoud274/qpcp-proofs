@@ -47,6 +47,11 @@
      stated as fact (in "Network" option (b) and in "Tested so far"), with
      the early hand-off test after the guest is created, while the
      reviewer's boundary text stays verbatim apart from its last sentence.
+  8. The review of #171: every block shared with Docker in "Two places",
+     "Set up (once)" and "Practice run" says where it runs ("Run inside the
+     workspace (...)" or "Run on the host"); the UPDATE block has a Lima form
+     that saves it on the Mac and feeds it to the guest, and the guide says
+     never to paste it into the Mac's Terminal.
 """
 
 import os
@@ -567,7 +572,7 @@ def test_round2():
     pilot = join[join.index("### Owner-relayed pilot"):join.index("## Which revision")] if "### Owner-relayed pilot" in join else ""
     regions = {"A machine with nothing installed (macOS)": nothing, "Network, option (b)": manual,
                "Two places, the virtual machine": twovm, "Owner-relayed pilot": pilot}
-    bare = ("sudo ", "ls ", "mount", "echo ", "env ", "cd ~/qpcp-proofs", "lake ", "python3 ", "touch ", "git ")
+    bare = ("sudo ", "ls ", "mount", 'echo "$SSH', "env ", "cd ~/qpcp-proofs", "lake ", "python3 ", "touch ", "git ")
     for name, text in regions.items():
         blocks = [(lab, b) for lab, b in labelled_blocks(text) if "<<'SETUP'" not in b]
         unlabelled = [b[:60] for lab, b in blocks if not re.match(r"\*?Run (from macOS|in the guest)\b", lab)]
@@ -585,7 +590,7 @@ def test_round2():
           and sum(1 for lab, _ in labelled_blocks(manual) if lab.startswith("*Run from macOS")) >= 2, "")
     # A guest command that the Mac's shell would expand must be single-quoted.
     leaks = [c for _, b in labelled_blocks(manual) + labelled_blocks(twovm) + labelled_blocks(pilot) for c in commands(b)
-             if c.startswith(GUEST) and re.search(r"\$[({A-Za-z_]", c.split(GUEST, 1)[1])
+             if c.startswith(GUEST) and re.search(r"\$[({A-Za-z_]", re.sub(r"\s[<>] \"\$t/[^\"]*\"( &&)?$", "", c.split(GUEST, 1)[1]))
              and not re.match(r"bash -l?c '", c.split(GUEST, 1)[1])]
     wrapped = [c for _, b in labelled_blocks(manual) + labelled_blocks(twovm) + labelled_blocks(pilot)
                for c in commands(b) if c.startswith(GUEST) and "$" in c]
@@ -632,6 +637,38 @@ def test_round2():
 
 
 
+# ------------------------------------------------------------- 8. the review of #171
+
+def test_review171():
+    join = (ROOT / "JOIN.md").read_text()
+    flat = lambda x: re.sub(r"\s+", " ", x)
+    two = join[join.index("## Two places"):join.index("## What your owner should know first")]
+    setup = join[join.index("## Set up (once)"):join.index("## Practice run")]
+    practice = join[join.index("## Practice run"):join.index("## Claims")]
+    labels = r"\*Run (inside the workspace \([^)]*\)|on the host|from macOS|in the guest)"
+    for name, text in (("Two places", two), ("Set up (once)", setup), ("Practice run", practice)):
+        missing = [b[:50] for lab, b in labelled_blocks(text) if not re.match(labels, lab)]
+        check(f"8. (review of #171) {name}: every block says where it runs (\"Run inside the workspace (...)\", "
+              "\"Run on the host\", or a Mac label)", labelled_blocks(text) and not missing, missing)
+    hosts = [b for lab, b in labelled_blocks(two) if lab.startswith("*Run on the host")]
+    ws = [b for lab, b in labelled_blocks(two) if lab.startswith("*Run inside the workspace (guest or container)")]
+    check("8. (review of #171) the Docker commands run on the host; the shared isolation checks inside the workspace",
+          any("docker run" in b for b in hosts) and any("docker inspect" in b for b in hosts)
+          and any(b.startswith("ls /Users") for b in ws), (len(hosts), len(ws)))
+    blocks = labelled_blocks(setup)
+    upd = next((i for i, (_, b) in enumerate(blocks) if "<<'UPDATE'" in b), None)
+    lima = blocks[upd + 1:upd + 3] if upd is not None else []
+    check("8. (review of #171) the UPDATE block: a container label, then a Lima form that saves it on the Mac (pbpaste, "
+          "sed, grep) and feeds it to the guest; never pasted into the Mac's Terminal",
+          upd is not None and blocks[upd][0].startswith("*Run inside the workspace (the container")
+          and len(lima) == 2 and lima[0][0] == "*Run from macOS:*"
+          and commands(lima[0][1]) == ["pbpaste > ~/qpcp-setup/update.sh",
+                                       "sed -i '' 's/^join_sha=.*/join_sha=<the pinned commit id>/' ~/qpcp-setup/update.sh",
+                                       "grep -n '^join_sha=\\|^UPDATE$' ~/qpcp-setup/update.sh"]
+          and lima[1][0] == "*Run in the guest:*" and commands(lima[1][1]) == [f"{GUEST}bash < ~/qpcp-setup/update.sh"]
+          and "never paste it into the Mac's Terminal, where it would run on the Mac" in flat(setup), lima)
+
+
 def main():
     print("The front door: prerequisite check, no-install Lima, early stop")
     try:
@@ -639,6 +676,7 @@ def main():
         test_get_lima()
         test_docs()
         test_round2()
+        test_review171()
     except Exception as e:  # a crash is a failure, never a skip
         import traceback
         traceback.print_exc()

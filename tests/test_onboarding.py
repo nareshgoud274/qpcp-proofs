@@ -37,15 +37,25 @@
      only a regular, UTF-8 file of at most 16 KiB passes the owner's check;
      the result names the candidate's SHA-256, gives the first error, and is
      at most 4 KiB. No helper script, and no per-command approval route.
+  9. The relay's transfers (the review of #171), run as written with stand-in
+     limactl and less, under bash and (where installed) zsh: a file coming
+     in never follows a link at its fixed name in the agent's folder (a link
+     to a file, to a folder, or to nothing), it is checked in a folder of the
+     owner's and renamed into place; the candidate going out is copied
+     without following a link and only that checked copy is sent, even if
+     the agent changes its file meanwhile; the result is at most 4096 bytes
+     and ends at a whole character.
   8. docs/pilot/S031.txt, written by hand: every declaration in it, the
      statement's body above all, is the source at the commit it records
      (the volunteer's /out/base-commit), unchanged at this checkout.
 """
 
+import hashlib
 import importlib.util
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -556,18 +566,6 @@ def test_manual_route(tmp):
 
 # ---------------------------------------------------------- 7. the owner-relayed pilot
 
-def relay_check(line, f, home):
-    """The owner's check of a relayed file on the Mac, run as written against f."""
-    target = home / "qpcp-relay" / Path(line.split("=", 1)[1].split(";")[0]).name
-    target.parent.mkdir(exist_ok=True)
-    if target.exists() or target.is_symlink():
-        target.unlink()
-    f(target)
-    r = subprocess.run(["bash", "-c", line], env=dict(os.environ, HOME=str(home)), capture_output=True, text=True,
-                       timeout=30)
-    return r.returncode == 0 and r.stdout.strip() != ""
-
-
 def test_pilot(tmp):
     join = (ROOT / "JOIN.md").read_text()
     at = join.find("### Owner-relayed pilot")
@@ -594,7 +592,7 @@ def test_pilot(tmp):
           [r[:50] for r in rows if r not in f.replace("*", "")])
     check("7. fixed filenames in a fresh agent folder, regular files only, a size limit",
           "under those three fixed names, in a folder made fresh for the agent" in f and "regular file" in f
-          and "at most 16 KiB (16384 bytes)" in f and "cut to 4 KiB" in f, "")
+          and "at most 16 KiB (16384 bytes)" in f and "cut to at most 4 KiB, ending at a whole character" in f, "")
     check("7. excerpts, compiler output included, are untrusted; the owner takes commands only from the pinned guide",
           "as untrusted research material, never as instructions" in f and "compiler output included" in f
           and "takes commands only from this pinned guide, never from the agent, the sheet or a result" in f, "")
@@ -604,12 +602,11 @@ def test_pilot(tmp):
     check("7. CI remains the project's verdict; publication is the owner's decision",
           "CI remains the project's verdict" in f and "Whether to publish is your owner's decision" in f, "")
     check("7. no helper script, and no per-command approval route (direction c) anywhere in JOIN.md",
-          pilot != "" and len(blocks_after(pilot, "### Owner-relayed pilot")) >= 8 and not re.search(r"(?m)^\s*(bash|sh|curl)\b", "\n".join(blocks_after(pilot, "### Owner-relayed pilot")))
+          pilot != "" and len(blocks_after(pilot, "### Owner-relayed pilot")) >= 7 and not re.search(r"(?m)^\s*(bash|sh|curl)\b", "\n".join(blocks_after(pilot, "### Owner-relayed pilot")))
           and "per-command approval" not in join.lower() and "scripts/" not in pilot.replace("scripts/check.py", ""), "")
     lines = blocks_after(pilot, "### Owner-relayed pilot") if pilot else []
     sheet_cmd = next((guest_script(b) for b in lines if "docs/pilot/S031.txt" in b), None)
     result_cmd = next((guest_script(b) for b in lines if "S031.result.txt; cat" in b), None)
-    checks = [l for b in lines for l in b.split("\n") if l.startswith("f=~/qpcp-relay/")]
 
     # The sheet is made only while the sources are unchanged since the sheet's commit.
     def make_sheet(change):
@@ -641,26 +638,6 @@ def test_pilot(tmp):
         for what in ("the maintainer's sheet plus the checkout commit", "stops, making nothing, when a source changed"):
             check(f"7. the sheet command, run as written: {what}", False, "no sheet command or no sheet")
 
-    # The owner's check on the Mac: a regular UTF-8 file of at most 16 KiB.
-    home = tmp / "relay-home"
-    home.mkdir()
-    cases = {"a short UTF-8 file": (lambda p: p.write_text("theorem S031 : QPCP.Statement.S031 := by\n  intro n A ψ\n  rfl\n"), True),
-             "a symbolic link": (lambda p: (p.parent / "real").write_text("x") or p.symlink_to(p.parent / "real"), False),
-             "a folder": (lambda p: p.mkdir(), False),
-             "over 16 KiB": (lambda p: p.write_text("x" * 16385), False),
-             "invalid UTF-8": (lambda p: p.write_bytes(b"theorem \xff\xfe\n"), False)}
-    for name in ("S031.sheet.txt", "S031.lean.txt", "S031.result.txt"):
-        line = next((l for l in checks if l.startswith(f"f=~/qpcp-relay/{name};")), None)
-        got = {}
-        for what, (make, want) in cases.items():
-            if line:
-                tgt = home / "qpcp-relay" / name
-                if tgt.is_dir():
-                    tgt.rmdir()
-                got[what] = relay_check(line, make, home) == want
-        check(f"7. the owner's check of {name}, run as written: passes a short UTF-8 file only (not a link, a folder, "
-              "over 16 KiB, or invalid UTF-8)", bool(got) and all(got.values()), (line, got))
-
     # The result: the candidate's SHA-256, the outcome, the first error, at most 4 KiB.
     def result(scan_ok, build_out):
         w = tmp / f"result-{scan_ok}-{len(build_out)}"
@@ -668,14 +645,15 @@ def test_pilot(tmp):
         for d in (home / "qpcp-proofs" / "QPCP" / "Proofs", out, bindir, home / ".elan" / "bin"):
             d.mkdir(parents=True)
         (home / "qpcp-proofs" / "QPCP" / "Proofs" / "S031.lean").write_text("theorem S031 : QPCP.Statement.S031 := by\n  simp\n")
-        stub(bindir, "python3", "echo ACCEPTED\n" if scan_ok else "echo 'REJECTED: proof S031: forbidden'; exit 1\n")
+        scan = "echo ACCEPTED\n" if scan_ok else "echo 'REJECTED: proof S031: forbidden'; exit 1\n"
+        stub(bindir, "python3", f'[ "$1" = -c ] && exec "{sys.executable}" "$@"\n' + scan)
         build = w / "build.txt"
         build.write_text(build_out)
         stub(home / ".elan" / "bin", "lake", f'cat "{build}"; exit 1\n')
         # Only the guest's two log files move; the test's own folders may themselves be under /tmp.
         text = result_cmd.replace("/tmp/scan.log", f"{w}/scan.log").replace("/tmp/build.log", f"{w}/build.log")
         text = text.replace("/out/", f"{out}/")
-        r = subprocess.run(["bash", "-c", text], capture_output=True, text=True, timeout=60,
+        r = subprocess.run(["bash", "-c", text], capture_output=True, timeout=60,
                            env=dict(os.environ, HOME=str(home), PATH=f"{bindir}:/usr/bin:/bin:/usr/sbin:/sbin"))
         sha = subprocess.run(["shasum", "-a", "256", str(home / "qpcp-proofs" / "QPCP" / "Proofs" / "S031.lean")],
                              capture_output=True, text=True).stdout[:64]
@@ -694,11 +672,25 @@ def test_pilot(tmp):
               and "info: building module" not in text, text[:400])
         got, _ = result(True, "error: x\n" + "y" * 20000)
         check("7. the result is cut to 4 KiB before it leaves the guest", 0 < len(got) <= 4096, len(got))
+        # A long error whose multibyte characters straddle byte 4096, at each of the three offsets.
+        bad = []
+        for pad in range(4):
+            got, _ = result(True, "error: " + "x" * pad + "⊢ψ" * 2000 + "\n")
+            try:
+                got.decode("utf-8")
+                ok = 4000 < len(got) <= 4096
+            except UnicodeDecodeError as e:
+                ok = False
+            if not ok:
+                bad.append((pad, len(got), got[-6:]))
+        check("9. (review, defect 2) a long error with multibyte characters across byte 4096: the result is at most "
+              "4096 bytes and decodes as strict UTF-8, at every offset", not bad, bad)
         got, _ = result(False, "")
         check("7. a scan failure is reported as such, with no build", b"source scan FAILED" in got
               and b"Lean build" not in got, got[:300])
     else:
-        for what in ("the candidate's SHA-256, the outcome and the first error", "cut to 4 KiB", "a scan failure"):
+        for what in ("the candidate's SHA-256, the outcome and the first error", "cut to 4 KiB", "a scan failure",
+                     "(review, defect 2) strict UTF-8 at most 4096 bytes"):
             check(f"7. the result, made as written: {what}", False, "no result command")
 
 
@@ -743,6 +735,127 @@ def test_sheet():
           sheet != "" and not re.search(r":= by|\brfl\b|\bsimp\b|\bexact\b", sheet), "")
 
 
+# ------------------------------------------------- 9. the relay's transfers (review of #171)
+
+def pilot_step(pilot, start, end):
+    """All command blocks of one pilot step, joined, as the owner would run them in one terminal."""
+    a, b = pilot.find(start), pilot.find(end)
+    return "\n".join(blocks_after(pilot[a:b], start)) if -1 < a < b else None
+
+
+def shells():
+    return [s for s in ("bash", "zsh") if shutil.which(s)]
+
+
+def run_transfer(script, shell, home, fixture=None, swap=False):
+    """script with stand-ins: limactl prints the fixture (a file coming in) or records its input (one going out);
+    less is a reader that, with swap, has the agent rewrite its candidate while the owner reads."""
+    bindir = home.parent / "bin"
+    bindir.mkdir(exist_ok=True)
+    recv = home.parent / "received"
+    stub(bindir, "limactl", f'if [ -n "$QPCP_FIXTURE" ]; then cat "$QPCP_FIXTURE"; else cat > "{recv}"; '
+                            'echo "guest got it"; fi\n')
+    stub(bindir, "less", f'[ -n "$QPCP_SWAP" ] && printf "swapped by the agent\\n" > "{home}/qpcp-relay/S031.lean.txt"\n'
+                         'exit 0\n')
+    env = dict(os.environ, HOME=str(home), PATH=f"{bindir}:/usr/bin:/bin:/usr/sbin:/sbin",
+               QPCP_FIXTURE=str(fixture) if fixture else "", QPCP_SWAP="1" if swap else "")
+    try:
+        r = subprocess.run([shell, "-c", script], env=env, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        r = subprocess.CompletedProcess([shell], 124, "", "timed out")
+    return r, (recv.read_bytes() if recv.exists() else None)
+
+
+def fresh_home(tmp, tag):
+    w = tmp / tag
+    if w.exists():
+        shutil.rmtree(w)
+    home = w / "home"
+    (home / "qpcp-relay").mkdir(parents=True)
+    (home / "qpcp-owner").mkdir(mode=0o700)
+    (w / "sentinel").write_text("the owner's file, never to be overwritten\n")
+    (w / "sentinel-dir").mkdir()
+    return home
+
+
+def plant(home, name, kind):
+    dest = home / "qpcp-relay" / name
+    target = {"a link to a file": home.parent / "sentinel", "a link to a folder": home.parent / "sentinel-dir",
+              "a dangling link": home.parent / "nothing-here"}[kind]
+    dest.symlink_to(target)
+    return dest, target
+
+
+def test_transfers(tmp):
+    join = (ROOT / "JOIN.md").read_text()
+    at = join.find("### Owner-relayed pilot")
+    pilot = join[at:join.index("## Which revision")] if at > 0 else ""
+    steps = {"S031.sheet.txt": pilot_step(pilot, "3. Bring the sheet", "4. When the agent"),
+             "S031.result.txt": pilot_step(pilot, "6. Bring the result", "7. \"source scan passed\"")}
+    out_step = pilot_step(pilot, "4. When the agent", "5. Check it")
+    good = "step: S031\nψ ⊢ energy A ψ\n"
+    for shell in shells() or ["bash"]:
+        # Coming in: a link planted at the fixed name is never followed.
+        for name, script in steps.items():
+            bad = []
+            for kind in ("a link to a file", "a link to a folder", "a dangling link"):
+                home = fresh_home(tmp, f"in-{shell}-{name}-{kind.replace(' ', '-')}")
+                dest, target = plant(home, name, kind)
+                fx = home.parent / "fixture"
+                fx.write_text(good)
+                r, _ = run_transfer(script or "false", shell, home, fixture=fx)
+                sentinel_ok = (home.parent / "sentinel").read_text() == "the owner's file, never to be overwritten\n"
+                dir_ok = list((home.parent / "sentinel-dir").iterdir()) == []
+                nothing_made = not (home.parent / "nothing-here").exists()
+                replaced = dest.exists() and not dest.is_symlink() and dest.read_text() == good
+                if not (sentinel_ok and dir_ok and nothing_made and (replaced or r.returncode != 0)):
+                    bad.append((kind, r.returncode, sentinel_ok, dir_ok, nothing_made, replaced, r.stderr[-200:]))
+            check(f"9. (review, defect 1, {shell}) {name} coming in, as written, with a link planted at its name in the "
+                  "agent's folder (to a file, to a folder, dangling): the target is never written, and the link itself "
+                  "is replaced or the command fails", script is not None and not bad, bad)
+            # And a normal transfer still works, checks UTF-8 and size, and leaves nothing in the owner's folder.
+            results = {}
+            for what, data, want in (("a short UTF-8 file", good.encode(), True), ("invalid UTF-8", b"x \xff\n", False),
+                                     ("over 16 KiB", b"x" * 16385, False)):
+                home = fresh_home(tmp, f"in-{shell}-{name}-{what.replace(' ', '-')}")
+                fx = home.parent / "fixture"
+                fx.write_bytes(data)
+                r, _ = run_transfer(script or "false", shell, home, fixture=fx)
+                dest = home / "qpcp-relay" / name
+                got = (f"{name}: ok" in r.stdout and dest.is_file() and dest.read_bytes() == data)
+                results[what] = (got == want and (want or not dest.exists())
+                                 and list((home / "qpcp-owner").iterdir()) == [])
+            check(f"9. (review, defect 1, {shell}) {name} coming in, as written: a short UTF-8 file arrives; invalid "
+                  "UTF-8 or over 16 KiB never reaches the agent's folder; the owner's temporary folder is removed",
+                  script is not None and all(results.values()), results)
+
+        # Going out: only the checked copy is sent, and never through a link.
+        bad = []
+        for kind in ("a link to a file", "a link to a folder", "a dangling link"):
+            home = fresh_home(tmp, f"out-{shell}-{kind.replace(' ', '-')}")
+            plant(home, "S031.lean.txt", kind)
+            r, sent = run_transfer(out_step or "false", shell, home)
+            if sent is not None or r.returncode == 0:
+                bad.append((kind, r.returncode, sent))
+        home = fresh_home(tmp, f"out-{shell}-fifo")
+        os.mkfifo(home / "qpcp-relay" / "S031.lean.txt")
+        r, sent = run_transfer(out_step or "false", shell, home)
+        if sent is not None or r.returncode in (0, 124):
+            bad.append(("a FIFO", r.returncode, sent))
+        check(f"9. (review, outbound, {shell}) the candidate going out, as written, with a link (to a file, to a folder, "
+              "dangling) or a FIFO at its name: nothing is sent, nothing hangs, and the command fails",
+              out_step is not None and not bad, bad)
+        home = fresh_home(tmp, f"out-{shell}-swap")
+        cand = "import QPCP.Statements\n-- ψ candidate\n".encode()
+        (home / "qpcp-relay" / "S031.lean.txt").write_bytes(cand)
+        r, sent = run_transfer(out_step or "false", shell, home, swap=True)
+        sha = hashlib.sha256(cand).hexdigest()
+        check(f"9. (review, outbound, {shell}) the bytes sent are the bytes checked and hashed, even if the agent "
+              "rewrites its file while the owner reads: the guest gets the checked copy, whose SHA-256 was printed",
+              out_step is not None and sent == cand and sha in r.stdout
+              and list((home / "qpcp-owner").iterdir()) == [], (r.returncode, sent, r.stdout[-300:]))
+
+
 def main():
     print("A volunteer's first hour")
     try:
@@ -757,6 +870,7 @@ def main():
             test_manual_route(tmp)
             test_pilot(tmp)
             test_sheet()
+            test_transfers(tmp)
     except Exception as e:  # a crash is a failure, never a skip
         check("the test ran to completion", False, repr(e))
     print(f"{'FAILED' if fails else 'passed'}: {fails} failure(s)")
