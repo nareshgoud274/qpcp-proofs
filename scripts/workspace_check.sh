@@ -78,8 +78,9 @@ elif command -v docker >/dev/null 2>&1; then
 else
   case "$(uname -s)" in
     Darwin) fail "workspace tool: neither Docker nor Lima is on this Mac" \
-      "the no-install route: with your approval, scripts/get_lima.sh downloads a pinned, checksummed Lima" \
-      "into ~/qpcp-setup, nothing system-wide (JOIN.md, \"A machine with nothing installed\")" ;;
+      "you can run scripts/get_lima.sh, which downloads a pinned, checksummed Lima into ~/qpcp-setup and installs" \
+      "nothing system-wide. Fetch it from the same commit as this script: in the address you downloaded this from," \
+      "replace workspace_check.sh with get_lima.sh (JOIN.md, \"A machine with nothing installed\")" ;;
     *) fail "workspace tool: neither Docker nor Lima is on this machine" \
       "on Linux, install Docker Engine from your distribution (Ubuntu: sudo apt-get install docker.io)," \
       "or Lima (JOIN.md, \"A machine with nothing installed\")" ;;
