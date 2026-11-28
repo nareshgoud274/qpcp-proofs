@@ -11,10 +11,10 @@
    "id": "S001",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S001.lean",
    "verified": [
@@ -71,6 +71,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -85,10 +91,10 @@
    "id": "S002",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S002.lean",
    "verified": [
@@ -145,6 +151,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -159,10 +171,10 @@
    "id": "S003",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S003.lean",
    "verified": [
@@ -219,6 +231,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -233,10 +251,10 @@
    "id": "S004",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S004.lean",
    "verified": [
@@ -293,6 +311,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -307,10 +331,10 @@
    "id": "S005",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S005.lean",
    "verified": [
@@ -367,6 +391,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -381,10 +411,10 @@
    "id": "S006",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S006.lean",
    "verified": [
@@ -441,6 +471,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -455,10 +491,10 @@
    "id": "S007",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S007.lean",
    "verified": [
@@ -515,6 +551,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -529,10 +571,10 @@
    "id": "S008",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S008.lean",
    "verified": [
@@ -589,6 +631,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -603,10 +651,10 @@
    "id": "S009",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S009.lean",
    "verified": [
@@ -663,6 +711,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -677,10 +731,10 @@
    "id": "S010",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S010.lean",
    "verified": [
@@ -737,6 +791,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -751,10 +811,10 @@
    "id": "S011",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S011.lean",
    "verified": [
@@ -811,6 +871,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -825,10 +891,10 @@
    "id": "S012",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S012.lean",
    "verified": [
@@ -885,6 +951,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -899,10 +971,10 @@
    "id": "S013",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S013.lean",
    "verified": [
@@ -959,6 +1031,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -973,10 +1051,10 @@
    "id": "S014",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S014.lean",
    "verified": [
@@ -1033,6 +1111,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -1047,10 +1131,10 @@
    "id": "S015",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S015.lean",
    "verified": [
@@ -1107,6 +1191,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -1121,10 +1211,10 @@
    "id": "S016",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S016.lean",
    "verified": [
@@ -1181,6 +1271,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -1195,10 +1291,10 @@
    "id": "S017",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S017.lean",
    "verified": [
@@ -1255,6 +1351,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -1269,10 +1371,10 @@
    "id": "S018",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S018.lean",
    "verified": [
@@ -1329,6 +1431,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -1343,10 +1451,10 @@
    "id": "S019",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S019.lean",
    "verified": [
@@ -1403,6 +1511,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -1417,10 +1531,10 @@
    "id": "S020",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S020.lean",
    "verified": [
@@ -1477,6 +1591,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -1491,10 +1611,10 @@
    "id": "S021",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S021.lean",
    "verified": [
@@ -1551,6 +1671,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -1565,10 +1691,10 @@
    "id": "S022",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S022.lean",
    "verified": [
@@ -1625,6 +1751,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -1639,10 +1771,10 @@
    "id": "S023",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S023.lean",
    "verified": [
@@ -1699,6 +1831,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -1713,10 +1851,10 @@
    "id": "S024",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S024.lean",
    "verified": [
@@ -1773,6 +1911,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -1787,10 +1931,10 @@
    "id": "S025",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S025.lean",
    "verified": [
@@ -1847,6 +1991,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -1861,10 +2011,10 @@
    "id": "S026",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S026.lean",
    "verified": [
@@ -1921,6 +2071,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -1935,10 +2091,10 @@
    "id": "S027",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S027.lean",
    "verified": [
@@ -1995,6 +2151,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -2009,10 +2171,10 @@
    "id": "S028",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S028.lean",
    "verified": [
@@ -2069,6 +2231,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -2083,10 +2251,10 @@
    "id": "S029",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S029.lean",
    "verified": [
@@ -2143,6 +2311,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -2157,10 +2331,10 @@
    "id": "S030",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S030.lean",
    "verified": [
@@ -2199,6 +2373,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -2213,10 +2393,10 @@
    "id": "S058",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S058.lean",
    "verified": [
@@ -2273,6 +2453,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -2287,10 +2473,10 @@
    "id": "S059",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S059.lean",
    "verified": [
@@ -2347,6 +2533,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   },
@@ -2361,10 +2553,10 @@
    "id": "S060",
    "kind": "proof",
    "last": {
-    "commit": "088f4e9b283394dda213b90705b94e2c0caad56f",
-    "position": 161,
-    "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
-    "verifiedAt": "2026-11-27T13:12:19Z"
+    "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+    "position": 173,
+    "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+    "verifiedAt": "2026-11-28T01:25:00Z"
    },
    "path": "QPCP/Proofs/S060.lean",
    "verified": [
@@ -2421,6 +2613,12 @@
      "position": 161,
      "record": "records/088f4e9b283394dda213b90705b94e2c0caad56f.json",
      "verifiedAt": "2026-11-27T13:12:19Z"
+    },
+    {
+     "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+     "position": 173,
+     "record": "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json",
+     "verifiedAt": "2026-11-28T01:25:00Z"
     }
    ]
   }
@@ -2462,6 +2660,10 @@
   "records/a6d86d2dfc7000ea2aeb0accdb88069fa3dd0f33.json": {
    "commit": "a6d86d2dfc7000ea2aeb0accdb88069fa3dd0f33",
    "position": 142
+  },
+  "records/bf22b099d7696b51a05145a0653c50c3e75ba526.json": {
+   "commit": "bf22b099d7696b51a05145a0653c50c3e75ba526",
+   "position": 173
   }
  }
 }
