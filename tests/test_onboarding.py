@@ -45,6 +45,13 @@
      without following a link and only that checked copy is sent, even if
      the agent changes its file meanwhile; the result is at most 4096 bytes
      and ends at a whole character.
+ 10. The #173 guide round: step 6 refuses a result that is missing, empty,
+     without its "candidate sha256:" line, or for another candidate than the
+     one step 4 sent and recorded, with a STOP saying to wait for step 5, and
+     nothing reaches the agent's folder; a good result is delivered. Step 5
+     never leaves an empty result visible while the build runs. Step 4's
+     staged copy never holds more than 16385 bytes, and it records the
+     SHA-256 sent. The wording points (a) to (g) and the observed result.
   8. docs/pilot/S031.txt, written by hand: every declaration in it, the
      statement's body above all, is the source at the commit it records
      (the volunteer's /out/base-commit), unchanged at this checkout.
@@ -775,7 +782,16 @@ def fresh_home(tmp, tag):
     (home / "qpcp-owner").mkdir(mode=0o700)
     (w / "sentinel").write_text("the owner's file, never to be overwritten\n")
     (w / "sentinel-dir").mkdir()
+    (home / "qpcp-owner" / "S031.sent.sha256").write_text(SENT + "\n")   # what step 4 records
     return home
+
+
+SENT = "5b5dfeb5e35910e6ed4888b1ed5c6740e65f795ea961d0afe0ddc82fa1b4ef80"
+FIRST = f"candidate sha256: {SENT}\n".encode()
+
+
+def no_staging(home):
+    return [p.name for p in (home / "qpcp-owner").iterdir() if p.name.startswith(("in.", "out."))] == []
 
 
 def plant(home, name, kind):
@@ -791,12 +807,14 @@ def test_transfers(tmp):
     at = join.find("### Owner-relayed pilot")
     pilot = join[at:join.index("## Which revision")] if at > 0 else ""
     steps = {"S031.sheet.txt": pilot_step(pilot, "3. Bring the sheet", "4. When the agent"),
-             "S031.result.txt": pilot_step(pilot, "6. Bring the result", "7. \"source scan passed\"")}
+             "S031.result.txt": pilot_step(pilot, "\n6. ", "\n7. ")}
     out_step = pilot_step(pilot, "4. When the agent", "5. Check it")
-    good = "step: S031\nψ ⊢ energy A ψ\n"
     for shell in shells() or ["bash"]:
         # Coming in: a link planted at the fixed name is never followed.
         for name, script in steps.items():
+            # A result is delivered only if its first line names the candidate sent (section 10).
+            good = (FIRST.decode() if name == "S031.result.txt" else "") + "step: S031\nψ ⊢ energy A ψ\n"
+            head = FIRST if name == "S031.result.txt" else b""
             bad = []
             for kind in ("a link to a file", "a link to a folder", "a dangling link"):
                 home = fresh_home(tmp, f"in-{shell}-{name}-{kind.replace(' ', '-')}")
@@ -815,16 +833,16 @@ def test_transfers(tmp):
                   "is replaced or the command fails", script is not None and not bad, bad)
             # And a normal transfer still works, checks UTF-8 and size, and leaves nothing in the owner's folder.
             results = {}
-            for what, data, want in (("a short UTF-8 file", good.encode(), True), ("invalid UTF-8", b"x \xff\n", False),
-                                     ("over 16 KiB", b"x" * 16385, False)):
+            for what, data, want in (("a short UTF-8 file", good.encode(), True),
+                                     ("invalid UTF-8", head + b"x \xff\n", False),
+                                     ("over 16 KiB", head + b"x" * 16385, False)):
                 home = fresh_home(tmp, f"in-{shell}-{name}-{what.replace(' ', '-')}")
                 fx = home.parent / "fixture"
                 fx.write_bytes(data)
                 r, _ = run_transfer(script or "false", shell, home, fixture=fx)
                 dest = home / "qpcp-relay" / name
                 got = (f"{name}: ok" in r.stdout and dest.is_file() and dest.read_bytes() == data)
-                results[what] = (got == want and (want or not dest.exists())
-                                 and list((home / "qpcp-owner").iterdir()) == [])
+                results[what] = (got == want and (want or not dest.exists()) and no_staging(home))
             check(f"9. (review, defect 1, {shell}) {name} coming in, as written: a short UTF-8 file arrives; invalid "
                   "UTF-8 or over 16 KiB never reaches the agent's folder; the owner's temporary folder is removed",
                   script is not None and all(results.values()), results)
@@ -853,7 +871,142 @@ def test_transfers(tmp):
         check(f"9. (review, outbound, {shell}) the bytes sent are the bytes checked and hashed, even if the agent "
               "rewrites its file while the owner reads: the guest gets the checked copy, whose SHA-256 was printed",
               out_step is not None and sent == cand and sha in r.stdout
-              and list((home / "qpcp-owner").iterdir()) == [], (r.returncode, sent, r.stdout[-300:]))
+              and no_staging(home), (r.returncode, sent, r.stdout[-300:]))
+
+
+# ------------------------------------------------------------ 10. the #173 guide round
+
+def test_round3(tmp):
+    join = (ROOT / "JOIN.md").read_text()
+    at = join.find("### Owner-relayed pilot")
+    pilot = join[at:join.index("## Which revision")] if at > 0 else ""
+    f = flat(pilot)
+    step6 = pilot_step(pilot, "\n6. ", "\n7. ")
+    step4 = pilot_step(pilot, "4. When the agent", "5. Check it")
+    for shell in shells() or ["bash"]:
+        # Step 6: only a complete result for the candidate sent is delivered.
+        cases = {"missing in the guest": None, "empty": b"", "without the sha line": b"source scan passed\n",
+                 "for another candidate": f"candidate sha256: {'0' * 64}\nsource scan passed\n".encode(),
+                 "with nothing recorded at step 4": FIRST + b"source scan passed\n"}
+        bad = {}
+        for what, data in cases.items():
+            home = fresh_home(tmp, f"r3-{shell}-{what.replace(' ', '-')}")
+            if what == "with nothing recorded at step 4":
+                (home / "qpcp-owner" / "S031.sent.sha256").unlink()
+            fx = home.parent / ("nothing-there" if data is None else "fixture")
+            if data is not None:
+                fx.write_bytes(data)
+            r, _ = run_transfer(step6 or "false", shell, home, fixture=fx)
+            dest = home / "qpcp-relay" / "S031.result.txt"
+            if not (r.returncode != 0 and "STOP: the result is not ready" in r.stdout and not dest.exists()
+                    and not dest.is_symlink() and no_staging(home)):
+                bad[what] = (r.returncode, r.stdout[-160:])
+        home = fresh_home(tmp, f"r3-{shell}-good")
+        fx = home.parent / "fixture"
+        fx.write_bytes(FIRST + b"source scan passed\nLean build passed\n")
+        r, _ = run_transfer(step6 or "false", shell, home, fixture=fx)
+        dest = home / "qpcp-relay" / "S031.result.txt"
+        good = (r.returncode == 0 and "S031.result.txt: ok" in r.stdout and dest.is_file()
+                and dest.read_bytes() == fx.read_bytes())
+        check(f"10. (#173 h, {shell}) step 6 refuses a result that is missing, empty, without its \"candidate "
+              "sha256:\" line, for another candidate, or with nothing recorded at step 4 (STOP, wait for step 5, "
+              "non-zero, nothing reaches the agent's folder), and delivers a result whose first line names the "
+              "candidate step 4 sent", step6 is not None and not bad and good, (bad, good, r.stdout[-160:]))
+
+        # Step 4: the staged copy never exceeds 16385 bytes; the SHA-256 sent is recorded, and only then.
+        home = fresh_home(tmp, f"r3-{shell}-big")
+        bindir = home.parent / "bin"
+        bindir.mkdir(exist_ok=True)
+        sizes = home.parent / "sizes"
+        stub(bindir, "wc", f'"{shutil.which("wc")}" "$@" | tee -a "{sizes}"\n')
+        (home / "qpcp-relay" / "S031.lean.txt").write_bytes(b"x" * 200000)
+        r, sent = run_transfer(step4 or "false", shell, home)
+        seen = [int(v) for v in sizes.read_text().split()] if sizes.exists() else []
+        check(f"10. (#173 c, {shell}) a 200000-byte candidate: the staged copy holds at most 16385 bytes, and nothing "
+              "is sent or recorded", seen and max(seen) <= 16385 and sent is None and r.returncode != 0
+              and not (home / "qpcp-owner" / "S031.sent.sha256").exists(), (seen, r.returncode, sent))
+        home = fresh_home(tmp, f"r3-{shell}-record")
+        cand = "import QPCP.Statements\n-- ψ\n".encode()
+        (home / "qpcp-relay" / "S031.lean.txt").write_bytes(cand)
+        r, sent = run_transfer(step4 or "false", shell, home)
+        rec = home / "qpcp-owner" / "S031.sent.sha256"
+        check(f"10. (#173 h, {shell}) step 4 records the SHA-256 it sent, for step 6 to check against",
+              r.returncode == 0 and sent == cand and rec.exists()
+              and rec.read_text().strip() == hashlib.sha256(cand).hexdigest(), (r.returncode, rec.exists()))
+
+    # Step 5: no empty result is visible while the build runs.
+    blocks = blocks_after(pilot, "### Owner-relayed pilot") if pilot else []
+    result_cmd = next((guest_script(b) for b in blocks if "S031.result.txt; cat" in b), None)
+    w = tmp / "r3-step5"
+    home, out, bindir = w / "home", w / "out", w / "bin"
+    for d in (home / "qpcp-proofs" / "QPCP" / "Proofs", out, bindir, home / ".elan" / "bin"):
+        d.mkdir(parents=True)
+    (home / "qpcp-proofs" / "QPCP" / "Proofs" / "S031.lean").write_text("theorem S031 : QPCP.Statement.S031 := by\n  simp\n")
+    (out / "S031.result.txt").write_text(f"candidate sha256: {'1' * 64}\nthe last candidate's result\n")
+    stub(bindir, "python3", f'[ "$1" = -c ] && exec "{sys.executable}" "$@"\necho ACCEPTED\n')
+    during = w / "during"
+    stub(home / ".elan" / "bin", "lake", f'r="{out}/S031.result.txt"\n'
+         f'if [ -e "$r" ] && [ ! -s "$r" ]; then echo empty >> "{during}"; '
+         f'elif [ -e "$r" ]; then echo stale >> "{during}"; else echo absent >> "{during}"; fi\n'
+         'echo "error: x"; exit 1\n')
+    if result_cmd:
+        text = result_cmd.replace("/tmp/scan.log", f"{w}/scan.log").replace("/tmp/build.log", f"{w}/build.log")
+        text = text.replace("/out/", f"{out}/")
+        subprocess.run(["bash", "-c", text], capture_output=True, timeout=60,
+                       env=dict(os.environ, HOME=str(home), PATH=f"{bindir}:/usr/bin:/bin:/usr/sbin:/sbin"))
+    seen = during.read_text().split() if during.exists() else []
+    final = (out / "S031.result.txt").read_bytes() if (out / "S031.result.txt").exists() else b""
+    check("10. (#173 h) step 5, run as written: while the build runs the guest's result name is neither empty nor the "
+          "last candidate's result (it is absent), and the finished result appears under it, starting with its "
+          "candidate sha256 line", seen == ["absent"] and final.startswith(b"candidate sha256: ")
+          and not (out / ".S031.result.part").exists(), (seen, final[:80]))
+
+    # The wording points and the observed result.
+    two = join[join.index("## Two places"):join.index("## What your owner should know first")]
+    setup = join[join.index("## Set up (once)"):join.index("## Practice run")]
+    net = join[join.index("**The manual route, (b).**"):join.index("One documented example")]
+    tested = join[join.index("**Tested so far:**"):join.index("## Network")]
+    texts = {
+        "(a) the owner-only folder is a workflow rule, resting on the agent's own restrictions":
+            "keeping the agent out of it is a rule of this workflow, and holds only as far as the agent's own "
+            "restrictions keep it out" in f,
+        "(b) a real non-empty folder makes the rename fail, safely":
+            "a real folder there, not empty, makes it fail with `Is a directory`, and nothing is delivered" in f,
+        "(d) the relay folder is one the agent can already write; the tested way; stop otherwise":
+            "must be one the agent can write in under its existing restrictions" in f
+            and "The tested way is to open the agent with `~/qpcp-relay` as its working folder" in f
+            and "If it cannot write there, stop: never change the agent's permissions" in f,
+        "(e) an older guest runs the update flow first, and /out/base-commit then changes":
+            "A guest built before this pilot existed has no `docs/pilot/S031.txt`" in f and "update flow" in f
+            and "`/out/base-commit`, and so the sheet's `checkout commit:` line, is the new commit" in f,
+        "(h) the agent reads the result only once told it is delivered; missing or empty is never passed":
+            "Read `S031.result.txt` only after your owner tells you the result is delivered" in f
+            and 'A missing or empty file means "not yet", never "passed"' in f,
+        "(f1) less needs an interactive terminal; q lets the command go on":
+            "it needs an interactive terminal, and pressing q quits it and lets the command go on" in f,
+        "(f2) Two places gives the wrapped checks itself":
+            "*Run in the guest (Lima, from the Mac):*" in two and "limactl shell qpcp -- ls /Users" in two,
+        "(f3) Lima's harmless error line on stop":
+            "`use of closed network connection`; it is harmless" in flat(two),
+        "(f4) the owner's yes does not cover installing elan":
+            "does not cover installing elan" in flat(two),
+        "(f5) choosing an exercise is the Builder role":
+            "Proving a step, an exercise included, is the Builder role" in flat(join),
+        "(g) the setup script: the Lima form and the order before the block":
+            "type the `pbpaste` line below, but do not press Return yet" in flat(net)
+            and -1 < net.find("pbpaste > ~/qpcp-setup/setup.sh") < net.find("<<'SETUP'"),
+        "(g) the UPDATE block: the Lima form and the order before the block":
+            "type the `pbpaste` line below, but do not press Return yet" in flat(setup)
+            and -1 < setup.find("pbpaste > ~/qpcp-setup/update.sh") < setup.find("<<'UPDATE'"),
+        "Tested so far and the pilot: the relay completed for S031, one configuration, not submitted":
+            "the \"Owner-relayed pilot\" (in \"Network\") then completed for S031" in flat(tested)
+            and "the candidate has not been submitted" in flat(tested)
+            and "the relay completed for S031, and candidate 1 passed the local scan and build. That is one "
+                "configuration on one machine, and the candidate has not been submitted." in f
+            and "This is a pilot, for exercises only, and currently for S031 only." in f,
+    }
+    for what, ok in texts.items():
+        check(f"10. (#173) {what}", ok, "")
 
 
 def main():
@@ -871,6 +1024,7 @@ def main():
             test_pilot(tmp)
             test_sheet()
             test_transfers(tmp)
+            test_round3(tmp)
     except Exception as e:  # a crash is a failure, never a skip
         check("the test ran to completion", False, repr(e))
     print(f"{'FAILED' if fails else 'passed'}: {fails} failure(s)")
