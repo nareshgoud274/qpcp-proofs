@@ -37,6 +37,16 @@
      confirmed; otherwise FAIL cleanup with the exact name and command, and
      never "now deleted" or "All checks passed", on the normal and interrupt
      paths alike. A failed lookup before creation creates nothing.
+  7. The guide round after the volunteer (#169, #170): the check's FAIL
+     text addresses the owner who reads it; JOIN.md quotes get_lima.sh's
+     output line exactly; the cleanup block is self-contained (the export
+     line first, `limactl prune` before the `rm`); on the Mac routes every
+     command is labelled "Run from macOS" or "Run in the guest", and every
+     guest command is wrapped in `limactl shell qpcp -- ...`, with no
+     interactive shell left to fall out of; and the #170 observation is
+     stated as fact (in "Network" option (b) and in "Tested so far"), with
+     the early hand-off test after the guest is created, while the
+     reviewer's boundary text stays verbatim apart from its last sentence.
 """
 
 import os
@@ -424,9 +434,10 @@ def test_docs():
                 "disposable workspace, verify its isolation, and complete the network-dependent setup inside it "
                 "yourself. The agent may resume at the S060 practice run if its existing permissions allow local "
                 "work in the prepared guest. If another step needs a download, return that step to the owner. If "
-                "the agent cannot access the guest, stop. This handoff is untested with Codex.")
-    check("5. Network (b): the boundary and the resumption point, as the reviewer gave them", boundary in flat(net), "")
-    steps = [net.find(x) for x in ("1. **Check the machine", "2. **Create the guest", "3. **Verify its isolation",
+                "the agent cannot access the guest, stop.")
+    check("5. Network (b): the boundary and the resumption point, as the reviewer gave them (its first five "
+          "sentences; the sixth, \"untested with Codex\", is replaced by what was observed, 7.)", boundary in flat(net), "")
+    steps = [net.find(x) for x in ("1. **Check the machine", "2. **Create and start the guest", "3. **Verify its isolation",
                                     "4. **Install the tools", "5. **Clone, and download Lean and Mathlib")]
     check("5. Network (b): the owner's network-dependent steps, in order, with their commands",
           -1 not in steps and steps == sorted(steps) and "limactl create --yes --name=qpcp" in net and "sudo apt-get install" in net
@@ -443,7 +454,7 @@ def test_docs():
     check("4. the guide and the check say to run the check again after a fix",
           "run it again" in sec and "run this again" in (ROOT / "scripts" / "workspace_check.sh").read_text(), "")
     check("4. the status file is read after setup, in the workspace",
-          "Once the setup has run, look at the state of the project first, in the" in join, "")
+          "Once the setup and the practice run have passed, look at the state of the" in join, "")
     check("4. the untested cases are named (Windows, Intel Macs, Docker Desktop)",
           all(w in join for w in ("Windows", "Intel", "Docker Desktop")), "")
     check("1. the guide says Docker keeps its pulled image as Lima keeps its cache, and how to remove each",
@@ -487,12 +498,147 @@ def test_docs():
           and "is blocking the network" not in index, "")
 
 
+# ------------------------------------------------- 7. the guide round after the volunteer (#169, #170)
+
+GUEST = "limactl shell qpcp -- "
+EXPORT = 'export PATH="$HOME/qpcp-setup/lima/bin:$PATH" LIMA_HOME="$HOME/qpcp-setup/lima-home"'
+
+
+def labelled_blocks(text):
+    """Every fenced block in text, with the nearest non-blank line before it (its label)."""
+    out = []
+    for m in re.finditer(r"(?m)^( *)```\n(.*?)^\1```$", text, re.S):
+        before = [l.strip() for l in text[:m.start()].split("\n") if l.strip()]
+        body = "\n".join(l[len(m.group(1)):] for l in m.group(2).split("\n"))
+        out.append((before[-1] if before else "", body))
+    return out
+
+
+def commands(body):
+    """The command lines of a block: no comments, no continuation lines."""
+    lines, cont, quoted = [], False, False
+    for l in body.split("\n"):
+        if l.strip() and not cont and not quoted and not l.lstrip().startswith("#"):
+            lines.append(l)
+        cont = l.rstrip().endswith("\\")
+        quoted ^= l.count("'") % 2 == 1
+    return lines
+
+
+def test_round2():
+    join = (ROOT / "JOIN.md").read_text()
+    flat = lambda x: re.sub(r"\s+", " ", x)
+    script = (ROOT / "scripts" / "workspace_check.sh").read_text()
+
+    # Point 2: the owner reads the check's output, so its FAIL text addresses the owner.
+    r = run_check()
+    nxt = "\n".join(l for l in r.stdout.split("\n") if l.strip().startswith("Next:"))
+    check("7. (#169.2) the check's no-Lima FAIL addresses the owner who reads it: \"you can run "
+          "scripts/get_lima.sh\", from the same commit as the check, with no approval to ask anyone for",
+          "you can run scripts/get_lima.sh" in flat(nxt) and "approval" not in script
+          and "same commit as this script" in flat(nxt), nxt)
+
+    # Point 3: get_lima.sh's line, quoted exactly as the script prints it.
+    lima = (ROOT / "scripts" / "get_lima.sh").read_text()
+    ver = re.search(r'^LIMA_VERSION="([\d.]+)"$', lima, re.M).group(1)
+    tmpl = re.search(r'^echo "(get_lima\.sh: Lima \$\{LIMA_VERSION\} for \$\{arch\}, SHA-256 checked)"$', lima, re.M)
+    line = tmpl and tmpl.group(1).replace("${LIMA_VERSION}", ver).replace("${arch}", "arm64")
+    check("7. (#169.3) JOIN.md quotes get_lima.sh's output line exactly, with its prefix",
+          bool(line) and f"`{line}`" in join and not re.search(r"`Lima \d", join), line)
+
+    # Point 4: the cleanup block runs as it stands in a new terminal.
+    nothing = join[join.index("## A machine with nothing installed"):join.index("**On Linux,**")]
+    prune = [b for _, b in labelled_blocks(nothing) if "limactl prune" in b]
+    cmds = commands(prune[0]) if len(prune) == 1 else []
+    check("7. (#169.4) the cleanup block is self-contained: the export line first, `limactl prune` before the "
+          "`rm` that deletes limactl",
+          len(cmds) >= 3 and cmds[0] == EXPORT and any(c.startswith("limactl prune") for c in cmds)
+          and [c for c in cmds if c.startswith(("limactl prune", "rm -rf"))][-1].startswith("rm -rf ~/qpcp-setup")
+          and next(i for i, c in enumerate(cmds) if c.startswith("limactl prune"))
+          < next(i for i, c in enumerate(cmds) if c.startswith("rm -rf")), cmds)
+
+    # Point 7: on the Mac routes, every command says where it runs, and guest commands are wrapped.
+    net = join[join.index("## Network"):join.index("## Which revision")]
+    manual = net[net.index("**The manual route, (b).**"):net.index("One documented example")]
+    net_end = join.index("## Which revision")
+    # The Lima-only parts of "Two places" (its five checks, shared with Docker, are wrapped in option (b), step 3).
+    vm = join[join.index("*With a virtual machine,*"):join.index("*Then, on a fresh Ubuntu 24.04 workspace,*")]
+    twovm = vm[:vm.index("*In either workspace,*")] + vm[vm.index("Lima logs you in as an ordinary user"):]
+    pilot = join[join.index("### Owner-relayed pilot"):join.index("## Which revision")] if "### Owner-relayed pilot" in join else ""
+    regions = {"A machine with nothing installed (macOS)": nothing, "Network, option (b)": manual,
+               "Two places, the virtual machine": twovm, "Owner-relayed pilot": pilot}
+    bare = ("sudo ", "ls ", "mount", "echo ", "env ", "cd ~/qpcp-proofs", "lake ", "python3 ", "touch ", "git ")
+    for name, text in regions.items():
+        blocks = [(lab, b) for lab, b in labelled_blocks(text) if "<<'SETUP'" not in b]
+        unlabelled = [b[:60] for lab, b in blocks if not re.match(r"\*?Run (from macOS|in the guest)\b", lab)]
+        guest = [b for lab, b in blocks if re.match(r"\*?Run in the guest\b", lab)]
+        wrong_guest = [c for b in guest for c in commands(b) if not (c.startswith(GUEST) or c == EXPORT)]
+        mac = [b for lab, b in blocks if re.match(r"\*?Run from macOS\b", lab)]
+        wrong_mac = [c for b in mac for c in commands(b) if c.startswith(bare)]
+        interactive = re.findall(r"(?m)^\s*limactl shell qpcp\s*$", text)
+        check(f"7. (#169.7) {name}: every block is labelled \"Run from macOS\" or \"Run in the guest\"; each guest "
+              "command is wrapped in `limactl shell qpcp -- ...`; no guest command sits in a macOS block; no "
+              "interactive shell", blocks and not unlabelled and not wrong_guest and not wrong_mac and not interactive,
+              (unlabelled, wrong_guest, wrong_mac, interactive))
+    check("7. (#169.7) the manual route has guest blocks (isolation, tools, setup) and macOS blocks",
+          sum(1 for lab, _ in labelled_blocks(manual) if lab.startswith("*Run in the guest")) >= 4
+          and sum(1 for lab, _ in labelled_blocks(manual) if lab.startswith("*Run from macOS")) >= 2, "")
+    # A guest command that the Mac's shell would expand must be single-quoted.
+    leaks = [c for _, b in labelled_blocks(manual) + labelled_blocks(twovm) + labelled_blocks(pilot) for c in commands(b)
+             if c.startswith(GUEST) and re.search(r"\$[({A-Za-z_]", c.split(GUEST, 1)[1])
+             and not re.match(r"bash -l?c '", c.split(GUEST, 1)[1])]
+    wrapped = [c for _, b in labelled_blocks(manual) + labelled_blocks(twovm) + labelled_blocks(pilot)
+               for c in commands(b) if c.startswith(GUEST) and "$" in c]
+    check("7. (#169.7) every wrapped guest command that uses $ is single-quoted, so the Mac's shell does not "
+          "expand it", len(wrapped) >= 5 and not leaks, (len(wrapped), leaks))
+    setup_at = manual.find("<<'SETUP'")
+    check("7. (#169.7) the setup script is saved on the Mac and sent to the guest, not typed into either shell",
+          setup_at > 0 and f"{GUEST}bash < ~/qpcp-setup/setup.sh" in manual[setup_at:]
+          and "pbpaste > ~/qpcp-setup/setup.sh" in manual, "")
+
+    # Point 8 (#170), as fact only.
+    obs = ("with OpenAI Codex (ChatGPT desktop, Apple Silicon macOS, default sandbox), the owner's five steps and "
+           "a manual S060 passed, and the agent's first command to enter the guest failed with `Operation not "
+           "permitted` on Lima's SSH control socket")
+    tested = join[join.index("**Tested so far:**"):join.index("## Network")]
+    check("7. (#170) \"untested with Codex\" is gone; the observation is stated in Network (b) and in \"Tested so "
+          "far\", as fact, with no direction chosen: no sandbox override, full-access mode or per-command approval "
+          "route suggested", "untested with Codex" not in join and obs in flat(manual) and obs in flat(tested)
+          and "Untested: whether a sandboxed agent can drive" not in join
+          and "never run a command in this guide with a sandbox override" in flat(net)
+          and "per-command approval" not in join.lower()
+          and not re.search(r"danger-full-access|--dangerously|--yolo|bypass.{0,20}sandbox", join, re.I), "")
+    a2, a3 = manual.find("2. **Create and start the guest"), manual.find("3. **Verify its isolation")
+    step2 = manual[a2:a3] if -1 < a2 < a3 else ""
+    test_block = [b for lab, b in labelled_blocks(step2) if f"{GUEST}uname -sm" in b]
+    check("7. (#170) the early hand-off test: after creating the guest (step 2), before the long setup, the agent "
+          "runs `limactl shell qpcp -- uname -sm`, after the export line; if it fails, option (b) does not work for "
+          "that agent as configured, and they stop",
+          len(test_block) == 1 and commands(test_block[0]) == [EXPORT, f"{GUEST}uname -sm"]
+          and "option (b) does not work for that agent as it is configured" in flat(step2)
+          and "stop there" in flat(step2), test_block)
+    check("7. (#170, the reviewer's answer) the same command, from the owner's Terminal and by the agent, "
+          "immediately after the guest starts and before tools or Lean; owner succeeds and agent fails = this "
+          "hand-off stops here for that agent as configured",
+          "Then test the hand-off, immediately, before installing tools or downloading Lean." in flat(step2).replace("*", "")
+          and "The same command is run twice: first by your owner, in their Terminal, then by the agent" in flat(step2)
+          and "If it succeeds from the owner's Terminal and fails for the agent" in flat(step2)
+          and "this hand-off stops here for that agent" in flat(step2)
+          and -1 < step2.find("limactl start qpcp") < step2.find(f"{GUEST}uname -sm"), "")
+    check("7. (#170) the evidence is stated as one Codex Desktop configuration on one Apple silicon Mac, with "
+          "Docker and other agents open, in both places",
+          all("one Codex Desktop configuration on one Apple silicon Mac; Docker and other agents are open" in flat(x)
+              for x in (manual, tested)), "")
+
+
+
 def main():
     print("The front door: prerequisite check, no-install Lima, early stop")
     try:
         test_check()
         test_get_lima()
         test_docs()
+        test_round2()
     except Exception as e:  # a crash is a failure, never a skip
         import traceback
         traceback.print_exc()

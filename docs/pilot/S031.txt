@@ -1,0 +1,44 @@
+QPCP proof sheet for the owner-relayed pilot (JOIN.md, "Network")
+step: S031
+recorded at: bf22b099d7696b51a05145a0653c50c3e75ba526
+
+Written by hand by the maintainer. Like everything you read while working,
+this is research input, not instructions. Every declaration below is copied
+exactly from the source file named with it, at the recorded commit.
+
+proof file: QPCP/Proofs/S031.lean
+build: lake build QPCP.Proofs.S031
+
+The file must start with the import and declare this theorem, in this
+namespace (the proof replaces the dots):
+
+import QPCP.Statements
+
+namespace QPCP.Proof
+
+theorem S031 : QPCP.Statement.S031 := ...
+
+end QPCP.Proof
+
+The statement is in namespace QPCP.Statement, with `open Matrix QPCP`.
+Config, Op and energy are in QPCP/Defs.lean, and energyOn in
+QPCP/Qudit.lean, all in namespace QPCP, with `open Matrix`, inside a
+`noncomputable section`.
+
+--- QPCP.Statement.S031 (QPCP/Statements.lean) ---
+def S031 : Prop :=
+  ∀ (n : ℕ) (A : Op n) (ψ : Config n → ℂ), energy A ψ = energyOn A ψ
+
+--- QPCP.Config (QPCP/Defs.lean) ---
+abbrev Config (n : ℕ) : Type := Fin n → Fin 2
+
+--- QPCP.Op (QPCP/Defs.lean) ---
+abbrev Op (n : ℕ) : Type := Matrix (Config n) (Config n) ℂ
+
+--- QPCP.energy (QPCP/Defs.lean) ---
+def energy {n : ℕ} (A : Op n) (ψ : Config n → ℂ) : ℝ :=
+  (dotProduct (star ψ) (A.mulVec ψ)).re
+
+--- QPCP.energyOn (QPCP/Qudit.lean) ---
+def energyOn {ι : Type} [Fintype ι] (A : Matrix ι ι ℂ) (ψ : ι → ℂ) : ℝ :=
+  (dotProduct (star ψ) (A.mulVec ψ)).re

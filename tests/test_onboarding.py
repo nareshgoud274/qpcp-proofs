@@ -22,6 +22,24 @@
   5. The proposal bot says what can be accepted today: with no listed
      reviewer it says the statement waits; it never tells the proposer to
      close the issue.
+  6. The manual route, "Network" option (b) (#169): the status file and
+     every submission or claim refresh go back to the owner, who saves a
+     dated snapshot inside the workspace, and a passing S060 is never said
+     to make choosing a step or publishing network-free; a resuming agent
+     confirms, with one command run as written, that it reaches the guest
+     and that it is the prepared one, and neither redoes the setup nor asks
+     again for approvals; the practice run comes before choosing a role or
+     claiming.
+  7. The owner-relayed pilot: marked a pilot, for exercises only, S031 only;
+     the exception to "read only inside the workspace" stated exactly; the
+     owner's transfer commands, run as written: the sheet is made in the
+     guest only while the sources are unchanged since the sheet's commit;
+     only a regular, UTF-8 file of at most 16 KiB passes the owner's check;
+     the result names the candidate's SHA-256, gives the first error, and is
+     at most 4 KiB. No helper script, and no per-command approval route.
+  8. docs/pilot/S031.txt, written by hand: every declaration in it, the
+     statement's body above all, is the source at the commit it records
+     (the volunteer's /out/base-commit), unchanged at this checkout.
 """
 
 import importlib.util
@@ -447,6 +465,281 @@ esac
           r.returncode == 0 and "could not read" in body, (r.returncode, r.stderr, body))
 
 
+# ----------------------------------------------- 6. the manual route, option (b) (#169)
+
+GUEST = "limactl shell qpcp -- "
+
+
+def flat(x):
+    return re.sub(r"\s+", " ", x)
+
+
+def guest_script(line):
+    """The script inside `limactl shell qpcp -- bash -lc '...'` (or bash -c), as the guest's bash receives it."""
+    m = re.match(r"limactl shell qpcp -- bash -l?c '(.*)'(?: < .*)?$", line, re.S)
+    return m and m.group(1)
+
+
+def blocks_after(text, marker):
+    """The command blocks (with list indentation removed) after marker in text."""
+    at = text.index(marker)
+    out = []
+    for m in re.finditer(r"(?m)^( *)```\n(.*?)^\1```$", text[at:], re.S):
+        out.append("\n".join(l[len(m.group(1)):] for l in m.group(2).split("\n")).strip())
+    return out
+
+
+def test_manual_route(tmp):
+    join = (ROOT / "JOIN.md").read_text()
+    net = join[join.index("## Network"):join.index("## Which revision")]
+    manual = net[net.index("**The manual route, (b).**"):net.index("One documented example")]
+    after = flat(manual[manual.index("The practice run needs no network."):])
+
+    # Point 1: what goes back to the owner, and a dated snapshot in the workspace.
+    check("6. (#169.1) option (b): the status file, and every refresh of a submission card or claim status, are "
+          "among the steps that go back to the owner",
+          "`site-data/status.json`" in after and "submission card or claim status" in after
+          and "goes back to your owner" in after, after[:300])
+    snap = [b for b in blocks_after(manual, "The practice run needs no network.") if "status.json" in b]
+    check("6. (#169.1) the owner saves a dated snapshot of it inside the workspace (run in the guest), and the agent "
+          "reads that copy", len(snap) == 1 and snap[0].startswith(GUEST) and "$(date -u +%Y-%m-%d" in snap[0]
+          and "-o ~/status/status-" in snap[0] and "you read that copy, never a live one" in after
+          and "read your owner's dated snapshot instead" in flat(join), snap)
+    implies = re.search(r"(S060|practice run)[^.]*(enables|lets you|allows you|so you can|without the network)", flat(join))
+    check("6. (#169.1) a passing S060 is never said to make step selection or publishing network-free; it is said "
+          "not to", implies is None and "a passing practice run does not change that" in after
+          and "choosing a step needs the project's status file, and publishing needs GitHub" in after,
+          implies and implies.group(0))
+
+    # Point 5: the resuming agent's one confirmation, run as written.
+    resume = manual[manual.index("Then your owner tells you it is done."):manual.index("The practice run needs no network.")]
+    lines = [l for b in blocks_after(resume, "Then your owner tells you it is done.") for l in b.split("\n")
+             if "prepared guest: ok" in l]
+    script = guest_script(lines[0]) if len(lines) == 1 else None
+    check("6. (#169.5) the resuming agent neither redoes the setup nor asks again for approvals already given",
+          "Do not run the setup again, create another guest, or ask again for approvals your owner has already given"
+          in flat(resume) and "do not repair or redo the setup yourself" in flat(resume), "")
+
+    def confirm(state):
+        w = tmp / f"resume-{state}"
+        home, out = w / "home", w / "out"
+        home.mkdir(parents=True); out.mkdir()
+        repo = home / "qpcp-proofs"
+        if state != "no-clone":
+            repo.mkdir()
+            git(repo, "init", "-q")
+            (repo / "f").write_text("x")
+            git(repo, "add", "f"); git(repo, "commit", "-qm", "base")
+        if state not in ("no-elan", "no-clone"):
+            (home / ".elan" / "bin").mkdir(parents=True)
+            stub(home / ".elan" / "bin", "lake", "exit 0\n")
+        if state != "no-clone":
+            (out / "base-commit").write_text(("0" * 40 if state == "other-commit" else git(repo, "rev-parse", "HEAD")) + "\n")
+        env = dict(os.environ, HOME=str(home), GIT_CONFIG_GLOBAL=os.devnull)
+        r = subprocess.run(["bash", "-c", script.replace("/out/", f"{out}/")], env=env, capture_output=True,
+                           text=True, cwd=w, timeout=60)
+        return "prepared guest: ok" in r.stdout
+    results = {s: confirm(s) for s in ("prepared", "other-commit", "no-elan", "no-clone")} if script else {}
+    check("6. (#169.5) the confirmation, run as written: \"prepared guest: ok\" for the prepared guest only (the clone "
+          "at /out/base-commit, with elan), never for a guest at another commit, without elan, or without the clone",
+          results == {"prepared": True, "other-commit": False, "no-elan": False, "no-clone": False}, (lines, results))
+
+    # Point 6: the practice run comes first.
+    roles = section(join, "## Roles")
+    choose = section(join, "## Choose what to do")
+    check("6. (#169.6) the practice run comes before choosing a role, a step, or claiming",
+          "Do the practice run first" in roles and "before choosing a role, choosing a step, or claiming" in flat(roles)
+          and roles.index("Do the practice run first") < roles.index("Then take one role per session")
+          and "Once the setup and the practice run have passed" in choose, "")
+
+
+# ---------------------------------------------------------- 7. the owner-relayed pilot
+
+def relay_check(line, f, home):
+    """The owner's check of a relayed file on the Mac, run as written against f."""
+    target = home / "qpcp-relay" / Path(line.split("=", 1)[1].split(";")[0]).name
+    target.parent.mkdir(exist_ok=True)
+    if target.exists() or target.is_symlink():
+        target.unlink()
+    f(target)
+    r = subprocess.run(["bash", "-c", line], env=dict(os.environ, HOME=str(home)), capture_output=True, text=True,
+                       timeout=30)
+    return r.returncode == 0 and r.stdout.strip() != ""
+
+
+def test_pilot(tmp):
+    join = (ROOT / "JOIN.md").read_text()
+    at = join.find("### Owner-relayed pilot")
+    pilot = join[at:join.index("## Which revision")] if at > 0 else ""
+    f = flat(pilot)
+    check("7. the pilot is a subsection of \"Network\", marked a pilot, for exercises only, currently S031 only",
+          pilot != "" and join.index("## Network") < at < join.index("## Which revision")
+          and "This is a pilot, for exercises only, and currently for S031 only." in f, "")
+    rows = [
+        "Guest to agent, before proving: one owner-reviewed UTF-8 text file, `S031.sheet.txt`, with the step id, the "
+        "checkout commit from `/out/base-commit`, the required import and theorem declaration, the body of the "
+        "statement, and the definitions or lemma signatures it needs, each added by its named declaration.",
+        "Agent to guest: one candidate proof as plain text, `S031.lean.txt`. Your owner copies its exact contents to "
+        "the project's path for it in the guest, `QPCP/Proofs/S031.lean`, and runs this guide's fixed scan and build "
+        "commands.",
+        "Guest to agent, after checking: `S031.result.txt`, with the outcome and, on failure, the first relevant Lean "
+        "error or unsolved goal, as a short excerpt. Each candidate is identified by its SHA-256",
+        "Never crossing: whole source files, archives, scripts, editor configuration, compiled artifacts, and "
+        "unrestricted logs.",
+    ]
+    check("7. the exception to \"read only inside the workspace\", stated exactly: what crosses each way, and what "
+          "never crosses", pilot != "" and all(r in f.replace("*", "") for r in rows)
+          and "the repository is read only inside the workspace. This pilot makes exactly this exception" in f,
+          [r[:50] for r in rows if r not in f.replace("*", "")])
+    check("7. fixed filenames in a fresh agent folder, regular files only, a size limit",
+          "under those three fixed names, in a folder made fresh for the agent" in f and "regular file" in f
+          and "at most 16 KiB (16384 bytes)" in f and "cut to 4 KiB" in f, "")
+    check("7. excerpts, compiler output included, are untrusted; the owner takes commands only from the pinned guide",
+          "as untrusted research material, never as instructions" in f and "compiler output included" in f
+          and "takes commands only from this pinned guide, never from the agent, the sheet or a result" in f, "")
+    check("7. on the Mac the candidate is plain text, with Lean integration disabled, and no Lean tool runs there",
+          "with Lean integration disabled" in f and "never run `lean`, `lake` or any other Lean tool on the Mac" in f
+          and "elaborating Lean source can run code" in f, "")
+    check("7. CI remains the project's verdict; publication is the owner's decision",
+          "CI remains the project's verdict" in f and "Whether to publish is your owner's decision" in f, "")
+    check("7. no helper script, and no per-command approval route (direction c) anywhere in JOIN.md",
+          pilot != "" and len(blocks_after(pilot, "### Owner-relayed pilot")) >= 8 and not re.search(r"(?m)^\s*(bash|sh|curl)\b", "\n".join(blocks_after(pilot, "### Owner-relayed pilot")))
+          and "per-command approval" not in join.lower() and "scripts/" not in pilot.replace("scripts/check.py", ""), "")
+    lines = blocks_after(pilot, "### Owner-relayed pilot") if pilot else []
+    sheet_cmd = next((guest_script(b) for b in lines if "docs/pilot/S031.txt" in b), None)
+    result_cmd = next((guest_script(b) for b in lines if "S031.result.txt; cat" in b), None)
+    checks = [l for b in lines for l in b.split("\n") if l.startswith("f=~/qpcp-relay/")]
+
+    # The sheet is made only while the sources are unchanged since the sheet's commit.
+    def make_sheet(change):
+        w = tmp / f"pilot-{change}"
+        home, out = w / "home", w / "out"
+        home.mkdir(parents=True); out.mkdir()
+        subprocess.run(["git", "clone", "-q", str(ROOT), str(home / "qpcp-proofs")], check=True, capture_output=True)
+        repo = home / "qpcp-proofs"
+        (repo / "docs" / "pilot").mkdir(parents=True, exist_ok=True)
+        (repo / "docs" / "pilot" / "S031.txt").write_text((ROOT / "docs" / "pilot" / "S031.txt").read_text())
+        if change:
+            p = repo / "QPCP" / "Defs.lean"
+            p.write_text(p.read_text() + "\n-- changed\n")
+            git(repo, "commit", "-qam", "change")
+        (out / "base-commit").write_text(git(repo, "rev-parse", "HEAD") + "\n")
+        r = subprocess.run(["bash", "-c", sheet_cmd.replace("/out/", f"{out}/")], capture_output=True, text=True,
+                           env=dict(os.environ, HOME=str(home), GIT_CONFIG_GLOBAL=os.devnull), timeout=60)
+        made = out / "S031.sheet.txt"
+        return r.stdout, made.read_text() if made.exists() else None, git(repo, "rev-parse", "HEAD")
+    if sheet_cmd and (ROOT / "docs" / "pilot" / "S031.txt").exists():
+        stdout, made, head = make_sheet(False)
+        check("7. the sheet command, run as written: the maintainer's sheet plus the checkout commit",
+              "sheet made" in stdout and made is not None
+              and made == (ROOT / "docs" / "pilot" / "S031.txt").read_text() + f"checkout commit: {head}\n", stdout)
+        stdout, made, _ = make_sheet(True)
+        check("7. the sheet command stops, making nothing, when a source changed since the sheet's commit",
+              "STOP: the sources changed since the sheet was written" in stdout and made is None, stdout)
+    else:
+        for what in ("the maintainer's sheet plus the checkout commit", "stops, making nothing, when a source changed"):
+            check(f"7. the sheet command, run as written: {what}", False, "no sheet command or no sheet")
+
+    # The owner's check on the Mac: a regular UTF-8 file of at most 16 KiB.
+    home = tmp / "relay-home"
+    home.mkdir()
+    cases = {"a short UTF-8 file": (lambda p: p.write_text("theorem S031 : QPCP.Statement.S031 := by\n  intro n A ψ\n  rfl\n"), True),
+             "a symbolic link": (lambda p: (p.parent / "real").write_text("x") or p.symlink_to(p.parent / "real"), False),
+             "a folder": (lambda p: p.mkdir(), False),
+             "over 16 KiB": (lambda p: p.write_text("x" * 16385), False),
+             "invalid UTF-8": (lambda p: p.write_bytes(b"theorem \xff\xfe\n"), False)}
+    for name in ("S031.sheet.txt", "S031.lean.txt", "S031.result.txt"):
+        line = next((l for l in checks if l.startswith(f"f=~/qpcp-relay/{name};")), None)
+        got = {}
+        for what, (make, want) in cases.items():
+            if line:
+                tgt = home / "qpcp-relay" / name
+                if tgt.is_dir():
+                    tgt.rmdir()
+                got[what] = relay_check(line, make, home) == want
+        check(f"7. the owner's check of {name}, run as written: passes a short UTF-8 file only (not a link, a folder, "
+              "over 16 KiB, or invalid UTF-8)", bool(got) and all(got.values()), (line, got))
+
+    # The result: the candidate's SHA-256, the outcome, the first error, at most 4 KiB.
+    def result(scan_ok, build_out):
+        w = tmp / f"result-{scan_ok}-{len(build_out)}"
+        home, out, bindir = w / "home", w / "out", w / "bin"
+        for d in (home / "qpcp-proofs" / "QPCP" / "Proofs", out, bindir, home / ".elan" / "bin"):
+            d.mkdir(parents=True)
+        (home / "qpcp-proofs" / "QPCP" / "Proofs" / "S031.lean").write_text("theorem S031 : QPCP.Statement.S031 := by\n  simp\n")
+        stub(bindir, "python3", "echo ACCEPTED\n" if scan_ok else "echo 'REJECTED: proof S031: forbidden'; exit 1\n")
+        build = w / "build.txt"
+        build.write_text(build_out)
+        stub(home / ".elan" / "bin", "lake", f'cat "{build}"; exit 1\n')
+        text = result_cmd.replace("/out/", f"{out}/").replace("/tmp/", f"{w}/")
+        r = subprocess.run(["bash", "-c", text], capture_output=True, text=True, timeout=60,
+                           env=dict(os.environ, HOME=str(home), PATH=f"{bindir}:/usr/bin:/bin:/usr/sbin:/sbin"))
+        sha = subprocess.run(["shasum", "-a", "256", str(home / "qpcp-proofs" / "QPCP" / "Proofs" / "S031.lean")],
+                             capture_output=True, text=True).stdout[:64]
+        made = out / "S031.result.txt"
+        return (made.read_bytes() if made.exists() else b""), sha
+    if result_cmd:
+        noise = "".join(f"info: building module {i}\n" for i in range(400))
+        err = ("error: QPCP/Proofs/S031.lean:2:2: unsolved goals\nn : ℕ\nA : Op n\nψ : Config n → ℂ\n"
+               "⊢ energy A ψ = energyOn A ψ\n")
+        got, sha = result(True, noise + err + noise)
+        text = got.decode("utf-8", "replace")
+        check("7. the result, made as written: the candidate's SHA-256, \"Lean build FAILED\", and the first error with "
+              "its unsolved goal, not the build's other output",
+              text.startswith(f"candidate sha256: {sha}\n") and "source scan passed" in text
+              and "Lean build FAILED" in text and "unsolved goals" in text and "⊢ energy A ψ" in text
+              and "info: building module" not in text, text[:400])
+        got, _ = result(True, "error: x\n" + "y" * 20000)
+        check("7. the result is cut to 4 KiB before it leaves the guest", 0 < len(got) <= 4096, len(got))
+        got, _ = result(False, "")
+        check("7. a scan failure is reported as such, with no build", b"source scan FAILED" in got
+              and b"Lean build" not in got, got[:300])
+    else:
+        for what in ("the candidate's SHA-256, the outcome and the first error", "cut to 4 KiB", "a scan failure"):
+            check(f"7. the result, made as written: {what}", False, "no result command")
+
+
+# ------------------------------------------------------- 8. the S031 sheet (docs/pilot)
+
+SHEET_COMMIT = "bf22b099d7696b51a05145a0653c50c3e75ba526"   # the volunteer's /out/base-commit (#167)
+
+
+def test_sheet():
+    path = ROOT / "docs" / "pilot" / "S031.txt"
+    raw = path.read_bytes() if path.exists() else b""
+    sheet = raw.decode("utf-8")
+    rec = re.search(r"(?m)^recorded at: ([0-9a-f]{40})$", sheet)
+    have = subprocess.run(["git", "-C", str(ROOT), "cat-file", "-e", SHEET_COMMIT + "^{commit}"], capture_output=True)
+    check("8. the sheet records the volunteer's checkout commit, which is in this checkout's history (needs a full "
+          "clone), and is UTF-8 and at most 16 KiB", rec is not None and rec.group(1) == SHEET_COMMIT
+          and have.returncode == 0 and len(raw) <= 16384 and "step: S031" in sheet, rec and rec.group(1))
+    show = lambda rev, p: subprocess.run(["git", "-C", str(ROOT), "show", f"{rev}:{p}"], capture_output=True,
+                                         text=True, check=True).stdout
+    decls = re.findall(r"(?ms)^--- (\S+) \((\S+)\) ---\n(.*?)(?=\n\n|\n*\Z)", sheet)
+    names = [d[0] for d in decls]
+    check("8. the sheet adds, by named declaration, the statement and each definition it uses",
+          names == ["QPCP.Statement.S031", "QPCP.Config", "QPCP.Op", "QPCP.energy", "QPCP.energyOn"], names)
+    for name, src, body in decls if have.returncode == 0 else []:
+        short = name.rsplit(".", 1)[1]
+        at_rec, at_head = show(SHEET_COMMIT, src), show("HEAD", src)
+        m = re.search(rf"(?ms)^(?:def|abbrev|theorem|lemma) {re.escape(short)}\b.*?(?=\n\n|\n/--|\n-/|\Z)", at_rec)
+        check(f"8. {name}: the sheet's text is the source at {SHEET_COMMIT[:7]} ({src}), and that is unchanged at "
+              "this checkout", m is not None and m.group(0).rstrip() == body.rstrip() and body in at_head,
+              (body, m and m.group(0)))
+    stmt = dict((d[0], d[2]) for d in decls).get("QPCP.Statement.S031", "")
+    src = show(SHEET_COMMIT, "QPCP/Statements.lean") if have.returncode == 0 else ""
+    want = re.search(r"(?ms)^def S031 : Prop :=\n(.*?)(?=\n\n)", src)
+    got = stmt.split(":=\n", 1)[1] if ":=\n" in stmt else None
+    check("8. the statement's body in the sheet equals QPCP.Statement.S031's body at the recorded commit",
+          want is not None and got is not None and got.rstrip() == want.group(1).rstrip(), (got, want and want.group(1)))
+    check("8. the sheet gives the required import and theorem declaration, as S031's submission card has them",
+          "import QPCP.Statements" in sheet and "theorem S031 : QPCP.Statement.S031 :=" in sheet
+          and "namespace QPCP.Proof" in sheet and "QPCP/Proofs/S031.lean" in sheet
+          and "lake build QPCP.Proofs.S031" in sheet, "")
+    check("8. the sheet holds no proof (it is a sheet, not a submission)",
+          sheet != "" and not re.search(r":= by|\brfl\b|\bsimp\b|\bexact\b", sheet), "")
+
+
 def main():
     print("A volunteer's first hour")
     try:
@@ -458,6 +751,9 @@ def main():
             test_example()
             test_pins()
             test_bot(tmp)
+            test_manual_route(tmp)
+            test_pilot(tmp)
+            test_sheet()
     except Exception as e:  # a crash is a failure, never a skip
         check("the test ran to completion", False, repr(e))
     print(f"{'FAILED' if fails else 'passed'}: {fails} failure(s)")
