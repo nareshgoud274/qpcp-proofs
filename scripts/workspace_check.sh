@@ -97,32 +97,44 @@ echo "probe $h resolve=$d tcp$p=$c"; done'
 
 name="qpcp-check-$$-$RANDOM"
 attempted=0   # set just before this run asks for a guest under its own, fresh name
-guest_exists() {
+# Is the guest there? Prints present, absent (confirmed), or unknown (the lookup itself failed).
+guest_state() {
   case "$mode" in
-    docker) docker container inspect "$name" >/dev/null 2>&1 ;;
-    lima) "$LIMACTL" list --quiet 2>/dev/null | grep -qx "$name" ;;
+    docker)
+      if look=$(docker container inspect "$name" 2>&1 >/dev/null); then echo present
+      else case "$look" in *"No such container"*|*"No such object"*) echo absent ;; *) echo unknown ;; esac; fi ;;
+    lima)
+      if list=$("$LIMACTL" list --quiet 2>/dev/null); then
+        if printf '%s\n' "$list" | grep -qx "$name"; then echo present; else echo absent; fi
+      else echo unknown; fi ;;
   esac
 }
+# Deletes this run's guest. Succeeds only if its absence was confirmed beforehand, or the deletion
+# succeeded and its absence is then confirmed; otherwise a FAIL with the exact name and command.
 cleanup() {
   [ "$attempted" = 1 ] || return 0
   attempted=0
-  guest_exists || return 0
+  [ "$(guest_state)" = absent ] && return 0
   case "$mode" in
-    docker) docker rm -f "$name" >/dev/null 2>&1; how="docker rm -f $name" ;;
-    lima) "$LIMACTL" delete -f "$name" >/dev/null 2>&1; how="${lima_env}$LIMACTL delete -f $name" ;;
+    docker) how="docker rm -f $name"; docker rm -f "$name" >/dev/null 2>&1 ;;
+    lima) how="${lima_env}$LIMACTL delete -f $name"; "$LIMACTL" delete -f "$name" >/dev/null 2>&1 ;;
   esac
-  if guest_exists; then
-    fail "cleanup: the test guest $name could not be deleted" "remove it with: $how"
-    return 1
-  fi
+  rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(guest_state)" = absent ]; then return 0; fi
+  fail "cleanup: the test guest $name could not be confirmed deleted" "remove it with: $how"
+  return 1
 }
 trap 'cleanup; exit 130' INT TERM HUP
-trap 'cleanup' EXIT
+trap 'cleanup || exit 1' EXIT
 
 out=""; status=0; started=0
 if [ -n "$mode" ] && [ "$disk_ok" = 1 ]; then
-  if guest_exists; then
+  before=$(guest_state)
+  if [ "$before" = present ]; then
     fail "guest: a guest named $name already exists; it is not this run's, so it was left alone" "run this again"
+  elif [ "$before" = unknown ]; then
+    fail "guest: $mode could not list its guests, so no test guest was created" \
+      "make sure $mode works on its own (docker ps, or limactl list), then run this again"
   else
     attempted=1
     case "$mode" in
@@ -137,7 +149,7 @@ if [ -n "$mode" ] && [ "$disk_ok" = 1 ]; then
           started=1; out=$("$LIMACTL" shell "$name" -- bash -c "$probe" 2>&1); status=$?
         fi ;;
     esac
-    if cleanup; then gone="now deleted"; else gone="NOT deleted, see above"; fi
+    if cleanup; then gone="now deleted"; else gone="NOT confirmed deleted, see above"; fi
     if [ "$started" = 0 ]; then
       fail "guest: $mode could not start a guest" \
         "make sure $mode works on its own (for Lima: limactl create and start a VM), then run this again"

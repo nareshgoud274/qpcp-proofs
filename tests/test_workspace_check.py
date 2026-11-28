@@ -30,6 +30,13 @@
      homepage download, read and run each script as separate steps.
   5. JOIN.md "Network" (b): the reviewer's boundary and resumption text, and
      the owner's network-dependent steps in order.
+  6. The guest lookup is three-valued (present, confirmed absent, unknown): a
+     failed `docker container inspect` (other than "No such container") or
+     `limactl list` is unknown. Cleanup deletes unless absence is confirmed,
+     checks the deletion's exit status, and succeeds only if absence is then
+     confirmed; otherwise FAIL cleanup with the exact name and command, and
+     never "now deleted" or "All checks passed", on the normal and interrupt
+     paths alike. A failed lookup before creation creates nothing.
 """
 
 import os
@@ -87,34 +94,44 @@ def probe_output(failing=(), unresolved=(), skip=(), extra=(), then=""):
     return lines + then + "\n"
 
 
-def fakes(t, docker=None, lima=None, nodelete=False):
-    """Stand-in docker and limactl that keep their guests as files in t/guests, and log every call."""
+def fakes(t, docker=None, lima=None, nodelete=False, lookup="ok"):
+    """Stand-in docker and limactl that keep their guests as files in t/guests, and log every call.
+
+    nodelete: False (deletion works), "fails" (the delete command exits 1 and the guest stays) or
+    "silent" (it exits 0 and the guest stays). lookup: when `docker container inspect` or
+    `limactl list` itself fails (as when the daemon or Lima is unreachable): "ok" (never), "always",
+    "after-create" (once this run has asked for a guest) or "after-delete" (once a deletion was tried)."""
     log, guests = t / "calls", t / "guests"
     guests.mkdir(exist_ok=True)
     tools = {}
-    rm = ":" if nodelete else 'rm -f "$G/$x"'
+    rm = {False: 'rm -f "$G/$x"', "fails": "exit 1", "silent": ":"}[nodelete]
+    when = {"ok": "false", "always": "true", "after-create": f'[ -e "{t}/created" ]',
+            "after-delete": f'[ -e "{t}/delete-tried" ]'}[lookup]
+    pre = (f'G="{guests}"; echo "TOOL $*" >> "{log}"\n'
+           'for a; do x="$a"; done\n'
+           f'lookup_fails() {{ {when}; }}\n')
     if docker is not None:
         (t / "guest.sh").write_text("" if docker == "stopped" else docker)
-        tools["docker"] = (f'G="{guests}"; echo "docker $*" >> "{log}"\n'
-                           'for a; do x="$a"; done\n'
+        tools["docker"] = (pre.replace("TOOL", "docker") +
                            'case "$1" in\n'
                            '  info) ' + ("exit 1" if docker == "stopped" else "exit 0") + ';;\n'
-                           '  container) [ -e "$G/$x" ];;\n'
-                           '  create) shift; shift; touch "$G/$1";;\n'
+                           '  container) if lookup_fails; then echo "Cannot connect to the Docker daemon" >&2; exit 1; fi\n'
+                           '    [ -e "$G/$x" ] || { echo "Error: No such container: $x" >&2; exit 1; };;\n'
+                           f'  create) touch "{t}/created"; shift; shift; touch "$G/$1";;\n'
                            f'  start) sh "{t}/guest.sh";;\n'
-                           f'  rm) {rm};;\n'
+                           f'  rm) touch "{t}/delete-tried"; {rm};;\n'
                            'esac\n')
     if lima is not None:
         (t / "guest.sh").write_text("" if lima in ("nostart", "partial") else lima)
         create = {"nostart": "exit 1", "partial": 'touch "$G/$n"; exit 1'}.get(lima, 'touch "$G/$n"')
-        tools["limactl"] = (f'G="{guests}"; echo "limactl $*" >> "{log}"\n'
-                            'for a; do x="$a"; done\n'
+        tools["limactl"] = (pre.replace("TOOL", "limactl") +
                             'case "$1" in\n'
-                            '  list) ls "$G";;\n'
-                            '  create) for a; do case "$a" in --name=*) n="${a#--name=}";; esac; done; ' + create + ';;\n'
+                            '  list) if lookup_fails; then echo "list failed" >&2; exit 1; fi; ls "$G";;\n'
+                            f'  create) touch "{t}/created"; for a; do case "$a" in --name=*) n="${{a#--name=}}";; esac; done; '
+                            + create + ';;\n'
                             '  start) exit 0;;\n'
                             f'  shell) sh "{t}/guest.sh";;\n'
-                            f'  delete) {rm};;\n'
+                            f'  delete) touch "{t}/delete-tried"; {rm};;\n'
                             'esac\n')
     return tools
 
@@ -232,19 +249,45 @@ def test_check():
     r = run_check(lima="partial", pre=("qpcp",))
     check("1. Lima whose create fails halfway: FAIL guest, and the half-made guest (this run's own) is deleted",
           r.returncode != 0 and "FAIL  guest" in r.stdout and r.guests == ["qpcp"], (r.stdout, r.guests, r.calls))
-    for tool in ("docker", "lima"):
-        r = run_check(nodelete=True, **{tool: probe_output()})
-        n0 = (created(r.calls) or ["(none created)"])[0]
+    def cleanup_failed(r, tool, n0):
         how = f"docker rm -f {n0}" if tool == "docker" else f"delete -f {n0}"
-        check(f"1. {tool}: a guest that cannot be deleted: FAIL cleanup, with its exact name and the command",
-              r.returncode != 0 and f"FAIL  cleanup: the test guest {n0} could not be deleted" in r.stdout
-              and how in r.stdout and "now deleted" not in r.stdout, r.stdout)
+        return (r.returncode != 0 and f"FAIL  cleanup: the test guest {n0} could not be confirmed deleted" in r.stdout
+                and f"remove it with: " in r.stdout and how in r.stdout and "now deleted" not in r.stdout
+                and "All checks passed" not in r.stdout)
+
+    for tool in ("docker", "lima"):
+        for nodelete, what in (("fails", "exits 1"), ("silent", "exits 0 but the guest stays")):
+            r = run_check(nodelete=nodelete, **{tool: probe_output()})
+            n0 = (created(r.calls) or ["(none created)"])[0]
+            check(f"6. {tool}: lookup works, deletion {what}: FAIL cleanup, with its exact name and the command, "
+                  "non-zero, no \"now deleted\", no \"All checks passed\"",
+                  cleanup_failed(r, tool, n0) and r.guests == [n0], (r.stdout, r.guests))
+        # The reviewer's case: deletion fails, then the lookup fails too.
+        r = run_check(nodelete="fails", lookup="after-delete", **{tool: probe_output()})
+        n0 = (created(r.calls) or ["(none created)"])[0]
+        check(f"6. {tool}: deletion fails, then the lookup fails: FAIL cleanup, name and command, non-zero",
+              cleanup_failed(r, tool, n0), (r.returncode, r.stdout, r.calls))
+        # The lookup fails once the guest is asked for: deletion is still attempted, and cannot be confirmed.
+        for nodelete in (False, "fails"):
+            r = run_check(nodelete=nodelete, lookup="after-create", **{tool: probe_output()})
+            n0 = (created(r.calls) or ["(none created)"])[0]
+            tried = (f"docker rm -f {n0}" if tool == "docker" else f"limactl delete -f {n0}") in r.calls
+            check(f"6. {tool}: the lookup fails before deletion (deletion {'works' if not nodelete else 'fails'}): "
+                  "deletion is still attempted, and cleanup FAILs as unconfirmed",
+                  tried and cleanup_failed(r, tool, n0), (r.returncode, r.stdout, r.calls))
+        # The lookup fails before anything is created: FAIL, and nothing is created.
+        r = run_check(lookup="always", pre=("qpcp",), **{tool: probe_output()})
+        check(f"6. {tool}: the lookup fails before creation: FAIL, nothing created, non-zero",
+              r.returncode != 0 and "FAIL  guest: " + tool + " could not list its guests, so no test guest was created"
+              in r.stdout and not created(r.calls) and r.guests == ["qpcp"] and "All checks passed" not in r.stdout,
+              (r.stdout, r.calls))
 
     # Interrupted while the guest runs: the run's own guest is deleted on the way out; others are untouched.
-    for tool in ("docker", "lima"):
+    # With the lookup failing as well, the deletion is still attempted and cleanup FAILs as unconfirmed.
+    def interrupted(tool, **kw):
         with tempfile.TemporaryDirectory() as tmp:
             t = Path(tmp)
-            env = check_env(t, **{tool: "sleep 3\n" + probe_output()})
+            env = check_env(t, **{tool: "sleep 3\n" + probe_output()}, **kw)
             (t / "guests" / "qpcp").touch()
             p = subprocess.Popen([shutil.which("bash"), str(ROOT / "scripts" / "workspace_check.sh")], env=env,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -256,8 +299,21 @@ def test_check():
             p.send_signal(signal.SIGINT)
             out, _ = p.communicate(timeout=30)
             left = sorted(x.name for x in (t / "guests").iterdir())
-            check(f"1. {tool}: interrupted while its guest runs: that guest is deleted, the other is not",
-                  p.returncode == 130 and left == ["qpcp"], (p.returncode, left, out))
+            calls = (t / "calls").read_text()
+            return p.returncode, left, out, calls
+
+    for tool in ("docker", "lima"):
+        rc, left, out, _ = interrupted(tool)
+        check(f"1. {tool}: interrupted while its guest runs: that guest is deleted, the other is not",
+              rc == 130 and left == ["qpcp"] and "FAIL" not in out, (rc, left, out))
+        for nodelete in (False, "fails"):
+            rc, left, out, calls = interrupted(tool, lookup="after-create", nodelete=nodelete)
+            n0 = (created(calls) or ["(none created)"])[0]
+            tried = (f"docker rm -f {n0}" if tool == "docker" else f"limactl delete -f {n0}") in calls
+            check(f"6. {tool}: interrupted, with the lookup failing (deletion {'works' if not nodelete else 'fails'}): "
+                  "deletion attempted, FAIL cleanup with name and command, non-zero",
+                  rc != 0 and tried and f"FAIL  cleanup: the test guest {n0} could not be confirmed deleted" in out
+                  and "remove it with: " in out and "All checks passed" not in out, (rc, out, calls))
 
     # Two runs at once, against the same Docker or Lima: distinct guests, each deletes only its own.
     for tool in ("docker", "lima"):
