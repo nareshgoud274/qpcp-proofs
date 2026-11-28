@@ -671,7 +671,9 @@ def test_pilot(tmp):
         build = w / "build.txt"
         build.write_text(build_out)
         stub(home / ".elan" / "bin", "lake", f'cat "{build}"; exit 1\n')
-        text = result_cmd.replace("/out/", f"{out}/").replace("/tmp/", f"{w}/")
+        # Only the guest's two log files move; the test's own folders may themselves be under /tmp.
+        text = result_cmd.replace("/tmp/scan.log", f"{w}/scan.log").replace("/tmp/build.log", f"{w}/build.log")
+        text = text.replace("/out/", f"{out}/")
         r = subprocess.run(["bash", "-c", text], capture_output=True, text=True, timeout=60,
                            env=dict(os.environ, HOME=str(home), PATH=f"{bindir}:/usr/bin:/bin:/usr/sbin:/sbin"))
         sha = subprocess.run(["shasum", "-a", "256", str(home / "qpcp-proofs" / "QPCP" / "Proofs" / "S031.lean")],
